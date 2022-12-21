@@ -1,0 +1,29 @@
+[package]
+name = "nale"
+version = "0.1.0"
+authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
+edition = "2021"
+
+[[bin]]
+name = "nale"
+path = "./src/main.rs"
+
+[lib]
+name = "nale"
+path = "./src/lib.rs"
+
+[dependencies]
+#clap = "4.0.29"
+rand = "0.8.5"
+seq_io = "0.3.1"
+lazy_static = "1.4.0"
+phf = { version = "0.11", features = ["macros"] }
+regex = "1.7.0"
+anyhow = "1.0.66"
+thiserror = "1.0.37"
+
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
