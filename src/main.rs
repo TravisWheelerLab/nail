@@ -1,7 +1,6 @@
 use anyhow::Result;
-use nale::alignment::{backward, forward, optimal_accuracy, posterior};
-use nale::structs::{DpMatrix, Hmm, Profile, Sequence};
-use nale::util::Dump;
+use nale::alignment::{backward, forward, optimal_accuracy, posterior, traceback};
+use nale::structs::{DpMatrix, Hmm, Profile, Sequence, Trace};
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -60,8 +59,12 @@ fn main() -> Result<()> {
 
             let mut optimal_out = BufWriter::new(File::create("./nale-dump/optimal.mtx")?);
             optimal_matrix.dump(&mut optimal_out)?;
-            
-            
+
+            let mut trace = Trace::new(profile.length, target.length);
+            traceback(&profile, &posterior_matrix, &optimal_matrix, &mut trace);
+
+            let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
+            trace.dump(&mut trace_out, &profile, &target)?;
         }
     }
 

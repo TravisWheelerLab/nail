@@ -1,4 +1,3 @@
-use crate::util::{AlignedFloatString, AlignedString, Dump};
 use std::io::Write;
 
 use crate::structs::profile::constants::{NUM_SPECIAL_STATES, SPECIAL_STATE_IDX_TO_NAME};
@@ -75,10 +74,8 @@ impl DpMatrix {
     pub fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
         self.special_matrix[target_idx][special_idx] = value;
     }
-}
 
-impl Dump for DpMatrix {
-    fn dump(&self, out: &mut impl Write) -> Result<()> {
+    pub fn dump(&self, out: &mut impl Write) -> Result<()> {
         let target_idx_width = self.target_length.to_string().len();
         let first_column_width = target_idx_width + 3;
         // TODO: should these be global statics or something?
@@ -88,14 +85,15 @@ impl Dump for DpMatrix {
         // write the profile indices
         write!(out, "{}", " ".repeat(first_column_width - 1))?;
         for profile_idx in 0..=self.profile_length {
-            write!(out, "{} ", profile_idx.aligned_string(column_width))?;
+            write!(out, "{:w$} ", profile_idx, w = column_width)?;
         }
 
         for special_idx in 0..NUM_SPECIAL_STATES {
             write!(
                 out,
-                "{} ",
-                SPECIAL_STATE_IDX_TO_NAME[special_idx].aligned_string(column_width)
+                "{:.w$} ",
+                SPECIAL_STATE_IDX_TO_NAME[special_idx],
+                w = column_width
             )?;
         }
         writeln!(out)?;
@@ -108,13 +106,14 @@ impl Dump for DpMatrix {
 
         for target_idx in 0..=self.target_length {
             // write the match line
-            write!(out, "{} M ", target_idx.aligned_string(target_idx_width))?;
+            write!(out, "{:.w$} M ", target_idx, w = target_idx_width)?;
             for profile_idx in 0..=self.profile_length {
                 write!(
                     out,
-                    "{} ",
-                    self.get_match(target_idx, profile_idx)
-                        .aligned_string(column_width, precision)
+                    "{:w$.p$} ",
+                    self.get_match(target_idx, profile_idx),
+                    w = column_width,
+                    p = precision
                 )?;
             }
 
@@ -122,33 +121,36 @@ impl Dump for DpMatrix {
             for special_idx in 0..NUM_SPECIAL_STATES {
                 write!(
                     out,
-                    "{} ",
-                    self.get_special(target_idx, special_idx)
-                        .aligned_string(column_width, precision)
+                    "{:w$.p$} ",
+                    self.get_special(target_idx, special_idx),
+                    w = column_width,
+                    p = precision
                 )?;
             }
             writeln!(out)?;
 
             // write the insert line
-            write!(out, "{} I ", target_idx.aligned_string(target_idx_width))?;
+            write!(out, "{:w$} I ", target_idx, w = target_idx_width)?;
             for profile_idx in 0..=self.profile_length {
                 write!(
                     out,
-                    "{} ",
-                    self.get_insert(target_idx, profile_idx)
-                        .aligned_string(column_width, precision)
+                    "{:w$.p$} ",
+                    self.get_insert(target_idx, profile_idx),
+                    w = column_width,
+                    p = precision
                 )?;
             }
             writeln!(out)?;
 
             // write the delete line
-            write!(out, "{} D ", target_idx.aligned_string(target_idx_width))?;
+            write!(out, "{:w$} D ", target_idx, w = target_idx_width)?;
             for profile_idx in 0..=self.profile_length {
                 write!(
                     out,
-                    "{} ",
-                    self.get_delete(target_idx, profile_idx)
-                        .aligned_string(column_width, precision)
+                    "{:w$.p$} ",
+                    self.get_delete(target_idx, profile_idx),
+                    w = column_width,
+                    p = precision
                 )?;
             }
             writeln!(out, "\n")?;

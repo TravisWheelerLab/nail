@@ -1,59 +1,4 @@
-use anyhow::Result;
 use lazy_static::lazy_static;
-use std::io::Write;
-
-pub trait Dump {
-    fn dump(&self, file: &mut impl Write) -> Result<()>;
-}
-
-pub trait AlignedString {
-    fn aligned_string(&self, width: usize) -> String;
-}
-
-impl AlignedString for &str {
-    fn aligned_string(&self, width: usize) -> String {
-        let s = if self.len() > width {
-            &self[0..width]
-        } else {
-            self
-        };
-
-        let space_count = width - s.len();
-
-        format!("{}{}", " ".repeat(space_count), s)
-    }
-}
-
-impl AlignedString for usize {
-    fn aligned_string(&self, width: usize) -> String {
-        let space_count = width - self.to_string().len();
-        format!("{}{}", " ".repeat(space_count), self)
-    }
-}
-
-pub trait AlignedFloatString {
-    fn aligned_string(&self, width: usize, precision: usize) -> String;
-}
-
-impl AlignedFloatString for f32 {
-    fn aligned_string(&self, width: usize, precision: usize) -> String {
-        return if *self == f32::INFINITY {
-            let space_count = width - 4;
-            format!("{}+inf", " ".repeat(space_count))
-        } else if *self == -f32::INFINITY {
-            let space_count = width - 4;
-            format!("{}-inf", " ".repeat(space_count))
-        } else {
-            let digit_string = format!("{:.N$}", self, N = precision);
-            if digit_string.len() > width {
-                return format!("oopsie");
-            }
-            let space_count = width - digit_string.len();
-
-            format!("{}{}", " ".repeat(space_count), digit_string)
-        };
-    }
-}
 
 pub trait PrintMe {
     fn print(&self);
@@ -127,7 +72,7 @@ pub fn log_sum_table_dump() {
     let mut line_break_counter = 0;
     for i in 0..LOGSUM_TABLE_SIZE {
         line_break_counter += 1;
-        print!("{} ", LOGSUM_LOOKUP[i].aligned_string(2, 8));
+        print!("{:2.8} ", LOGSUM_LOOKUP[i]);
         if line_break_counter > 8 {
             println!();
             line_break_counter = 0;

@@ -5,7 +5,6 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::structs::profile::constants::MAX_DEGENERATE_ALPHABET_SIZE;
-use crate::util::AlignedFloatString;
 use anyhow::{Context, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -551,8 +550,8 @@ impl fmt::Debug for Hmm {
             for state in 0..7 {
                 write!(
                     f,
-                    "{} ",
-                    self.model.transition_probabilities[model_position][state].aligned_string(3, 3)
+                    "{:3.3} ",
+                    self.model.transition_probabilities[model_position][state]
                 )?;
             }
             writeln!(f)?;

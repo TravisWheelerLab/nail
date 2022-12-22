@@ -75,6 +75,7 @@ pub fn traceback(
         }
         previous_state = current_state;
     }
+    trace.reverse();
 }
 #[inline(always)]
 pub fn get_posterior_probability(

@@ -97,6 +97,7 @@ pub const AMINO_INVERSE_MAP: phf::Map<u8, char> = phf_map! {
     23u8 => 'B',
     24u8 => 'Z',
     25u8 => 'J',
+    255u8 => ' ',
 };
 
 pub const AMINO_BACKGROUND_FREQUENCIES: [f32; 20] = [

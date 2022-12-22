@@ -5,7 +5,7 @@ use crate::structs::hmm::constants::{
 };
 use crate::structs::hmm::P7Alphabet;
 use crate::structs::Hmm;
-use crate::util::{AlignedFloatString, Dump, LogAbuse};
+use crate::util::LogAbuse;
 
 use std::fmt;
 use std::fmt::Formatter;
@@ -278,10 +278,8 @@ impl Profile {
         self.special_transitions[SPECIAL_J][SPECIAL_MOVE] = move_score;
         self.special_transitions[SPECIAL_C][SPECIAL_MOVE] = move_score;
     }
-}
 
-impl Dump for Profile {
-    fn dump(&self, out: &mut impl Write) -> Result<()> {
+    pub fn dump(&self, out: &mut impl Write) -> Result<()> {
         todo!()
     }
 }
@@ -294,9 +292,8 @@ impl fmt::Debug for Profile {
         for i in 0..5 {
             writeln!(
                 f,
-                "{} {}",
-                self.special_transitions[i][0].aligned_string(3, 3),
-                self.special_transitions[i][1].aligned_string(3, 3)
+                "{:8.4} {:8.4}",
+                self.special_transitions[i][0], self.special_transitions[i][1]
             )?;
         }
 
@@ -313,17 +310,17 @@ impl fmt::Debug for Profile {
             writeln!(f)?;
 
             for j in 0..MAX_DEGENERATE_ALPHABET_SIZE {
-                write!(f, "{} ", self.match_scores[i][j].aligned_string(3, 3))?;
+                write!(f, "{:8.4} ", self.match_scores[i][j])?;
             }
             writeln!(f)?;
 
             for j in 0..MAX_DEGENERATE_ALPHABET_SIZE {
-                write!(f, "{} ", self.insert_scores[i][j].aligned_string(3, 3))?;
+                write!(f, "{:8.4} ", self.insert_scores[i][j])?;
             }
             writeln!(f)?;
 
             for t in 0..8 {
-                write!(f, "{} ", self.transitions[i][t].aligned_string(3, 3))?;
+                write!(f, "{:8.4} ", self.transitions[i][t])?;
             }
             writeln!(f)?;
             writeln!(f)?;
