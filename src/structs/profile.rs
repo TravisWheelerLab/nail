@@ -1,4 +1,6 @@
-use crate::alphabet::{AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES};
+use crate::alphabet::{
+    AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, SPACE_UTF8,
+};
 use crate::structs::hmm::constants::{
     HMM_DELETE_TO_DELETE, HMM_DELETE_TO_MATCH, HMM_INSERT_TO_INSERT, HMM_INSERT_TO_MATCH,
     HMM_MATCH_TO_DELETE, HMM_MATCH_TO_INSERT, HMM_MATCH_TO_MATCH,
@@ -78,6 +80,8 @@ pub struct Profile {
     pub special_transitions: [[f32; 2]; 5],
     /// The expected number of times that the J state is used
     pub expected_j_uses: f32,
+    /// The profile's consensus sequence
+    pub consensus_sequence: Vec<u8>,
     /// The sequence alphabet
     pub alphabet: P7Alphabet,
 }
@@ -99,6 +103,7 @@ impl Profile {
             ],
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
+            consensus_sequence: vec![SPACE_UTF8],
             alphabet: P7Alphabet::Amino,
         };
 
@@ -123,8 +128,8 @@ impl Profile {
         // TODO: what does Z represent?
         let mut z: f32 = 0.0;
 
-        for k in 1..=profile.length {
-            z += match_occupancy[k] * (profile.length - k + 1) as f32;
+        for profile_idx in 1..=profile.length {
+            z += match_occupancy[profile_idx] * (profile.length - profile_idx + 1) as f32;
         }
 
         // the goal here must be to set the transition of begin to match at each position
@@ -159,6 +164,19 @@ impl Profile {
 
         // match scores
         for model_position_idx in 1..=profile.length {
+            // the consensus residue is the match emission with the highest probability
+            // TODO: this should not be the case for single sequence models
+            let consensus_byte: u8 = hmm.model.match_probabilities[model_position_idx]
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                .map(|(index, _)| index)
+                .unwrap() as u8;
+
+            profile
+                .consensus_sequence
+                .push(AMINO_INVERSE_MAP[&consensus_byte] as u8);
+
             for alphabet_idx in 0..MAX_ALPHABET_SIZE {
                 // score is match ln(emission / background)
                 // TODO: probably should make these casts unnecessary

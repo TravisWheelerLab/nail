@@ -18,10 +18,10 @@ impl DpMatrix {
         let mut matrix = DpMatrix {
             profile_length,
             target_length,
-            insert_matrix: vec![vec![0.0; target_length + 1]; profile_length + 1],
-            match_matrix: vec![vec![0.0; target_length + 1]; profile_length + 1],
-            delete_matrix: vec![vec![0.0; target_length + 1]; profile_length + 1],
-            special_matrix: vec![vec![0.0; 5]; profile_length + 1],
+            insert_matrix: vec![vec![0.0; profile_length + 1]; target_length + 1],
+            match_matrix: vec![vec![0.0; profile_length + 1]; target_length + 1],
+            delete_matrix: vec![vec![0.0; profile_length + 1]; target_length + 1],
+            special_matrix: vec![vec![0.0; 5]; target_length + 1],
         };
 
         for i in 0..=target_length {

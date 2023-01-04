@@ -1,30 +1,32 @@
 use anyhow::Result;
-use nale::alignment::{backward, forward, optimal_accuracy, posterior, traceback};
-use nale::structs::{DpMatrix, Hmm, Profile, Sequence, Trace};
+use clap::Parser;
+use nale::align::{backward, forward, optimal_accuracy, posterior, traceback};
+use nale::structs::hmm::parse_hmms_from_p7hmm_file;
+use nale::structs::{Alignment, DpMatrix, Profile, Sequence, Trace};
 use std::fs::File;
 use std::io::BufWriter;
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// query hmm
+    query: String,
+    /// target fasta
+    target: String,
+}
+
 fn main() -> Result<()> {
-    // let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "Pfam-A.hmm");
-    let hmm_path = format!(
-        "{}/{}",
-        env!("CARGO_MANIFEST_DIR"),
-        "resources/Alpha-amylase.hmm"
-    );
-    let seq_path = format!(
-        "{}/{}",
-        env!("CARGO_MANIFEST_DIR"),
-        "resources/Alpha-amylase.c.fa"
-    );
+    let args = Args::parse();
 
-    let hmm_list = Hmm::from_p7hmm_file(hmm_path)?;
-    let seq_list = Sequence::from_fasta(seq_path)?;
+    // println!("{:?}", args);
 
-    // TODO: fix parser so it doesn't give an uninitialized model at the end of the list
-    // println!("hmm count: {}", hmm_list.len() - 1);
+    let hmm_list = parse_hmms_from_p7hmm_file(args.query)?;
+    let seq_list = Sequence::from_fasta(args.target)?;
+
+    // println!("hmm count: {}", hmm_list.len());
     // println!("seq count: {}", seq_list.len());
 
-    for hmm_idx in 0..hmm_list.len() - 1 {
+    for hmm_idx in 0..hmm_list.len() {
         let mut profile = Profile::new(&hmm_list[hmm_idx]);
         for seq_idx in 0..seq_list.len() {
             let target = &seq_list[seq_idx];
@@ -34,14 +36,14 @@ fn main() -> Result<()> {
             let mut forward_matrix = DpMatrix::new(profile.length, target.length);
             forward(&profile, target, &mut forward_matrix);
 
-            let mut forward_out = BufWriter::new(File::create("./nale-dump/forward.mtx")?);
-            forward_matrix.dump(&mut forward_out)?;
+            // let mut forward_out = BufWriter::new(File::create("./nale-dump/forward.mtx")?);
+            // forward_matrix.dump(&mut forward_out)?;
 
             let mut backward_matrix = DpMatrix::new(profile.length, target.length);
             backward(&profile, target, &mut backward_matrix);
 
-            let mut backward_out = BufWriter::new(File::create("./nale-dump/backward.mtx")?);
-            backward_matrix.dump(&mut backward_out)?;
+            // let mut backward_out = BufWriter::new(File::create("./nale-dump/backward.mtx")?);
+            // backward_matrix.dump(&mut backward_out)?;
 
             let mut posterior_matrix = DpMatrix::new(profile.length, target.length);
             posterior(
@@ -51,20 +53,29 @@ fn main() -> Result<()> {
                 &mut posterior_matrix,
             );
 
-            let mut posterior_out = BufWriter::new(File::create("./nale-dump/posterior.mtx")?);
-            posterior_matrix.dump(&mut posterior_out)?;
+            // let mut posterior_out = BufWriter::new(File::create("./nale-dump/posterior.mtx")?);
+            // posterior_matrix.dump(&mut posterior_out)?;
 
             let mut optimal_matrix = DpMatrix::new(profile.length, target.length);
             optimal_accuracy(&profile, &posterior_matrix, &mut optimal_matrix);
 
-            let mut optimal_out = BufWriter::new(File::create("./nale-dump/optimal.mtx")?);
-            optimal_matrix.dump(&mut optimal_out)?;
+            // let mut optimal_out = BufWriter::new(File::create("./nale-dump/optimal.mtx")?);
+            // optimal_matrix.dump(&mut optimal_out)?;
 
             let mut trace = Trace::new(profile.length, target.length);
             traceback(&profile, &posterior_matrix, &optimal_matrix, &mut trace);
 
             let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
             trace.dump(&mut trace_out, &profile, &target)?;
+
+            let alignment = Alignment::new(&trace, &profile, &target);
+
+            println!(
+                "{}\n{}\n{}\n",
+                &alignment.profile_string[0..80],
+                &alignment.middle_string[0..80],
+                &alignment.target_string[0..80]
+            );
         }
     }
 

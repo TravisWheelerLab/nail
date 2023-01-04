@@ -2,6 +2,8 @@ use phf::phf_map;
 
 pub const DASH_UTF8: u8 = 45;
 pub const DOT_UTF8: u8 = 46;
+pub const SPACE_UTF8: u8 = 32;
+pub const PIPE_UTF8: u8 = 124;
 
 pub const AMINO_ALPHABET: [&str; 20] = [
     "A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W",
@@ -97,6 +99,8 @@ pub const AMINO_INVERSE_MAP: phf::Map<u8, char> = phf_map! {
     23u8 => 'B',
     24u8 => 'Z',
     25u8 => 'J',
+    45u8 => '-',
+    46u8 => '.',
     255u8 => ' ',
 };
 
@@ -122,3 +126,7 @@ pub const AMINO_BACKGROUND_FREQUENCIES: [f32; 20] = [
     0.0114135, // W
     0.0304133, // Y
 ];
+
+pub fn string_from_amino_bytes(bytes: &Vec<u8>) -> String {
+    bytes.iter().map(|b| AMINO_INVERSE_MAP[b]).collect()
+}

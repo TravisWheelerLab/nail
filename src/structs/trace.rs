@@ -23,15 +23,15 @@ use constants::*;
 use std::io::Write;
 
 pub struct Trace {
-    length: usize,
-    profile_length: usize,
-    sequence_length: usize,
-    states: Vec<usize>,
+    pub length: usize,
+    pub profile_length: usize,
+    pub sequence_length: usize,
+    pub states: Vec<usize>,
     /// node index
-    k: Vec<usize>,
+    pub profile_idx: Vec<usize>,
     /// position emitted in seq
-    i: Vec<usize>,
-    posterior_probabilities: Vec<f32>,
+    pub target_idx: Vec<usize>,
+    pub posterior_probabilities: Vec<f32>,
 }
 
 impl Trace {
@@ -41,8 +41,8 @@ impl Trace {
             profile_length,
             sequence_length,
             states: vec![],
-            k: vec![],
-            i: vec![],
+            profile_idx: vec![],
+            target_idx: vec![],
             posterior_probabilities: vec![],
         }
     }
@@ -50,35 +50,35 @@ impl Trace {
     pub fn append_with_posterior_probability(
         &mut self,
         state: usize,
-        k: usize,
-        i: usize,
+        profile_idx: usize,
+        target_idx: usize,
         posterior_probability: f32,
     ) {
         match state {
             TRACE_N | TRACE_C | TRACE_J => {
                 if self.states[self.length - 1] == state {
-                    self.i.push(i);
+                    self.target_idx.push(target_idx);
                     self.posterior_probabilities.push(posterior_probability);
                 } else {
-                    self.i.push(0);
+                    self.target_idx.push(0);
                     self.posterior_probabilities.push(0.0);
                 }
-                self.k.push(0);
+                self.profile_idx.push(0);
             }
             TRACE_X | TRACE_S | TRACE_B | TRACE_E | TRACE_T => {
-                self.i.push(0);
+                self.target_idx.push(0);
                 self.posterior_probabilities.push(0.0);
-                self.k.push(0);
+                self.profile_idx.push(0);
             }
             TRACE_D => {
-                self.i.push(0);
+                self.target_idx.push(0);
                 self.posterior_probabilities.push(0.0);
-                self.k.push(k);
+                self.profile_idx.push(profile_idx);
             }
             TRACE_M | TRACE_I => {
-                self.i.push(i);
+                self.target_idx.push(target_idx);
                 self.posterior_probabilities.push(posterior_probability);
-                self.k.push(k);
+                self.profile_idx.push(profile_idx);
             }
             _ => {
                 panic!("no such state {}", state);
@@ -94,9 +94,9 @@ impl Trace {
                 || (self.states[z] == TRACE_C && self.states[z + 1] == TRACE_C)
                 || (self.states[z] == TRACE_J && self.states[z + 1] == TRACE_J)
             {
-                if self.i[z] == 0 && self.i[z + 1] > 0 {
-                    self.i[z] = self.i[z + 1];
-                    self.i[z + 1] = 0;
+                if self.target_idx[z] == 0 && self.target_idx[z + 1] > 0 {
+                    self.target_idx[z] = self.target_idx[z + 1];
+                    self.target_idx[z + 1] = 0;
                     self.posterior_probabilities[z] = self.posterior_probabilities[z + 1];
                     self.posterior_probabilities[z + 1] = 0.0;
                 }
@@ -104,8 +104,8 @@ impl Trace {
         }
 
         self.states.reverse();
-        self.i.reverse();
-        self.k.reverse();
+        self.target_idx.reverse();
+        self.profile_idx.reverse();
         self.posterior_probabilities.reverse();
     }
 
@@ -120,13 +120,13 @@ impl Trace {
 
         writeln!(
             out,
-            "st   k     i      transit emission postprob - traceback len {}",
+            "st    p     t      transit emission postprob - traceback len {}",
             self.length
         )?;
         writeln!(out, "--  ---- ------  -------- -------- --------")?;
         for trace_idx in 0..self.length {
             let current_state = self.states[trace_idx];
-            let current_residue = target.data[self.i[trace_idx]];
+            let current_residue = target.data[self.target_idx[trace_idx]];
 
             let transition_score = if trace_idx < self.sequence_length - 1 {
                 // TODO: this is a nasty thing to implement so i'm leaving it for now
@@ -139,8 +139,8 @@ impl Trace {
                 out,
                 "{:1}  {:4} {:6}   {:8.4}",
                 TRACE_IDX_TO_NAME[current_state],
-                self.k[trace_idx],
-                self.i[trace_idx],
+                self.profile_idx[trace_idx],
+                self.target_idx[trace_idx],
                 transition_score
             )?;
 
@@ -148,20 +148,21 @@ impl Trace {
                 write!(
                     out,
                     " {:8.4}",
-                    profile.match_score(current_residue as usize, self.k[trace_idx])
+                    profile.match_score(current_residue as usize, self.profile_idx[trace_idx])
                 )?;
 
-                score += profile.match_score(current_residue as usize, self.k[trace_idx]);
+                score += profile.match_score(current_residue as usize, self.profile_idx[trace_idx]);
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;
                 accuracy += self.posterior_probabilities[trace_idx];
             } else if current_state == TRACE_I {
                 write!(
                     out,
                     " {:8.4}",
-                    profile.insert_score(current_residue as usize, self.k[trace_idx])
+                    profile.insert_score(current_residue as usize, self.profile_idx[trace_idx])
                 )?;
 
-                score += profile.insert_score(current_residue as usize, self.k[trace_idx]);
+                score +=
+                    profile.insert_score(current_residue as usize, self.profile_idx[trace_idx]);
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;
                 accuracy += self.posterior_probabilities[trace_idx];
             } else if (current_state == TRACE_N && self.states[trace_idx - 1] == TRACE_N)

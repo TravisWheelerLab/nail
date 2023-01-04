@@ -15,63 +15,69 @@ pub fn traceback(
     optimal_matrix: &DpMatrix,
     trace: &mut Trace,
 ) {
-    let mut i = optimal_matrix.target_length;
-    let mut k = 0;
+    let mut target_idx = optimal_matrix.target_length;
+    let mut profile_idx = 0;
 
     let mut posterior_probability: f32;
     let mut previous_state: usize = TRACE_C;
     let mut current_state: usize;
 
-    trace.append_with_posterior_probability(TRACE_T, k, i, 0.0);
-    trace.append_with_posterior_probability(TRACE_C, k, i, 0.0);
+    trace.append_with_posterior_probability(TRACE_T, profile_idx, target_idx, 0.0);
+    trace.append_with_posterior_probability(TRACE_C, profile_idx, target_idx, 0.0);
 
     while previous_state != TRACE_S {
         match previous_state {
             TRACE_M => {
-                current_state = select_m(profile, optimal_matrix, i, k);
-                k -= 1;
-                i -= 1;
+                current_state = select_m(profile, optimal_matrix, target_idx, profile_idx);
+                profile_idx -= 1;
+                target_idx -= 1;
             }
             TRACE_D => {
-                current_state = select_d(profile, optimal_matrix, i, k);
-                k -= 1;
+                current_state = select_d(profile, optimal_matrix, target_idx, profile_idx);
+                profile_idx -= 1;
             }
             TRACE_I => {
-                current_state = select_i(profile, optimal_matrix, i, k);
-                i -= 1;
+                current_state = select_i(profile, optimal_matrix, target_idx, profile_idx);
+                target_idx -= 1;
             }
             TRACE_N => {
-                current_state = select_n(i);
+                current_state = select_n(target_idx);
             }
             TRACE_C => {
-                current_state = select_c(profile, posterior_matrix, optimal_matrix, i);
+                current_state = select_c(profile, posterior_matrix, optimal_matrix, target_idx);
             }
             TRACE_J => {
-                current_state = select_j(profile, posterior_matrix, optimal_matrix, i);
+                current_state = select_j(profile, posterior_matrix, optimal_matrix, target_idx);
             }
             TRACE_E => {
-                current_state = select_e(profile, optimal_matrix, i, &mut k);
+                current_state = select_e(profile, optimal_matrix, target_idx, &mut profile_idx);
             }
             TRACE_B => {
-                current_state = select_b(profile, optimal_matrix, i);
+                current_state = select_b(profile, optimal_matrix, target_idx);
             }
             _ => {
                 panic!("bogus state in traceback")
             }
         }
 
-        // if current_state == -1 {
-        //     panic!("traceback choice failed")
-        // }
-
-        posterior_probability =
-            get_posterior_probability(posterior_matrix, current_state, previous_state, k, i);
-        trace.append_with_posterior_probability(current_state, k, i, posterior_probability);
+        posterior_probability = get_posterior_probability(
+            posterior_matrix,
+            current_state,
+            previous_state,
+            profile_idx,
+            target_idx,
+        );
+        trace.append_with_posterior_probability(
+            current_state,
+            profile_idx,
+            target_idx,
+            posterior_probability,
+        );
 
         if (current_state == TRACE_N || current_state == TRACE_J || current_state == TRACE_C)
             && current_state == previous_state
         {
-            i -= 1;
+            target_idx -= 1;
         }
         previous_state = current_state;
     }
@@ -82,8 +88,8 @@ pub fn get_posterior_probability(
     optimal_matrix: &DpMatrix,
     current_state: usize,
     previous_state: usize,
-    target_idx: usize,
     profile_idx: usize,
+    target_idx: usize,
 ) -> f32 {
     return match current_state {
         TRACE_M => optimal_matrix.get_match(target_idx, profile_idx),
