@@ -8,6 +8,7 @@ use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
 use crate::structs::{DpMatrix, Profile, Trace};
+use crate::util::PrintMe;
 
 pub fn traceback(
     profile: &Profile,
@@ -201,12 +202,12 @@ pub fn select_c(
     target_idx: usize,
 ) -> usize {
     let c_to_c_path = profile.special_transition_score_delta(SPECIAL_C, SPECIAL_LOOP)
-        * (optimal_matrix.get_match(target_idx - 1, SPECIAL_C)
+        * (optimal_matrix.get_special(target_idx - 1, SPECIAL_C)
             + posterior_matrix.get_special(target_idx, SPECIAL_C));
     let c_to_e_path = profile.transition_score_delta(SPECIAL_E, SPECIAL_MOVE)
         * optimal_matrix.get_special(target_idx, SPECIAL_E);
 
-    return if c_to_c_path >= c_to_e_path {
+    return if c_to_c_path > c_to_e_path {
         TRACE_C
     } else {
         TRACE_E
@@ -221,12 +222,12 @@ pub fn select_j(
     target_idx: usize,
 ) -> usize {
     let j_to_j_path = profile.special_transition_score_delta(SPECIAL_J, SPECIAL_LOOP)
-        * (optimal_matrix.get_match(target_idx - 1, SPECIAL_J)
+        * (optimal_matrix.get_special(target_idx - 1, SPECIAL_J)
             + posterior_matrix.get_special(target_idx, SPECIAL_J));
     let e_to_j_path = profile.transition_score_delta(SPECIAL_E, SPECIAL_LOOP)
         * optimal_matrix.get_special(target_idx, SPECIAL_E);
 
-    return if j_to_j_path >= e_to_j_path {
+    return if j_to_j_path > e_to_j_path {
         TRACE_J
     } else {
         TRACE_E

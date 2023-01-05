@@ -5,7 +5,6 @@ use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, DpMatrix, Profile, Sequence, Trace};
 use std::fs::File;
 use std::io::{stdout, BufWriter};
-use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -66,8 +65,8 @@ fn main() -> Result<()> {
             let mut trace = Trace::new(profile.length, target.length);
             traceback(&profile, &posterior_matrix, &optimal_matrix, &mut trace);
 
-            // let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
-            // trace.dump(&mut trace_out, &profile, &target)?;
+            let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
+            trace.dump(&mut trace_out, &profile, &target)?;
 
             let alignment = Alignment::new(&trace, &profile, &target);
 

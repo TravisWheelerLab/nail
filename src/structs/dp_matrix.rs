@@ -106,7 +106,7 @@ impl DpMatrix {
 
         for target_idx in 0..=self.target_length {
             // write the match line
-            write!(out, "{:.w$} M ", target_idx, w = target_idx_width)?;
+            write!(out, "{:w$} M ", target_idx, w = target_idx_width)?;
             for profile_idx in 0..=self.profile_length {
                 write!(
                     out,

@@ -7,6 +7,9 @@ use crate::structs::hmm::constants::{
     HMM_MATCH_TO_DELETE, HMM_MATCH_TO_INSERT, HMM_MATCH_TO_MATCH,
 };
 use crate::structs::hmm::P7Alphabet;
+use crate::structs::trace::constants::{
+    TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
+};
 use crate::structs::Hmm;
 use crate::util::{f32_vec_argmax, LogAbuse};
 
@@ -278,6 +281,61 @@ impl Profile {
             f32::MIN_POSITIVE
         } else {
             1.0
+        };
+    }
+
+    pub fn generic_transition_score(
+        &self,
+        state_from: usize,
+        idx_from: usize,
+        state_to: usize,
+        idx_to: usize,
+    ) -> f32 {
+        return match state_from {
+            TRACE_S | TRACE_T => 0.0,
+            TRACE_N => match state_to {
+                TRACE_B => self.special_transition_score(SPECIAL_N, SPECIAL_MOVE),
+                TRACE_N => self.special_transition_score(SPECIAL_N, SPECIAL_LOOP),
+                _ => panic!(),
+            },
+            TRACE_B => match state_to {
+                TRACE_M => self.transition_score(PROFILE_BEGIN_TO_MATCH, idx_to - 1),
+                _ => panic!(),
+            },
+            TRACE_M => match state_to {
+                TRACE_M => self.transition_score(PROFILE_MATCH_TO_MATCH, idx_from),
+                TRACE_I => self.transition_score(PROFILE_MATCH_TO_INSERT, idx_from),
+                TRACE_D => self.transition_score(PROFILE_MATCH_TO_DELETE, idx_from),
+                TRACE_E => 0.0,
+                _ => panic!(),
+            },
+            TRACE_D => match state_to {
+                TRACE_M => self.transition_score(PROFILE_DELETE_TO_MATCH, idx_from),
+                TRACE_D => self.transition_score(PROFILE_DELETE_TO_DELETE, idx_from),
+                TRACE_E => 0.0,
+                _ => panic!(),
+            },
+            TRACE_I => match state_to {
+                TRACE_M => self.transition_score(PROFILE_INSERT_TO_MATCH, idx_from),
+                TRACE_I => self.transition_score(PROFILE_INSERT_TO_INSERT, idx_from),
+                _ => panic!(),
+            },
+            TRACE_E => match state_to {
+                TRACE_C => self.special_transition_score(SPECIAL_E, SPECIAL_MOVE),
+                TRACE_J => self.special_transition_score(SPECIAL_E, SPECIAL_LOOP),
+                _ => panic!(),
+            },
+            TRACE_J => match state_to {
+                TRACE_B => self.special_transition_score(SPECIAL_J, SPECIAL_MOVE),
+                TRACE_J => self.special_transition_score(SPECIAL_J, SPECIAL_LOOP),
+                _ => panic!(),
+            },
+            TRACE_C => match state_to {
+                TRACE_T => self.special_transition_score(SPECIAL_C, SPECIAL_MOVE),
+                TRACE_C => self.special_transition_score(SPECIAL_C, SPECIAL_LOOP),
+                _ => panic!(),
+            },
+            _ => panic!(),
         };
     }
 

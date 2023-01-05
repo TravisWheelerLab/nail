@@ -115,12 +115,12 @@ impl Trace {
         profile: &Profile,
         target: &Sequence,
     ) -> anyhow::Result<()> {
-        let mut score: f32 = 0.0;
+        let mut bit_score: f32 = 0.0;
         let mut accuracy: f32 = 0.0;
 
         writeln!(
             out,
-            "st    p     t      transit emission postprob - traceback len {}",
+            "st   p     t      transit emission postprob - traceback len {}",
             self.length
         )?;
         writeln!(out, "--  ---- ------  -------- -------- --------")?;
@@ -128,12 +128,17 @@ impl Trace {
             let current_state = self.states[trace_idx];
             let current_residue = target.digital_bytes[self.target_idx[trace_idx]];
 
-            let transition_score = if trace_idx < self.sequence_length - 1 {
-                // TODO: this is a nasty thing to implement so i'm leaving it for now
-                0.0
+            let transition_score = if trace_idx < self.length - 1 {
+                profile.generic_transition_score(
+                    current_state,
+                    self.profile_idx[trace_idx],
+                    self.states[trace_idx + 1],
+                    self.profile_idx[trace_idx + 1],
+                )
             } else {
                 0.0
             };
+            bit_score += transition_score;
 
             write!(
                 out,
@@ -151,7 +156,8 @@ impl Trace {
                     profile.match_score(current_residue as usize, self.profile_idx[trace_idx])
                 )?;
 
-                score += profile.match_score(current_residue as usize, self.profile_idx[trace_idx]);
+                bit_score +=
+                    profile.match_score(current_residue as usize, self.profile_idx[trace_idx]);
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;
                 accuracy += self.posterior_probabilities[trace_idx];
             } else if current_state == TRACE_I {
@@ -161,9 +167,11 @@ impl Trace {
                     profile.insert_score(current_residue as usize, self.profile_idx[trace_idx])
                 )?;
 
-                score +=
+                bit_score +=
                     profile.insert_score(current_residue as usize, self.profile_idx[trace_idx]);
+
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;
+
                 accuracy += self.posterior_probabilities[trace_idx];
             } else if (current_state == TRACE_N && self.states[trace_idx - 1] == TRACE_N)
                 || (current_state == TRACE_C && self.states[trace_idx - 1] == TRACE_C)
@@ -174,14 +182,14 @@ impl Trace {
                 accuracy += self.posterior_probabilities[trace_idx];
             }
 
-            writeln!(out, " {}", AMINO_INVERSE_MAP[&current_residue])?;
+            writeln!(out, " {}", AMINO_INVERSE_MAP[&current_residue] as char)?;
         }
 
         writeln!(out, "                -------- -------- --------")?;
         writeln!(
             out,
             "                  total: {:8.4} {:8.4}\n",
-            score, accuracy
+            bit_score, accuracy
         )?;
 
         Ok(())
