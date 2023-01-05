@@ -42,6 +42,19 @@ impl LogAbuse for f32 {
     }
 }
 
+pub fn f32_vec_argmax(vec: &Vec<f32>) -> usize {
+    let mut max: f32 = vec[0];
+    let mut argmax: usize = 0;
+
+    for i in 1..vec.len() {
+        if vec[i] > max {
+            max = vec[i];
+            argmax = i;
+        }
+    }
+    argmax
+}
+
 pub fn max_of_f32_matrix(matrix: &Vec<Vec<f32>>) -> f32 {
     let mut max = 0.0;
     for row in matrix {

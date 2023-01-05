@@ -4,7 +4,8 @@ use nale::align::{backward, forward, optimal_accuracy, posterior, traceback};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, DpMatrix, Profile, Sequence, Trace};
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{stdout, BufWriter};
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -21,10 +22,10 @@ fn main() -> Result<()> {
     // println!("{:?}", args);
 
     let hmm_list = parse_hmms_from_p7hmm_file(args.query)?;
-    let seq_list = Sequence::from_fasta(args.target)?;
+    let seq_list = Sequence::amino_from_fasta(&args.target)?;
 
-    // println!("hmm count: {}", hmm_list.len());
     // println!("seq count: {}", seq_list.len());
+    // println!("hmm count: {}", hmm_list.len());
 
     for hmm_idx in 0..hmm_list.len() {
         let mut profile = Profile::new(&hmm_list[hmm_idx]);
@@ -65,17 +66,12 @@ fn main() -> Result<()> {
             let mut trace = Trace::new(profile.length, target.length);
             traceback(&profile, &posterior_matrix, &optimal_matrix, &mut trace);
 
-            let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
-            trace.dump(&mut trace_out, &profile, &target)?;
+            // let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
+            // trace.dump(&mut trace_out, &profile, &target)?;
 
             let alignment = Alignment::new(&trace, &profile, &target);
 
-            println!(
-                "{}\n{}\n{}\n",
-                &alignment.profile_string[0..80],
-                &alignment.middle_string[0..80],
-                &alignment.target_string[0..80]
-            );
+            alignment.dump(&mut stdout())?;
         }
     }
 

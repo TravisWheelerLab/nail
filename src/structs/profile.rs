@@ -1,5 +1,6 @@
 use crate::alphabet::{
-    AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, SPACE_UTF8,
+    AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
+    AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
 };
 use crate::structs::hmm::constants::{
     HMM_DELETE_TO_DELETE, HMM_DELETE_TO_MATCH, HMM_INSERT_TO_INSERT, HMM_INSERT_TO_MATCH,
@@ -7,7 +8,7 @@ use crate::structs::hmm::constants::{
 };
 use crate::structs::hmm::P7Alphabet;
 use crate::structs::Hmm;
-use crate::util::LogAbuse;
+use crate::util::{f32_vec_argmax, LogAbuse};
 
 use std::fmt;
 use std::fmt::Formatter;
@@ -64,6 +65,8 @@ pub mod constants {
 use constants::*;
 
 pub struct Profile {
+    /// The name of the profile
+    pub name: String,
     /// M: model length (number of nodes)
     pub length: usize,
     /// T: current target sequence length
@@ -89,6 +92,7 @@ pub struct Profile {
 impl Profile {
     pub fn new(hmm: &Hmm) -> Self {
         let mut profile = Profile {
+            name: hmm.header.name.clone(),
             length: hmm.header.model_length,
             target_length: 0,
             max_length: 0,
@@ -103,7 +107,7 @@ impl Profile {
             ],
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
-            consensus_sequence: vec![SPACE_UTF8],
+            consensus_sequence: vec![UTF8_SPACE],
             alphabet: P7Alphabet::Amino,
         };
 
@@ -165,17 +169,24 @@ impl Profile {
         // match scores
         for model_position_idx in 1..=profile.length {
             // the consensus residue is the match emission with the highest probability
-            // TODO: this should not be the case for single sequence models
-            let consensus_byte: u8 = hmm.model.match_probabilities[model_position_idx]
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.total_cmp(b))
-                .map(|(index, _)| index)
-                .unwrap() as u8;
+            // TODO: this should not be the case for single sequence model
+            // the argmax of this positions match probability vector will be the digital
+            // index of the residue that has the highest match emission probability
+            let match_probabilities_argmax: usize =
+                f32_vec_argmax(&hmm.model.match_probabilities[model_position_idx]);
+            let match_probabilities_max: f32 =
+                hmm.model.match_probabilities[model_position_idx][match_probabilities_argmax];
 
             profile
                 .consensus_sequence
-                .push(AMINO_INVERSE_MAP[&consensus_byte] as u8);
+                .push(if match_probabilities_max > 0.5 {
+                    // if the match emission probability for the residue is greater
+                    // than 0.50 (amino), we want to display it as a capital letter
+                    AMINO_INVERSE_MAP[&(match_probabilities_argmax as u8)]
+                } else {
+                    // otherwise, we want to display it as a lowercase letter
+                    AMINO_INVERSE_MAP_LOWER[&(match_probabilities_argmax as u8)]
+                });
 
             for alphabet_idx in 0..MAX_ALPHABET_SIZE {
                 // score is match ln(emission / background)

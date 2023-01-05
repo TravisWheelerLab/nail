@@ -126,7 +126,7 @@ impl Trace {
         writeln!(out, "--  ---- ------  -------- -------- --------")?;
         for trace_idx in 0..self.length {
             let current_state = self.states[trace_idx];
-            let current_residue = target.data[self.target_idx[trace_idx]];
+            let current_residue = target.digital_bytes[self.target_idx[trace_idx]];
 
             let transition_score = if trace_idx < self.sequence_length - 1 {
                 // TODO: this is a nasty thing to implement so i'm leaving it for now

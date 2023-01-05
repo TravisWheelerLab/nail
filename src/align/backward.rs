@@ -66,7 +66,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
 
     // main recursion
     for target_idx in (1..target.length).rev() {
-        let current_residue = target.data[target_idx + 1] as usize;
+        let current_residue = target.digital_bytes[target_idx + 1] as usize;
         dp_matrix.set_special(
             target_idx,
             SPECIAL_B,
@@ -194,7 +194,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         }
     }
 
-    let first_residue = target.data[1] as usize;
+    let first_residue = target.digital_bytes[1] as usize;
 
     dp_matrix.set_special(
         0,

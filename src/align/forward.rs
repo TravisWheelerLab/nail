@@ -28,7 +28,7 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
 
     // main recursion
     for target_idx in 1..=target.length {
-        let current_residue = target.data[target_idx];
+        let current_residue = target.digital_bytes[target_idx];
         let mut tmp_score: f32;
 
         dp_matrix.set_insert(target_idx, 0, -f32::INFINITY);
