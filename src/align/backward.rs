@@ -9,7 +9,6 @@ use crate::util::log_sum;
 
 pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
     let esc: f32 = 0.0;
-
     // initialize the L row
     dp_matrix.set_special(target.length, SPECIAL_J, -f32::INFINITY);
     dp_matrix.set_special(target.length, SPECIAL_B, -f32::INFINITY);

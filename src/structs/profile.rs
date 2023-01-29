@@ -259,11 +259,11 @@ impl Profile {
     /// Semantically, this means we are disallowing "impossible state paths" during posterior traceback.
     #[inline(always)]
     pub fn transition_score_delta(&self, transition_idx: usize, profile_idx: usize) -> f32 {
-        return if self.transitions[profile_idx][transition_idx] == -f32::INFINITY {
+        if self.transitions[profile_idx][transition_idx] == -f32::INFINITY {
             f32::MIN_POSITIVE
         } else {
             1.0
-        };
+        }
     }
 
     #[inline(always)]
@@ -277,11 +277,11 @@ impl Profile {
     /// Semantically, this means we are disallowing "impossible state paths" during posterior traceback.
     #[inline(always)]
     pub fn special_transition_score_delta(&self, state_idx: usize, transition_idx: usize) -> f32 {
-        return if self.special_transitions[state_idx][transition_idx] == -f32::INFINITY {
+        if self.special_transitions[state_idx][transition_idx] == -f32::INFINITY {
             f32::MIN_POSITIVE
         } else {
             1.0
-        };
+        }
     }
 
     pub fn generic_transition_score(
@@ -291,7 +291,7 @@ impl Profile {
         state_to: usize,
         idx_to: usize,
     ) -> f32 {
-        return match state_from {
+        match state_from {
             TRACE_S | TRACE_T => 0.0,
             TRACE_N => match state_to {
                 TRACE_B => self.special_transition_score(SPECIAL_N, SPECIAL_MOVE),
@@ -336,7 +336,7 @@ impl Profile {
                 _ => panic!(),
             },
             _ => panic!(),
-        };
+        }
     }
 
     /// Sets the length of the current target sequence to which the profile will be aligned.
@@ -364,10 +364,6 @@ impl Profile {
         self.special_transitions[SPECIAL_N][SPECIAL_MOVE] = move_score;
         self.special_transitions[SPECIAL_J][SPECIAL_MOVE] = move_score;
         self.special_transitions[SPECIAL_C][SPECIAL_MOVE] = move_score;
-    }
-
-    pub fn dump(&self, out: &mut impl Write) -> Result<()> {
-        todo!()
     }
 }
 

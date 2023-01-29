@@ -80,7 +80,7 @@ impl DpMatrix {
         let first_column_width = target_idx_width + 3;
         // TODO: should these be global statics or something?
         let column_width = 13;
-        let precision = 8;
+        let precision = 3;
 
         // write the profile indices
         write!(out, "{}", " ".repeat(first_column_width - 1))?;

@@ -6,6 +6,7 @@ use crate::structs::profile::constants::{
 };
 use crate::structs::{DpMatrix, Profile, Sequence};
 use crate::util::log_sum;
+
 pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
     let esc: f32 = 0.0;
 
@@ -28,8 +29,7 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
 
     // main recursion
     for target_idx in 1..=target.length {
-        let current_residue = target.digital_bytes[target_idx];
-        let mut tmp_score: f32;
+        let current_target_character = target.digital_bytes[target_idx];
 
         dp_matrix.set_insert(target_idx, 0, -f32::INFINITY);
         dp_matrix.set_match(target_idx, 0, -f32::INFINITY);
@@ -38,39 +38,35 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
 
         for profile_idx in 1..profile.length {
             // match state
-            tmp_score = log_sum(
-                log_sum(
-                    dp_matrix.get_match(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(PROFILE_MATCH_TO_MATCH, profile_idx - 1),
-                    dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(PROFILE_INSERT_TO_MATCH, profile_idx - 1),
-                ),
-                log_sum(
-                    dp_matrix.get_special(target_idx - 1, SPECIAL_B)
-                        + profile.transition_score(PROFILE_BEGIN_TO_MATCH, profile_idx - 1),
-                    dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(PROFILE_DELETE_TO_MATCH, profile_idx - 1),
-                ),
-            );
-
             dp_matrix.set_match(
                 target_idx,
                 profile_idx,
-                tmp_score + profile.match_score(current_residue as usize, profile_idx),
-            );
-
-            tmp_score = log_sum(
-                dp_matrix.get_match(target_idx - 1, profile_idx)
-                    + profile.transition_score(PROFILE_MATCH_TO_INSERT, profile_idx),
-                dp_matrix.get_insert(target_idx - 1, profile_idx)
-                    + profile.transition_score(PROFILE_INSERT_TO_INSERT, profile_idx),
+                log_sum(
+                    log_sum(
+                        dp_matrix.get_match(target_idx - 1, profile_idx - 1)
+                            + profile.transition_score(PROFILE_MATCH_TO_MATCH, profile_idx - 1),
+                        dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
+                            + profile.transition_score(PROFILE_INSERT_TO_MATCH, profile_idx - 1),
+                    ),
+                    log_sum(
+                        dp_matrix.get_special(target_idx - 1, SPECIAL_B)
+                            + profile.transition_score(PROFILE_BEGIN_TO_MATCH, profile_idx - 1),
+                        dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
+                            + profile.transition_score(PROFILE_DELETE_TO_MATCH, profile_idx - 1),
+                    ),
+                ) + profile.match_score(current_target_character as usize, profile_idx),
             );
 
             // insert state
             dp_matrix.set_insert(
                 target_idx,
                 profile_idx,
-                tmp_score + profile.insert_score(current_residue as usize, profile_idx),
+                log_sum(
+                    dp_matrix.get_match(target_idx - 1, profile_idx)
+                        + profile.transition_score(PROFILE_MATCH_TO_INSERT, profile_idx),
+                    dp_matrix.get_insert(target_idx - 1, profile_idx)
+                        + profile.transition_score(PROFILE_INSERT_TO_INSERT, profile_idx),
+                ) + profile.insert_score(current_target_character as usize, profile_idx),
             );
 
             // delete state
@@ -100,25 +96,23 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
         }
 
         // unrolled match state match[M]
-        tmp_score = log_sum(
-            log_sum(
-                dp_matrix.get_match(target_idx - 1, profile.length - 1)
-                    + profile.transition_score(PROFILE_MATCH_TO_MATCH, profile.length - 1),
-                dp_matrix.get_insert(target_idx - 1, profile.length - 1)
-                    + profile.transition_score(PROFILE_INSERT_TO_MATCH, profile.length - 1),
-            ),
-            log_sum(
-                dp_matrix.get_special(target_idx - 1, SPECIAL_B)
-                    + profile.transition_score(PROFILE_BEGIN_TO_MATCH, profile.length - 1),
-                dp_matrix.get_delete(target_idx - 1, profile.length - 1)
-                    + profile.transition_score(PROFILE_DELETE_TO_MATCH, profile.length - 1),
-            ),
-        );
-
         dp_matrix.set_match(
             target_idx,
             profile.length,
-            tmp_score + profile.match_score(current_residue as usize, profile.length),
+            log_sum(
+                log_sum(
+                    dp_matrix.get_match(target_idx - 1, profile.length - 1)
+                        + profile.transition_score(PROFILE_MATCH_TO_MATCH, profile.length - 1),
+                    dp_matrix.get_insert(target_idx - 1, profile.length - 1)
+                        + profile.transition_score(PROFILE_INSERT_TO_MATCH, profile.length - 1),
+                ),
+                log_sum(
+                    dp_matrix.get_special(target_idx - 1, SPECIAL_B)
+                        + profile.transition_score(PROFILE_BEGIN_TO_MATCH, profile.length - 1),
+                    dp_matrix.get_delete(target_idx - 1, profile.length - 1)
+                        + profile.transition_score(PROFILE_DELETE_TO_MATCH, profile.length - 1),
+                ),
+            ) + profile.match_score(current_target_character as usize, profile.length),
         );
 
         // unrolled insert state insert[M]

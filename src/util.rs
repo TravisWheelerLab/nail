@@ -24,7 +24,34 @@ impl PrintMe for i32 {
 
 impl PrintMe for f32 {
     fn print(&self) {
-        println!("{:.8}", self)
+        println!("{:.3}", self)
+    }
+}
+
+impl PrintMe for Vec<usize> {
+    fn print(&self) {
+        for value in self {
+            print!("{:8.3} ", value)
+        }
+        println!();
+    }
+}
+
+impl PrintMe for Vec<f32> {
+    fn print(&self) {
+        for value in self {
+            print!("{:8.3} ", value)
+        }
+        println!();
+    }
+}
+
+impl PrintMe for &[f32] {
+    fn print(&self) {
+        for i in 0..self.len() {
+            print!("{:8.3} ", self[i])
+        }
+        println!();
     }
 }
 
@@ -34,11 +61,11 @@ pub trait LogAbuse {
 
 impl LogAbuse for f32 {
     fn ln_or_inf(self) -> f32 {
-        return if self == 0.0 {
+        if self == 0.0 {
             -f32::INFINITY
         } else {
             self.ln()
-        };
+        }
     }
 }
 
@@ -111,9 +138,20 @@ pub fn log_sum(a: f32, b: f32) -> f32 {
         panic!("b is +inf in log_sum");
     }
 
-    return if min == -f32::INFINITY || max - min >= 15.7 {
+    if min == -f32::INFINITY || max - min >= 15.7 {
         max
     } else {
         max + LOGSUM_LOOKUP[((max - min) * LOGSUM_SCALE) as usize]
-    };
+    }
+}
+
+#[macro_export]
+macro_rules! log_sum {
+    // Base case:
+    ($x:expr) => ($x);
+    // `$x` followed by at least one `$y,`
+    ($x:expr, $($y:expr),+) => (
+        // Call `log_sum!` on the tail `$y`
+        log_sum($x, log_sum!($($y),+))
+    )
 }
