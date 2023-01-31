@@ -5,7 +5,7 @@ use crate::structs::profile::constants::{
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
 use crate::structs::{DpMatrix, Profile, Sequence};
-use crate::util::log_sum;
+use crate::util::log_add;
 
 pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
     let esc: f32 = 0.0;
@@ -44,7 +44,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         dp_matrix.set_match(
             target.length,
             profile_idx,
-            log_sum(
+            log_add(
                 dp_matrix.get_special(target.length, SPECIAL_E) + esc,
                 dp_matrix.get_delete(target.length, profile_idx + 1)
                     + profile.transition_score(PROFILE_MATCH_TO_DELETE, profile_idx),
@@ -55,7 +55,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         dp_matrix.set_delete(
             target.length,
             profile_idx,
-            log_sum(
+            log_add(
                 dp_matrix.get_special(target.length, SPECIAL_E) + esc,
                 dp_matrix.get_delete(target.length, profile_idx + 1)
                     + profile.transition_score(PROFILE_DELETE_TO_DELETE, profile_idx),
@@ -81,7 +81,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
             dp_matrix.set_special(
                 target_idx,
                 SPECIAL_B,
-                log_sum(
+                log_add(
                     dp_matrix.get_special(target_idx, SPECIAL_B),
                     dp_matrix.get_match(target_idx + 1, profile_idx)
                         + profile.transition_score(PROFILE_BEGIN_TO_MATCH, profile_idx - 1)
@@ -93,7 +93,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         dp_matrix.set_special(
             target_idx,
             SPECIAL_J,
-            log_sum(
+            log_add(
                 dp_matrix.get_special(target_idx + 1, SPECIAL_J)
                     + profile.special_transition_score(SPECIAL_J, SPECIAL_LOOP),
                 dp_matrix.get_special(target_idx, SPECIAL_B)
@@ -111,7 +111,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         dp_matrix.set_special(
             target_idx,
             SPECIAL_E,
-            log_sum(
+            log_add(
                 dp_matrix.get_special(target_idx, SPECIAL_J)
                     + profile.special_transition_score(SPECIAL_E, SPECIAL_LOOP),
                 dp_matrix.get_special(target_idx, SPECIAL_C)
@@ -122,7 +122,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         dp_matrix.set_special(
             target_idx,
             SPECIAL_N,
-            log_sum(
+            log_add(
                 dp_matrix.get_special(target_idx + 1, SPECIAL_N)
                     + profile.special_transition_score(SPECIAL_N, SPECIAL_LOOP),
                 dp_matrix.get_special(target_idx, SPECIAL_B)
@@ -146,8 +146,8 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
             dp_matrix.set_match(
                 target_idx,
                 profile_idx,
-                log_sum(
-                    log_sum(
+                log_add(
+                    log_add(
                         dp_matrix.get_match(target_idx + 1, profile_idx + 1)
                             + profile.transition_score(PROFILE_MATCH_TO_MATCH, profile_idx)
                             + profile.match_score(current_residue, profile_idx + 1),
@@ -155,7 +155,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
                             + profile.transition_score(PROFILE_MATCH_TO_INSERT, profile_idx)
                             + profile.insert_score(current_residue, profile_idx),
                     ),
-                    log_sum(
+                    log_add(
                         dp_matrix.get_special(target_idx, SPECIAL_E) + esc,
                         dp_matrix.get_delete(target_idx, profile_idx + 1)
                             + profile.transition_score(PROFILE_MATCH_TO_DELETE, profile_idx),
@@ -166,7 +166,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
             dp_matrix.set_insert(
                 target_idx,
                 profile_idx,
-                log_sum(
+                log_add(
                     dp_matrix.get_match(target_idx + 1, profile_idx + 1)
                         + profile.transition_score(PROFILE_INSERT_TO_MATCH, profile_idx)
                         + profile.match_score(current_residue, profile_idx + 1),
@@ -179,11 +179,11 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
             dp_matrix.set_delete(
                 target_idx,
                 profile_idx,
-                log_sum(
+                log_add(
                     dp_matrix.get_match(target_idx + 1, profile_idx + 1)
                         + profile.transition_score(PROFILE_DELETE_TO_MATCH, profile_idx)
                         + profile.match_score(current_residue, profile_idx + 1),
-                    log_sum(
+                    log_add(
                         dp_matrix.get_delete(target_idx, profile_idx + 1)
                             + profile.transition_score(PROFILE_DELETE_TO_DELETE, profile_idx),
                         dp_matrix.get_special(target_idx, SPECIAL_E) + esc,
@@ -207,7 +207,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
         dp_matrix.set_special(
             0,
             SPECIAL_B,
-            log_sum(
+            log_add(
                 dp_matrix.get_special(0, SPECIAL_B),
                 dp_matrix.get_match(1, profile_idx)
                     + profile.transition_score(PROFILE_BEGIN_TO_MATCH, profile_idx - 1)
@@ -222,7 +222,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) 
     dp_matrix.set_special(
         0,
         SPECIAL_N,
-        log_sum(
+        log_add(
             dp_matrix.get_special(1, SPECIAL_N)
                 + profile.special_transition_score(SPECIAL_N, SPECIAL_LOOP),
             dp_matrix.get_special(0, SPECIAL_B)

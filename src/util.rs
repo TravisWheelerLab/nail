@@ -122,7 +122,7 @@ pub fn log_sum_table_dump() {
 
 /// A fast, table driven approximation of the sum of two floats in log space.
 #[inline(always)]
-pub fn log_sum(a: f32, b: f32) -> f32 {
+pub fn log_add(a: f32, b: f32) -> f32 {
     let min = f32::min(a, b);
     let max = f32::max(a, b);
 
@@ -152,6 +152,17 @@ macro_rules! log_sum {
     // `$x` followed by at least one `$y,`
     ($x:expr, $($y:expr),+) => (
         // Call `log_sum!` on the tail `$y`
-        log_sum($x, log_sum!($($y),+))
+        log_add($x, log_sum!($($y),+))
+    )
+}
+
+#[macro_export]
+macro_rules! max_f32 {
+    // Base case:
+    ($x:expr) => ($x);
+    // `$x` followed by at least one `$y,`
+    ($x:expr, $($y:expr),+) => (
+        // Call `max_f32!` on the tail `$y`
+        $x.max(max_f32!($($y),+))
     )
 }

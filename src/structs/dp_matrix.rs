@@ -15,24 +15,14 @@ pub struct DpMatrix {
 
 impl DpMatrix {
     pub fn new(profile_length: usize, target_length: usize) -> Self {
-        let mut matrix = DpMatrix {
+        DpMatrix {
             profile_length,
             target_length,
-            insert_matrix: vec![vec![0.0; profile_length + 1]; target_length + 1],
-            match_matrix: vec![vec![0.0; profile_length + 1]; target_length + 1],
-            delete_matrix: vec![vec![0.0; profile_length + 1]; target_length + 1],
-            special_matrix: vec![vec![0.0; 5]; target_length + 1],
-        };
-
-        for i in 0..=target_length {
-            matrix.set_match(i, 0, -f32::INFINITY);
-            matrix.set_insert(i, 0, -f32::INFINITY);
-            matrix.set_insert(i, profile_length, -f32::INFINITY);
-            matrix.set_delete(i, 0, -f32::INFINITY);
-            matrix.set_delete(i, 1, -f32::INFINITY);
+            insert_matrix: vec![vec![-f32::INFINITY; profile_length + 1]; target_length + 1],
+            match_matrix: vec![vec![-f32::INFINITY; profile_length + 1]; target_length + 1],
+            delete_matrix: vec![vec![-f32::INFINITY; profile_length + 1]; target_length + 1],
+            special_matrix: vec![vec![-f32::INFINITY; 5]; target_length + 1],
         }
-
-        matrix
     }
 
     #[inline(always)]
