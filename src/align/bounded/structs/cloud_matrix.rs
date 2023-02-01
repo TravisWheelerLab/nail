@@ -16,6 +16,14 @@ impl CloudAntiDiagonal {
             delete_vector: vec![-f32::INFINITY; length + 2],
         }
     }
+
+    pub fn reuse(&mut self) {
+        for i in 0..self.match_vector.len() {
+            self.match_vector[i] = -f32::INFINITY;
+            self.insert_vector[i] = -f32::INFINITY;
+            self.delete_vector[i] = -f32::INFINITY;
+        }
+    }
 }
 
 #[derive(Default)]
@@ -33,6 +41,12 @@ impl CloudMatrix {
                 CloudAntiDiagonal::new(length),
             ],
         }
+    }
+
+    pub fn reuse(&mut self) {
+        self.data[0].reuse();
+        self.data[1].reuse();
+        self.data[2].reuse();
     }
 
     pub fn print(&self) {

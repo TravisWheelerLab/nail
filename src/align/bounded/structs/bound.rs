@@ -25,7 +25,7 @@ impl CloudBound {
 impl PrintMe for CloudBound {
     fn print(&self) {
         println!(
-            "{}-{} : {}-{}",
+            "{},{} : {},{}",
             self.left_target_idx,
             self.left_profile_idx,
             self.right_target_idx,
