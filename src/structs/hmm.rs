@@ -21,34 +21,34 @@ pub mod constants {
 }
 
 // local constants for parsing flags
-const P7_HEADER_FORMAT_FLAG: &'static str = "HMMER3/f";
-const P7_HEADER_NAME_FLAG: &'static str = "NAME";
-const P7_HEADER_ACCESSION_FLAG: &'static str = "ACC";
-const P7_HEADER_DESCRIPTION_FLAG: &'static str = "DESC";
-const P7_HEADER_LENGTH_FLAG: &'static str = "LENG";
-const P7_HEADER_MAXL_FLAG: &'static str = "MAXL";
-const P7_HEADER_ALPHABET_FLAG: &'static str = "ALPH";
-const P7_HEADER_REFERENCE_FLAG: &'static str = "RF";
-const P7_HEADER_MASK_FLAG: &'static str = "MM";
-const P7_HEADER_CONSENSUS_RESIDUE_FLAG: &'static str = "CONS";
-const P7_HEADER_CONSENSUS_STRUCTURE_FLAG: &'static str = "CS";
-const P7_HEADER_MAP_FLAG: &'static str = "MAP";
-const P7_HEADER_DATE_FLAG: &'static str = "DATE";
-const P7_HEADER_COMMAND_FLAG: &'static str = "COM";
-const P7_HEADER_NSEQ_FLAG: &'static str = "NSEQ";
-const P7_HEADER_EFFN_FLAG: &'static str = "EFFN";
-const P7_HEADER_CHECKSUM_FLAG: &'static str = "CKSUM";
-const P7_HEADER_GATHERING_FLAG: &'static str = "GA";
-const P7_HEADER_TRUSTED_FLAG: &'static str = "TC";
-const P7_HEADER_NOISE_FLAG: &'static str = "NC";
-const P7_HEADER_STATS_FLAG: &'static str = "STATS";
-const P7_HEADER_STATS_MSV_FLAG: &'static str = "MSV";
-const P7_HEADER_STATS_VITERBI_FLAG: &'static str = "VITERBI";
-const P7_HEADER_STATS_FORWARD_FLAG: &'static str = "FORWARD";
+const P7_HEADER_FORMAT_FLAG: &str = "HMMER3/f";
+const P7_HEADER_NAME_FLAG: &str = "NAME";
+const P7_HEADER_ACCESSION_FLAG: &str = "ACC";
+const P7_HEADER_DESCRIPTION_FLAG: &str = "DESC";
+const P7_HEADER_LENGTH_FLAG: &str = "LENG";
+const P7_HEADER_MAXL_FLAG: &str = "MAXL";
+const P7_HEADER_ALPHABET_FLAG: &str = "ALPH";
+const P7_HEADER_REFERENCE_FLAG: &str = "RF";
+const P7_HEADER_MASK_FLAG: &str = "MM";
+const P7_HEADER_CONSENSUS_RESIDUE_FLAG: &str = "CONS";
+const P7_HEADER_CONSENSUS_STRUCTURE_FLAG: &str = "CS";
+const P7_HEADER_MAP_FLAG: &str = "MAP";
+const P7_HEADER_DATE_FLAG: &str = "DATE";
+const P7_HEADER_COMMAND_FLAG: &str = "COM";
+const P7_HEADER_NSEQ_FLAG: &str = "NSEQ";
+const P7_HEADER_EFFN_FLAG: &str = "EFFN";
+const P7_HEADER_CHECKSUM_FLAG: &str = "CKSUM";
+const P7_HEADER_GATHERING_FLAG: &str = "GA";
+const P7_HEADER_TRUSTED_FLAG: &str = "TC";
+const P7_HEADER_NOISE_FLAG: &str = "NC";
+const P7_HEADER_STATS_FLAG: &str = "STATS";
+const P7_HEADER_STATS_MSV_FLAG: &str = "MSV";
+const P7_HEADER_STATS_VITERBI_FLAG: &str = "VITERBI";
+const P7_HEADER_STATS_FORWARD_FLAG: &str = "FORWARD";
 
-const P7_BODY_HMM_MODEL_START_FLAG: &'static str = "HMM";
-const P7_BODY_COMPO_FLAG: &'static str = "COMPO";
-const P7_BODY_END_FLAG: &'static str = "//";
+const P7_BODY_HMM_MODEL_START_FLAG: &str = "HMM";
+const P7_BODY_COMPO_FLAG: &str = "COMPO";
+const P7_BODY_END_FLAG: &str = "//";
 
 // this static regex is used to find float strings
 lazy_static! {

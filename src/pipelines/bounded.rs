@@ -12,8 +12,8 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
 
             cloud_search_params.target_start = 1;
             cloud_search_params.profile_start = 1;
-            cloud_search_params.target_end = target.length - 1;
-            cloud_search_params.profile_end = profile.length - 1;
+            cloud_search_params.target_end = target.length;
+            cloud_search_params.profile_end = profile.length;
 
             let mut cloud_matrix = CloudMatrix::new(profile.length, target.length);
             cloud_search(profile, target, &mut cloud_matrix, &cloud_search_params)?;
