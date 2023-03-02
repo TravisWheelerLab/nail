@@ -126,17 +126,10 @@ pub fn log_add(a: f32, b: f32) -> f32 {
     let min = f32::min(a, b);
     let max = f32::max(a, b);
 
-    // TODO: we probably don't want these guards here for release
-    //       but maybe we'll use scaling instead of log space, so it might not matter
-    if a.is_nan() {
-        panic!("a is nan in log_sum");
-    } else if a == f32::INFINITY {
-        panic!("a is +inf in log_sum");
-    } else if b.is_nan() {
-        panic!("b is nan in log_sum");
-    } else if b == f32::INFINITY {
-        panic!("b is +inf in log_sum");
-    }
+    debug_assert!(!a.is_nan());
+    debug_assert!(!b.is_nan());
+    debug_assert!(!a.is_sign_positive() || a.is_finite());
+    debug_assert!(!b.is_sign_positive() || b.is_finite());
 
     if min == -f32::INFINITY || max - min >= 15.7 {
         max
