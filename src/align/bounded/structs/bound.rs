@@ -45,15 +45,20 @@ impl CloudBound {
 
 pub struct CloudBoundGroup {
     pub bounds: Vec<CloudBound>,
+    pub target_length: usize,
+    pub profile_length: usize,
     pub size: usize,
     pub min_anti_diagonal_idx: usize,
     pub max_anti_diagonal_idx: usize,
 }
 
 impl CloudBoundGroup {
-    pub fn new(size: usize) -> Self {
+    pub fn new(target_length: usize, profile_length: usize) -> Self {
+        let size = target_length + profile_length + 1;
         Self {
             bounds: vec![CloudBound::default(); size],
+            target_length,
+            profile_length,
             size,
             min_anti_diagonal_idx: size,
             max_anti_diagonal_idx: 0,
@@ -65,12 +70,13 @@ impl CloudBoundGroup {
         self.size = new_size;
     }
 
-    pub fn reuse(&mut self, size: usize) {
-        if size > self.size {
-            self.resize(size);
+    pub fn reuse(&mut self, target_length: usize, profile_length: usize) {
+        let new_size = target_length + profile_length + 1;
+        if new_size > self.size {
+            self.resize(new_size);
         }
 
-        self.min_anti_diagonal_idx = size;
+        self.min_anti_diagonal_idx = new_size;
         self.max_anti_diagonal_idx = 0;
 
         for bound in self.bounds.iter_mut() {
@@ -89,8 +95,15 @@ impl CloudBoundGroup {
         right_target_idx: usize,
         right_profile_idx: usize,
     ) {
+        // TODO: I don't think there's much point to setting these here
         self.min_anti_diagonal_idx = self.min_anti_diagonal_idx.min(anti_diagonal_idx);
         self.max_anti_diagonal_idx = self.max_anti_diagonal_idx.max(anti_diagonal_idx);
+
+        debug_assert_eq!(
+            left_target_idx + left_profile_idx,
+            right_target_idx + right_profile_idx
+        );
+
         let bound = &mut self.bounds[anti_diagonal_idx];
         bound.left_target_idx = left_target_idx;
         bound.left_profile_idx = left_profile_idx;
@@ -104,6 +117,64 @@ impl CloudBoundGroup {
 
     pub fn get_mut(&mut self, idx: usize) -> &mut CloudBound {
         &mut self.bounds[idx]
+    }
+
+    pub fn get_first(&self) -> &CloudBound {
+        self.get(self.min_anti_diagonal_idx)
+    }
+
+    pub fn get_last(&self) -> &CloudBound {
+        self.get(self.max_anti_diagonal_idx)
+    }
+
+    pub fn cloud_size(&self) -> usize {
+        let mut cloud_size = 0usize;
+        for bound in self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx].iter() {
+            cloud_size += bound.left_target_idx - bound.right_target_idx;
+        }
+        cloud_size
+    }
+
+    pub fn trim_wings(&mut self) {
+        for anti_diagonal_idx in self.min_anti_diagonal_idx + 1..=self.max_anti_diagonal_idx {
+            let previous_bound = self.get(anti_diagonal_idx - 1);
+            let current_bound = self.get(anti_diagonal_idx);
+
+            let right_distance = previous_bound
+                .right_target_idx
+                .saturating_sub(current_bound.right_target_idx);
+
+            let left_distance =
+                (previous_bound.left_profile_idx).saturating_sub(current_bound.left_profile_idx);
+
+            self.set(
+                anti_diagonal_idx,
+                current_bound.left_target_idx - left_distance,
+                current_bound.left_profile_idx + left_distance,
+                current_bound.right_target_idx + right_distance,
+                current_bound.right_profile_idx - right_distance,
+            )
+        }
+
+        for anti_diagonal_idx in (self.min_anti_diagonal_idx..self.max_anti_diagonal_idx).rev() {
+            let previous_bound = self.get(anti_diagonal_idx + 1);
+            let current_bound = self.get(anti_diagonal_idx);
+
+            let right_distance = current_bound
+                .right_profile_idx
+                .saturating_sub(previous_bound.right_profile_idx);
+
+            let left_distance =
+                (current_bound.left_target_idx).saturating_sub(previous_bound.left_target_idx);
+
+            self.set(
+                anti_diagonal_idx,
+                current_bound.left_target_idx - left_distance,
+                current_bound.left_profile_idx + left_distance,
+                current_bound.right_target_idx + right_distance,
+                current_bound.right_profile_idx - right_distance,
+            )
+        }
     }
 }
 
@@ -161,10 +232,10 @@ impl PrintMe for CloudBound {
     fn print(&self) {
         println!(
             "{},{} : {},{}",
-            self.left_profile_idx,
             self.left_target_idx,
+            self.left_profile_idx,
+            self.right_target_idx,
             self.right_profile_idx,
-            self.right_target_idx
         );
     }
 }

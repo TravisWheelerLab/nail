@@ -1,5 +1,5 @@
 use crate::align::bounded::structs::bound::{join_bounds, CloudBoundGroup};
-use crate::align::bounded::structs::{CloudBound, CloudMatrix, CloudSearchParams};
+use crate::align::bounded::structs::{CloudBound, CloudMatrixLinear, CloudSearchParams};
 use crate::structs::profile::constants::{
     PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH, PROFILE_INSERT_TO_INSERT,
     PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE, PROFILE_MATCH_TO_INSERT,
@@ -17,7 +17,7 @@ use std::io::BufWriter;
 pub fn compute_forward_cell(
     target: &Sequence,
     profile: &Profile,
-    cloud_matrix: &mut CloudMatrix,
+    cloud_matrix: &mut CloudMatrixLinear,
     cloud_matrix_row_idx: usize,
     target_idx: usize,
     profile_idx: usize,
@@ -62,10 +62,11 @@ pub fn compute_forward_cell(
 
     // insert state
     //
-    // in the classic orientation, the insert state depends
-    // on the cell above i.e. (row_idx - 1, profile_idx)
+    //  - S    >   - -
+    //  - *    >   - S
+    //         >   - *
     //
-    // here, it's actually the same
+
     source_row_idx = (cloud_matrix_row_idx + 2) % 3;
     cloud_matrix.set_insert(
         cloud_matrix_row_idx,
@@ -80,10 +81,10 @@ pub fn compute_forward_cell(
 
     // delete state
     //
-    // in the classic orientation, the insert state depends
-    // on the cell to the left i.e. (row_idx, profile_idx - 1)
+    //  - -    >   - -
+    //  S *    >   S -
+    //         >   - *
     //
-    // here, it's going to be the upper left
     source_row_idx = (cloud_matrix_row_idx + 2) % 3;
     source_profile_idx = profile_idx - 1;
     cloud_matrix.set_delete(
@@ -118,7 +119,7 @@ pub fn compute_forward_cell(
 pub fn compute_backward_cell(
     target: &Sequence,
     profile: &Profile,
-    cloud_matrix: &mut CloudMatrix,
+    cloud_matrix: &mut CloudMatrixLinear,
     cloud_matrix_row_idx: usize,
     target_idx: usize,
     profile_idx: usize,
@@ -228,7 +229,7 @@ pub fn compute_backward_cell(
 #[inline]
 pub fn prune_and_scrub(
     bound: &mut CloudBound,
-    cloud_matrix: &mut CloudMatrix,
+    cloud_matrix: &mut CloudMatrixLinear,
     row_idx: usize,
     alpha: f32,
     beta: f32,
@@ -288,11 +289,11 @@ pub fn prune_and_scrub(
 pub fn cloud_search_forward(
     profile: &Profile,
     target: &Sequence,
-    cloud_matrix: &mut CloudMatrix,
+    cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut CloudBoundGroup,
 ) -> Result<()> {
-    let mut debug = DpMatrix::new(profile.length, target.length);
+    let mut debug = DpMatrix::new(target.length, profile.length);
 
     debug.set_match(params.profile_start, params.target_start, 0.0);
     debug.set_insert(params.profile_start, params.target_start, 0.0);
@@ -364,7 +365,7 @@ pub fn cloud_search_forward(
     //  - compute the next full anti-diagonal
     //  - prune with max-in-anti-diagonal rule: discard any value < max_in_current_diagonal - alpha (default: alpha = 12)
     //  - prune with x-drop rule: discard anything value < max_in_all_diagonals - beta (default: beta = 20)
-    for anti_diagonal_idx in gamma_anti_diagonal_idx..max_anti_diagonal_idx {
+    for anti_diagonal_idx in gamma_anti_diagonal_idx..=max_anti_diagonal_idx {
         let previous_bound = bounds.get(anti_diagonal_idx - 1);
 
         if previous_bound.was_pruned() {
@@ -425,8 +426,8 @@ pub fn cloud_search_forward(
         );
     }
 
-    let mut debug_out = BufWriter::new(File::create("./cloud-forward.mtx")?);
-    debug.dump(&mut debug_out)?;
+    // let mut debug_out = BufWriter::new(File::create("./cloud-forward.mtx")?);
+    // debug.dump(&mut debug_out)?;
 
     Ok(())
 }
@@ -434,11 +435,11 @@ pub fn cloud_search_forward(
 pub fn cloud_search_backward(
     profile: &Profile,
     target: &Sequence,
-    cloud_matrix: &mut CloudMatrix,
+    cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut CloudBoundGroup,
 ) -> Result<()> {
-    let mut debug = DpMatrix::new(profile.length, target.length);
+    let mut debug = DpMatrix::new(target.length, profile.length);
 
     debug.set_match(params.profile_end, params.target_end, 0.0);
     debug.set_insert(params.profile_end, params.target_end, 0.0);
@@ -517,7 +518,6 @@ pub fn cloud_search_backward(
         );
 
         let current_bound = bounds.get_mut(anti_diagonal_idx);
-
         // edge guards
         if current_bound.left_profile_idx > 1 {
             // if we haven't hit the start of the target (top row),
@@ -565,8 +565,8 @@ pub fn cloud_search_backward(
         );
     }
 
-    let mut debug_out = BufWriter::new(File::create("./cloud-backward.mtx")?);
-    debug.dump(&mut debug_out)?;
+    // let mut debug_out = BufWriter::new(File::create("./cloud-backward.mtx")?);
+    // debug.dump(&mut debug_out)?;
 
     Ok(())
 }
@@ -574,26 +574,27 @@ pub fn cloud_search_backward(
 pub fn cloud_search(
     profile: &Profile,
     target: &Sequence,
-    cloud_matrix: &mut CloudMatrix,
+    cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
 ) -> Result<CloudBoundGroup> {
-    let mut forward_bounds = CloudBoundGroup::new(target.length + profile.length);
+    let mut forward_bounds = CloudBoundGroup::new(target.length, profile.length);
     cloud_search_forward(profile, target, cloud_matrix, params, &mut forward_bounds)?;
 
-    let mut forward_json_out = BufWriter::new(File::create("./fwd.json")?);
-    forward_bounds.soda_json(&mut forward_json_out)?;
+    // let mut forward_json_out = BufWriter::new(File::create("./fwd.json")?);
+    // forward_bounds.soda_json(&mut forward_json_out)?;
 
     cloud_matrix.reuse();
-    let mut backward_bounds = CloudBoundGroup::new(target.length + profile.length);
+    let mut backward_bounds = CloudBoundGroup::new(target.length, profile.length);
     cloud_search_backward(profile, target, cloud_matrix, params, &mut backward_bounds)?;
 
-    let mut backward_json_out = BufWriter::new(File::create("./bwd.json")?);
-    backward_bounds.soda_json(&mut backward_json_out)?;
+    // let mut backward_json_out = BufWriter::new(File::create("./bwd.json")?);
+    // backward_bounds.soda_json(&mut backward_json_out)?;
 
     join_bounds(&mut forward_bounds, &backward_bounds)?;
+    forward_bounds.trim_wings();
 
-    let mut bounds_json_out = BufWriter::new(File::create("./joined.json")?);
-    forward_bounds.soda_json(&mut bounds_json_out)?;
+    // let mut bounds_json_out = BufWriter::new(File::create("./joined.json")?);
+    // forward_bounds.soda_json(&mut bounds_json_out)?;
 
     Ok(forward_bounds)
 }

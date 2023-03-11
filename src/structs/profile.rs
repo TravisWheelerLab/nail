@@ -11,7 +11,7 @@ use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
 use crate::structs::Hmm;
-use crate::util::{f32_vec_argmax, LogAbuse};
+use crate::util::{f32_vec_argmax, LogAbuse, PrintMe};
 
 use std::fmt;
 use std::fmt::Formatter;

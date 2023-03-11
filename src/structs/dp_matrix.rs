@@ -14,7 +14,7 @@ pub struct DpMatrix {
 }
 
 impl DpMatrix {
-    pub fn new(profile_length: usize, target_length: usize) -> Self {
+    pub fn new(target_length: usize, profile_length: usize) -> Self {
         DpMatrix {
             profile_length,
             target_length,

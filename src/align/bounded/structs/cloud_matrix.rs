@@ -1,6 +1,4 @@
-use std::cmp::max;
-
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CloudAntiDiagonal {
     pub match_vector: Vec<f32>,
     pub insert_vector: Vec<f32>,
@@ -27,18 +25,17 @@ impl CloudAntiDiagonal {
 }
 
 #[derive(Default)]
-pub struct CloudMatrix {
+pub struct CloudMatrixLinear {
     pub data: [CloudAntiDiagonal; 3],
 }
 
-impl CloudMatrix {
-    pub fn new(profile_length: usize, target_length: usize) -> Self {
-        let length = max(profile_length, target_length);
-        CloudMatrix {
+impl CloudMatrixLinear {
+    pub fn new(profile_length: usize) -> Self {
+        CloudMatrixLinear {
             data: [
-                CloudAntiDiagonal::new(length),
-                CloudAntiDiagonal::new(length),
-                CloudAntiDiagonal::new(length),
+                CloudAntiDiagonal::new(profile_length),
+                CloudAntiDiagonal::new(profile_length),
+                CloudAntiDiagonal::new(profile_length),
             ],
         }
     }

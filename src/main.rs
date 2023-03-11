@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let mut profiles: Vec<Profile> = hmms.iter().map(|hmm| Profile::new(hmm)).collect();
     let targets = Sequence::amino_from_fasta(&args.target)?;
 
-    // pipeline_naive(&mut profiles, &targets)?;
+    pipeline_naive(&mut profiles, &targets)?;
     pipeline_bounded(&mut profiles, &targets)?;
 
     Ok(())
