@@ -84,6 +84,7 @@ pub fn traceback(
     }
     trace.reverse();
 }
+
 #[inline(always)]
 pub fn get_posterior_probability(
     optimal_matrix: &DpMatrix,
@@ -92,32 +93,32 @@ pub fn get_posterior_probability(
     profile_idx: usize,
     target_idx: usize,
 ) -> f32 {
-    return match current_state {
+    match current_state {
         TRACE_M => optimal_matrix.get_match(target_idx, profile_idx),
         TRACE_I => optimal_matrix.get_insert(target_idx, profile_idx),
         TRACE_N => {
-            return if current_state == previous_state {
+            if current_state == previous_state {
                 optimal_matrix.get_special(target_idx, SPECIAL_N)
             } else {
                 0.0
             }
         }
         TRACE_C => {
-            return if current_state == previous_state {
+            if current_state == previous_state {
                 optimal_matrix.get_special(target_idx, SPECIAL_C)
             } else {
                 0.0
             }
         }
         TRACE_J => {
-            return if current_state == previous_state {
+            if current_state == previous_state {
                 optimal_matrix.get_special(target_idx, SPECIAL_J)
             } else {
                 0.0
             }
         }
         _ => 0.0,
-    };
+    }
 }
 
 #[inline(always)]
@@ -162,11 +163,11 @@ pub fn select_d(
         .transition_score_delta(PROFILE_DELETE_TO_DELETE, profile_idx - 1)
         * optimal_matrix.get_delete(target_idx, profile_idx - 1);
 
-    return if match_to_delete_path >= delete_to_delete_path {
+    if match_to_delete_path >= delete_to_delete_path {
         TRACE_M
     } else {
         TRACE_D
-    };
+    }
 }
 
 #[inline(always)]
@@ -182,16 +183,20 @@ pub fn select_i(
         .transition_score_delta(PROFILE_INSERT_TO_INSERT, profile_idx)
         * optimal_matrix.get_insert(target_idx - 1, profile_idx);
 
-    return if match_to_insert_path >= insert_to_insert_path {
+    if match_to_insert_path >= insert_to_insert_path {
         TRACE_M
     } else {
         TRACE_I
-    };
+    }
 }
 
 #[inline(always)]
 pub fn select_n(target_idx: usize) -> usize {
-    return if target_idx == 0 { TRACE_S } else { TRACE_N };
+    if target_idx == 0 {
+        TRACE_S
+    } else {
+        TRACE_N
+    }
 }
 
 #[inline(always)]
@@ -207,11 +212,11 @@ pub fn select_c(
     let c_to_e_path = profile.transition_score_delta(SPECIAL_E, SPECIAL_MOVE)
         * optimal_matrix.get_special(target_idx, SPECIAL_E);
 
-    return if c_to_c_path > c_to_e_path {
+    if c_to_c_path > c_to_e_path {
         TRACE_C
     } else {
         TRACE_E
-    };
+    }
 }
 
 #[inline(always)]
@@ -227,11 +232,11 @@ pub fn select_j(
     let e_to_j_path = profile.transition_score_delta(SPECIAL_E, SPECIAL_LOOP)
         * optimal_matrix.get_special(target_idx, SPECIAL_E);
 
-    return if j_to_j_path > e_to_j_path {
+    if j_to_j_path > e_to_j_path {
         TRACE_J
     } else {
         TRACE_E
-    };
+    }
 }
 
 #[inline(always)]
@@ -269,9 +274,9 @@ pub fn select_b(profile: &Profile, optimal_matrix: &DpMatrix, target_idx: usize)
     let j_to_b_path = profile.transition_score_delta(SPECIAL_J, SPECIAL_MOVE)
         * optimal_matrix.get_special(target_idx, SPECIAL_J);
 
-    return if n_to_b_path >= j_to_b_path {
+    if n_to_b_path >= j_to_b_path {
         TRACE_N
     } else {
         TRACE_J
-    };
+    }
 }

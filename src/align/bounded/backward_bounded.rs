@@ -1,4 +1,3 @@
-use crate::align::bounded::structs::bound::CloudBoundGroup;
 use crate::align::bounded::structs::row_bound_params::RowBoundParams;
 use crate::log_sum;
 use crate::structs::profile::constants::{
@@ -42,9 +41,9 @@ pub fn backward_bounded(
     //       the last row defined in the row bounds
     //       is initialized with special conditions
 
-    // dp_matrix.set_special(target.length, SPECIAL_J, -f32::INFINITY);
-    // dp_matrix.set_special(target.length, SPECIAL_B, -f32::INFINITY);
-    // dp_matrix.set_special(target.length, SPECIAL_N, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start, SPECIAL_J, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start, SPECIAL_B, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start, SPECIAL_N, -f32::INFINITY);
 
     dp_matrix.set_special(
         params.target_end,

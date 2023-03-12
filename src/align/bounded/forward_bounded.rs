@@ -17,12 +17,15 @@ pub fn forward_bounded(
 ) {
     let end_score: f32 = 0.0;
 
-    dp_matrix.set_special(0, SPECIAL_N, 0.0);
+    dp_matrix.set_special(params.target_start - 1, SPECIAL_N, 0.0);
     dp_matrix.set_special(
-        0,
+        params.target_start - 1,
         SPECIAL_B,
         profile.special_transition_score(SPECIAL_N, SPECIAL_MOVE),
     );
+    dp_matrix.set_special(params.target_start - 1, SPECIAL_E, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start - 1, SPECIAL_C, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start - 1, SPECIAL_J, -f32::INFINITY);
 
     // TODO: probably need B & N state computation from 0..target_start
     //       also maybe remove J state?
