@@ -1,7 +1,7 @@
 use crate::align::bounded::structs::row_bound_params::RowBoundParams;
 use crate::align::bounded::structs::{CloudMatrixLinear, CloudSearchParams};
 use crate::align::bounded::{
-    backward_bounded, cloud_search, optimal_accuracy_bounded, posterior_bounded,
+    backward_bounded, cloud_search, optimal_accuracy_bounded, posterior_bounded, traceback_bounded,
 };
 use crate::align::{forward_bounded, traceback};
 use crate::structs::{Alignment, DpMatrix, Profile, Sequence, Trace};
@@ -32,15 +32,15 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
             let mut forward_matrix = DpMatrix::new(target.length, profile.length);
             forward_bounded(profile, target, &mut forward_matrix, &row_bound_params);
 
-            // let mut forward_out = BufWriter::new(File::create("./nale-bounded-dump/forward.mtx")?);
-            // forward_matrix.dump(&mut forward_out)?;
+            let mut forward_out = BufWriter::new(File::create("./nale-bounded-dump/forward.mtx")?);
+            forward_matrix.dump(&mut forward_out)?;
 
             let mut backward_matrix = DpMatrix::new(target.length, profile.length);
             backward_bounded(profile, target, &mut backward_matrix, &row_bound_params);
 
-            // let mut backward_out =
-            //     BufWriter::new(File::create("./nale-bounded-dump/backward.mtx")?);
-            // backward_matrix.dump(&mut backward_out)?;
+            let mut backward_out =
+                BufWriter::new(File::create("./nale-bounded-dump/backward.mtx")?);
+            backward_matrix.dump(&mut backward_out)?;
 
             let mut posterior_matrix = DpMatrix::new(target.length, profile.length);
             posterior_bounded(
@@ -67,7 +67,13 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
             optimal_matrix.dump(&mut optimal_out)?;
 
             let mut trace = Trace::new(profile.length, target.length);
-            traceback(profile, &posterior_matrix, &optimal_matrix, &mut trace);
+            traceback_bounded(
+                profile,
+                &posterior_matrix,
+                &optimal_matrix,
+                &mut trace,
+                row_bound_params.target_end,
+            );
 
             let mut trace_out = BufWriter::new(File::create("./nale-bounded-dump/trace.dump")?);
             trace.dump(&mut trace_out, profile, target)?;
