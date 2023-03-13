@@ -239,6 +239,7 @@ pub fn prune_and_scrub(
     alpha: f32,
     beta: f32,
     overall_max: &mut f32,
+    debug: &mut DpMatrix,
 ) -> PruneStatus {
     let mut current_max = -f32::INFINITY;
 
@@ -256,6 +257,7 @@ pub fn prune_and_scrub(
     let alpha_thresh = current_max - alpha;
     let beta_thresh = *overall_max - beta;
 
+    let mut target_idx = bound.left_target_idx;
     for profile_idx in bound.left_profile_idx..=bound.right_profile_idx {
         let max_score = max_f32!(
             cloud_matrix.get_match(row_idx, profile_idx),
@@ -270,9 +272,16 @@ pub fn prune_and_scrub(
             cloud_matrix.set_match(row_idx, profile_idx, -f32::INFINITY);
             cloud_matrix.set_insert(row_idx, profile_idx, -f32::INFINITY);
             cloud_matrix.set_delete(row_idx, profile_idx, -f32::INFINITY);
+
+            // debug
+            debug.set_match(target_idx, profile_idx, 0.0);
+            debug.set_insert(target_idx, profile_idx, 0.0);
+            debug.set_delete(target_idx, profile_idx, 0.0);
         }
+        target_idx += 1;
     }
 
+    target_idx = bound.right_target_idx;
     for profile_idx in (bound.left_profile_idx..=bound.right_profile_idx).rev() {
         let max_score = max_f32!(
             cloud_matrix.get_match(row_idx, profile_idx),
@@ -287,13 +296,51 @@ pub fn prune_and_scrub(
             cloud_matrix.set_match(row_idx, profile_idx, -f32::INFINITY);
             cloud_matrix.set_insert(row_idx, profile_idx, -f32::INFINITY);
             cloud_matrix.set_delete(row_idx, profile_idx, -f32::INFINITY);
+
+            // debug
+            debug.set_match(target_idx, profile_idx, 0.0);
+            debug.set_insert(target_idx, profile_idx, 0.0);
+            debug.set_delete(target_idx, profile_idx, 0.0);
         }
+        target_idx -= 1;
     }
 
     if bound.was_pruned() {
         PruneStatus::FullyPruned
     } else {
         PruneStatus::PartiallyPruned
+    }
+}
+
+#[inline]
+pub fn scrub_co_located(
+    current_bound: &CloudBound,
+    co_located_bound: &CloudBound,
+    cloud_matrix: &mut CloudMatrixLinear,
+    cloud_matrix_row_idx: usize,
+) {
+    let left_scrub_amount = current_bound
+        .left_profile_idx
+        .saturating_sub(co_located_bound.left_profile_idx);
+
+    let right_scrub_amount = co_located_bound
+        .right_profile_idx
+        .saturating_sub(current_bound.right_profile_idx);
+
+    let left_scrub_start = current_bound.left_profile_idx - left_scrub_amount;
+    let right_scrub_end = current_bound.right_profile_idx + right_scrub_amount;
+
+    // TODO: double check these bounds
+    for profile_idx in left_scrub_start..current_bound.left_profile_idx {
+        cloud_matrix.set_match(cloud_matrix_row_idx, profile_idx, -f32::INFINITY);
+        cloud_matrix.set_insert(cloud_matrix_row_idx, profile_idx, -f32::INFINITY);
+        cloud_matrix.set_delete(cloud_matrix_row_idx, profile_idx, -f32::INFINITY);
+    }
+
+    for profile_idx in (current_bound.right_profile_idx + 1)..=right_scrub_end {
+        cloud_matrix.set_match(cloud_matrix_row_idx, profile_idx, -f32::INFINITY);
+        cloud_matrix.set_insert(cloud_matrix_row_idx, profile_idx, -f32::INFINITY);
+        cloud_matrix.set_delete(cloud_matrix_row_idx, profile_idx, -f32::INFINITY);
     }
 }
 
@@ -378,6 +425,7 @@ pub fn cloud_search_forward(
     //  - prune with x-drop rule: discard anything value < max_in_all_diagonals - beta (default: beta = 20)
     for anti_diagonal_idx in gamma_anti_diagonal_idx..=max_anti_diagonal_idx {
         let previous_bound = bounds.get(anti_diagonal_idx - 1);
+        let three_back_bound = bounds.get(anti_diagonal_idx - 3).clone();
 
         bounds.set(
             anti_diagonal_idx,
@@ -410,6 +458,14 @@ pub fn cloud_search_forward(
 
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
+        // 3-back scrub
+        scrub_co_located(
+            current_bound,
+            &three_back_bound,
+            cloud_matrix,
+            cloud_matrix_row_idx,
+        );
+
         for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {
             compute_forward_cell(
                 target,
@@ -429,6 +485,7 @@ pub fn cloud_search_forward(
             params.alpha,
             params.beta,
             &mut overall_max_score,
+            &mut debug,
         );
 
         match prune_status {
@@ -521,6 +578,7 @@ pub fn cloud_search_backward(
     //  - prune with x-drop rule: discard anything value < max_in_all_diagonals - beta (default: beta = 20)
     for anti_diagonal_idx in (min_anti_diagonal_idx..gamma_anti_diagonal_idx).rev() {
         let previous_bound = bounds.get(anti_diagonal_idx + 1);
+        let three_forward_bound = bounds.get(anti_diagonal_idx + 3).clone();
 
         bounds.set(
             anti_diagonal_idx,
@@ -552,11 +610,19 @@ pub fn cloud_search_backward(
 
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
-        for i in 0..cloud_matrix.data[0].match_vector.len() {
-            cloud_matrix.data[cloud_matrix_row_idx].match_vector[i] = -f32::INFINITY;
-            cloud_matrix.data[cloud_matrix_row_idx].insert_vector[i] = -f32::INFINITY;
-            cloud_matrix.data[cloud_matrix_row_idx].delete_vector[i] = -f32::INFINITY;
-        }
+        // for i in 0..cloud_matrix.data[0].match_vector.len() {
+        //     cloud_matrix.data[cloud_matrix_row_idx].match_vector[i] = -f32::INFINITY;
+        //     cloud_matrix.data[cloud_matrix_row_idx].insert_vector[i] = -f32::INFINITY;
+        //     cloud_matrix.data[cloud_matrix_row_idx].delete_vector[i] = -f32::INFINITY;
+        // }
+
+        // 3-forward scrub
+        scrub_co_located(
+            current_bound,
+            &three_forward_bound,
+            cloud_matrix,
+            cloud_matrix_row_idx,
+        );
 
         for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {
             compute_backward_cell(
@@ -577,6 +643,7 @@ pub fn cloud_search_backward(
             params.alpha,
             params.beta,
             &mut overall_max_score,
+            &mut debug,
         );
 
         match prune_status {

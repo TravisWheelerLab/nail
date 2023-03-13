@@ -17,7 +17,7 @@ impl Default for CloudSearchParams {
             profile_end: 0,
             gamma: 5,
             alpha: 12.0,
-            beta: 12.0,
+            beta: 20.0,
         }
     }
 }
