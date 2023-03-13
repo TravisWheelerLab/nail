@@ -29,13 +29,13 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
 
             let row_bound_params = RowBoundParams::new(&joined_bounds);
 
-            let mut forward_matrix = DpMatrix::new(profile.length, target.length);
+            let mut forward_matrix = DpMatrix::new(target.length, profile.length);
             forward_bounded(profile, target, &mut forward_matrix, &row_bound_params);
 
             // let mut forward_out = BufWriter::new(File::create("./nale-bounded-dump/forward.mtx")?);
             // forward_matrix.dump(&mut forward_out)?;
 
-            let mut backward_matrix = DpMatrix::new(profile.length, target.length);
+            let mut backward_matrix = DpMatrix::new(target.length, profile.length);
             backward_bounded(profile, target, &mut backward_matrix, &row_bound_params);
 
             // let mut backward_out =
@@ -69,11 +69,11 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
             let mut trace = Trace::new(profile.length, target.length);
             traceback(profile, &posterior_matrix, &optimal_matrix, &mut trace);
 
-            // let mut trace_out = BufWriter::new(File::create("./nale-bounded-dump/trace.dump")?);
-            // trace.dump(&mut trace_out, profile, target)?;
+            let mut trace_out = BufWriter::new(File::create("./nale-bounded-dump/trace.dump")?);
+            trace.dump(&mut trace_out, profile, target)?;
 
-            // let alignment = Alignment::new(&trace, profile, target);
-            // alignment.dump(&mut stdout())?;
+            let alignment = Alignment::new(&trace, profile, target);
+            alignment.dump(&mut stdout())?;
         }
     }
     Ok(())
