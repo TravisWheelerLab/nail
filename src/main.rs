@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let naive_elapsed = now.elapsed().as_micros();
 
     now = Instant::now();
-    // pipeline_bounded(&mut profiles, &targets)?;
+    pipeline_bounded(&mut profiles, &targets)?;
     let bounded_elapsed = now.elapsed().as_micros() + 1;
 
     println!(

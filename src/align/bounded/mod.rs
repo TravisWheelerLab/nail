@@ -14,3 +14,6 @@ pub use posterior_bounded::posterior_bounded;
 
 mod optimal_accuracy_bounded;
 pub use optimal_accuracy_bounded::optimal_accuracy_bounded;
+
+mod traceback_bounded;
+pub use traceback_bounded::traceback_bounded;

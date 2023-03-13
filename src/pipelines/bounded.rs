@@ -17,9 +17,9 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
         for target in targets.iter() {
             profile.configure_for_length(target.length);
 
-            cloud_search_params.target_start = 1;
+            cloud_search_params.target_start = 60;
             cloud_search_params.profile_start = 1;
-            cloud_search_params.target_end = target.length;
+            cloud_search_params.target_end = target.length - 60;
             cloud_search_params.profile_end = profile.length;
 
             let mut cloud_matrix = CloudMatrixLinear::new(profile.length);
@@ -51,9 +51,9 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
                 &row_bound_params,
             );
 
-            // let mut posterior_out =
-            //     BufWriter::new(File::create("./nale-bounded-dump/posterior.mtx")?);
-            // posterior_matrix.dump(&mut posterior_out)?;
+            let mut posterior_out =
+                BufWriter::new(File::create("./nale-bounded-dump/posterior.mtx")?);
+            posterior_matrix.dump(&mut posterior_out)?;
 
             let mut optimal_matrix = DpMatrix::new(target.length, profile.length);
             optimal_accuracy_bounded(
@@ -63,8 +63,8 @@ pub fn pipeline_bounded(profiles: &mut [Profile], targets: &[Sequence]) -> Resul
                 &row_bound_params,
             );
 
-            // let mut optimal_out = BufWriter::new(File::create("./nale-bounded-dump/optimal.mtx")?);
-            // optimal_matrix.dump(&mut optimal_out)?;
+            let mut optimal_out = BufWriter::new(File::create("./nale-bounded-dump/optimal.mtx")?);
+            optimal_matrix.dump(&mut optimal_out)?;
 
             let mut trace = Trace::new(profile.length, target.length);
             traceback(profile, &posterior_matrix, &optimal_matrix, &mut trace);

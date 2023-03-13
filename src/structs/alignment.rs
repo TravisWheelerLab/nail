@@ -64,15 +64,13 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
     if profile_byte.to_ascii_lowercase() == target_byte.to_ascii_lowercase() {
         // if we have an exact match, we just put place the matched character
         profile_byte
+    } else if match_emission_score > 0.0 {
+        // if we have a positive match emission score
+        // (the log odds ratio), then we place a plus
+        UTF8_PLUS
     } else {
-        if match_emission_score > 0.0 {
-            // if we have a positive match emission score
-            // (the log odds ratio), then we place a plus
-            UTF8_PLUS
-        } else {
-            // otherwise, we just place a space
-            UTF8_SPACE
-        }
+        // otherwise, we just place a space
+        UTF8_SPACE
     }
 }
 

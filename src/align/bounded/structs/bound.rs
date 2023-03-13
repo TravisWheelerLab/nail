@@ -2,6 +2,7 @@ use crate::util::PrintMe;
 use crate::viz::{SodaAnnotation, SodaJson};
 use anyhow::Result;
 use serde::Serialize;
+use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
@@ -24,6 +25,25 @@ impl Default for CloudBound {
             right_target_idx: 1,
             right_profile_idx: 0,
         }
+    }
+}
+
+impl Display for CloudBound {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{},{} : {},{}",
+            self.left_target_idx,
+            self.left_profile_idx,
+            self.right_target_idx,
+            self.right_profile_idx
+        )
+    }
+}
+
+impl PrintMe for CloudBound {
+    fn print(&self) {
+        println!("{}", self);
     }
 }
 
@@ -207,6 +227,12 @@ pub fn join_bounds(
             // are consuming the forward bounds
             continue;
         }
+
+        debug_assert_eq!(
+            forward_bound.anti_diagonal_idx(),
+            backward_bound.anti_diagonal_idx()
+        );
+
         // otherwise we have two valid bounds and we can compare them
         forward_bound.left_target_idx = forward_bound
             .left_target_idx
@@ -226,18 +252,6 @@ pub fn join_bounds(
     }
 
     Ok(())
-}
-
-impl PrintMe for CloudBound {
-    fn print(&self) {
-        println!(
-            "{},{} : {},{}",
-            self.left_target_idx,
-            self.left_profile_idx,
-            self.right_target_idx,
-            self.right_profile_idx,
-        );
-    }
 }
 
 impl PrintMe for Vec<CloudBound> {

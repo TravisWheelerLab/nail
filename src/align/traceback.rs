@@ -8,7 +8,6 @@ use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
 use crate::structs::{DpMatrix, Profile, Trace};
-use crate::util::PrintMe;
 
 pub fn traceback(
     profile: &Profile,

@@ -226,6 +226,11 @@ pub fn compute_backward_cell(
     );
 }
 
+pub enum PruneStatus {
+    FullyPruned,
+    PartiallyPruned,
+}
+
 #[inline]
 pub fn prune_and_scrub(
     bound: &mut CloudBound,
@@ -234,7 +239,7 @@ pub fn prune_and_scrub(
     alpha: f32,
     beta: f32,
     overall_max: &mut f32,
-) {
+) -> PruneStatus {
     let mut current_max = -f32::INFINITY;
 
     // TODO: would we get better performance if we keep track of the max values here?
@@ -284,6 +289,12 @@ pub fn prune_and_scrub(
             cloud_matrix.set_delete(row_idx, profile_idx, -f32::INFINITY);
         }
     }
+
+    if bound.was_pruned() {
+        PruneStatus::FullyPruned
+    } else {
+        PruneStatus::PartiallyPruned
+    }
 }
 
 pub fn cloud_search_forward(
@@ -295,9 +306,9 @@ pub fn cloud_search_forward(
 ) -> Result<()> {
     let mut debug = DpMatrix::new(target.length, profile.length);
 
-    debug.set_match(params.profile_start, params.target_start, 0.0);
-    debug.set_insert(params.profile_start, params.target_start, 0.0);
-    debug.set_delete(params.profile_start, params.target_start, 0.0);
+    debug.set_match(params.target_start, params.profile_start, 0.0);
+    debug.set_insert(params.target_start, params.profile_start, 0.0);
+    debug.set_delete(params.target_start, params.profile_start, 0.0);
 
     // the highest score we've seen overall
     let mut overall_max_score = -f32::INFINITY;
@@ -322,17 +333,17 @@ pub fn cloud_search_forward(
     let first_cloud_matrix_row_idx = first_anti_diagonal_idx % 3;
     // setting the scores to 0 is like setting
     // the log odds ratio to 1, since log(0) = 1
-    cloud_matrix.set_match(first_cloud_matrix_row_idx, params.target_start, 0.0);
-    cloud_matrix.set_insert(first_cloud_matrix_row_idx, params.target_start, 0.0);
-    cloud_matrix.set_delete(first_cloud_matrix_row_idx, params.target_start, 0.0);
+    cloud_matrix.set_match(first_cloud_matrix_row_idx, params.profile_start, 0.0);
+    cloud_matrix.set_insert(first_cloud_matrix_row_idx, params.profile_start, 0.0);
+    cloud_matrix.set_delete(first_cloud_matrix_row_idx, params.profile_start, 0.0);
 
     // the first bound is just the starting cell
     bounds.set(
         first_anti_diagonal_idx,
-        params.profile_start,
         params.target_start,
         params.profile_start,
         params.target_start,
+        params.profile_start,
     );
 
     for anti_diagonal_idx in (first_anti_diagonal_idx + 1)..gamma_anti_diagonal_idx {
@@ -368,11 +379,6 @@ pub fn cloud_search_forward(
     for anti_diagonal_idx in gamma_anti_diagonal_idx..=max_anti_diagonal_idx {
         let previous_bound = bounds.get(anti_diagonal_idx - 1);
 
-        if previous_bound.was_pruned() {
-            bounds.max_anti_diagonal_idx = anti_diagonal_idx - 2;
-            break;
-        }
-
         bounds.set(
             anti_diagonal_idx,
             previous_bound.left_target_idx,
@@ -404,7 +410,7 @@ pub fn cloud_search_forward(
 
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
-        for (profile_idx, target_idx) in current_bound.anti_diagonal_cell_zip() {
+        for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {
             compute_forward_cell(
                 target,
                 profile,
@@ -416,7 +422,7 @@ pub fn cloud_search_forward(
             );
         }
 
-        prune_and_scrub(
+        let prune_status = prune_and_scrub(
             current_bound,
             cloud_matrix,
             cloud_matrix_row_idx,
@@ -424,10 +430,20 @@ pub fn cloud_search_forward(
             params.beta,
             &mut overall_max_score,
         );
+
+        match prune_status {
+            PruneStatus::FullyPruned => {
+                bounds.max_anti_diagonal_idx -= 1;
+                break;
+            }
+            PruneStatus::PartiallyPruned => {
+                continue;
+            }
+        }
     }
 
-    // let mut debug_out = BufWriter::new(File::create("./cloud-forward.mtx")?);
-    // debug.dump(&mut debug_out)?;
+    let mut debug_out = BufWriter::new(File::create("./cloud-forward.mtx")?);
+    debug.dump(&mut debug_out)?;
 
     Ok(())
 }
@@ -441,14 +457,17 @@ pub fn cloud_search_backward(
 ) -> Result<()> {
     let mut debug = DpMatrix::new(target.length, profile.length);
 
-    debug.set_match(params.profile_end, params.target_end, 0.0);
-    debug.set_insert(params.profile_end, params.target_end, 0.0);
-    debug.set_delete(params.profile_end, params.target_end, 0.0);
+    debug.set_match(params.target_end, params.profile_end, 0.0);
+    debug.set_insert(params.target_end, params.profile_end, 0.0);
+    debug.set_delete(params.target_end, params.profile_end, 0.0);
 
     // the highest score we've seen overall
     let mut overall_max_score = -f32::INFINITY;
 
-    let first_anti_diagonal_idx = params.target_end + params.profile_end - 2;
+    let target_end = params.target_end.min(target.length - 1);
+    let profile_end = params.profile_end.min(profile.length - 1);
+
+    let first_anti_diagonal_idx = target_end + profile_end;
     let gamma_anti_diagonal_idx = first_anti_diagonal_idx - params.gamma;
     let min_anti_diagonal_idx = 0usize;
 
@@ -456,17 +475,17 @@ pub fn cloud_search_backward(
 
     // setting the scores to 0 is like setting
     // the log odds ratio to 1 since log(0) = 1
-    cloud_matrix.set_match(first_cloud_matrix_row_idx, params.target_end, 0.0);
-    cloud_matrix.set_insert(first_cloud_matrix_row_idx, params.target_end, 0.0);
-    cloud_matrix.set_delete(first_cloud_matrix_row_idx, params.target_end, 0.0);
+    cloud_matrix.set_match(first_cloud_matrix_row_idx, profile_end, 0.0);
+    cloud_matrix.set_insert(first_cloud_matrix_row_idx, profile_end, 0.0);
+    cloud_matrix.set_delete(first_cloud_matrix_row_idx, profile_end, 0.0);
 
     // the first bound is the ending position
     bounds.set(
         first_anti_diagonal_idx,
-        params.target_end.min(target.length - 1),
-        params.target_end.min(profile.length - 1),
-        params.target_end.min(target.length - 1),
-        params.target_end.min(profile.length - 1),
+        target_end,
+        profile_end,
+        target_end,
+        profile_end,
     );
 
     for anti_diagonal_idx in (gamma_anti_diagonal_idx..first_anti_diagonal_idx).rev() {
@@ -501,13 +520,7 @@ pub fn cloud_search_backward(
     //  - prune with max-in-anti-diagonal rule: discard any value < max_in_current_diagonal - alpha (default: alpha = 12)
     //  - prune with x-drop rule: discard anything value < max_in_all_diagonals - beta (default: beta = 20)
     for anti_diagonal_idx in (min_anti_diagonal_idx..gamma_anti_diagonal_idx).rev() {
-        let cloud_matrix_row_idx = anti_diagonal_idx % 3;
         let previous_bound = bounds.get(anti_diagonal_idx + 1);
-
-        if previous_bound.was_pruned() {
-            bounds.min_anti_diagonal_idx = anti_diagonal_idx + 2;
-            break;
-        }
 
         bounds.set(
             anti_diagonal_idx,
@@ -537,6 +550,8 @@ pub fn cloud_search_backward(
             current_bound.right_profile_idx -= 1;
         }
 
+        let cloud_matrix_row_idx = anti_diagonal_idx % 3;
+
         for i in 0..cloud_matrix.data[0].match_vector.len() {
             cloud_matrix.data[cloud_matrix_row_idx].match_vector[i] = -f32::INFINITY;
             cloud_matrix.data[cloud_matrix_row_idx].insert_vector[i] = -f32::INFINITY;
@@ -555,7 +570,7 @@ pub fn cloud_search_backward(
             );
         }
 
-        prune_and_scrub(
+        let prune_status = prune_and_scrub(
             current_bound,
             cloud_matrix,
             cloud_matrix_row_idx,
@@ -563,10 +578,20 @@ pub fn cloud_search_backward(
             params.beta,
             &mut overall_max_score,
         );
+
+        match prune_status {
+            PruneStatus::FullyPruned => {
+                bounds.min_anti_diagonal_idx += 1;
+                break;
+            }
+            PruneStatus::PartiallyPruned => {
+                continue;
+            }
+        }
     }
 
-    // let mut debug_out = BufWriter::new(File::create("./cloud-backward.mtx")?);
-    // debug.dump(&mut debug_out)?;
+    let mut debug_out = BufWriter::new(File::create("./cloud-backward.mtx")?);
+    debug.dump(&mut debug_out)?;
 
     Ok(())
 }
@@ -580,21 +605,22 @@ pub fn cloud_search(
     let mut forward_bounds = CloudBoundGroup::new(target.length, profile.length);
     cloud_search_forward(profile, target, cloud_matrix, params, &mut forward_bounds)?;
 
-    // let mut forward_json_out = BufWriter::new(File::create("./fwd.json")?);
-    // forward_bounds.soda_json(&mut forward_json_out)?;
+    let mut forward_json_out = BufWriter::new(File::create("./fwd.json")?);
+    forward_bounds.soda_json(&mut forward_json_out)?;
 
     cloud_matrix.reuse();
     let mut backward_bounds = CloudBoundGroup::new(target.length, profile.length);
     cloud_search_backward(profile, target, cloud_matrix, params, &mut backward_bounds)?;
 
-    // let mut backward_json_out = BufWriter::new(File::create("./bwd.json")?);
-    // backward_bounds.soda_json(&mut backward_json_out)?;
+    let mut backward_json_out = BufWriter::new(File::create("./bwd.json")?);
+    backward_bounds.soda_json(&mut backward_json_out)?;
 
     join_bounds(&mut forward_bounds, &backward_bounds)?;
+
     forward_bounds.trim_wings();
 
-    // let mut bounds_json_out = BufWriter::new(File::create("./joined.json")?);
-    // forward_bounds.soda_json(&mut bounds_json_out)?;
+    let mut bounds_json_out = BufWriter::new(File::create("./joined.json")?);
+    forward_bounds.soda_json(&mut bounds_json_out)?;
 
     Ok(forward_bounds)
 }
