@@ -13,8 +13,6 @@ pub fn posterior_bounded(
 ) {
     // let target_length = forward_matrix.target_length;
 
-    // TODO: do we actually want to take the score from the C state at the <target_end> row?
-    //       if we need to compute the special states outside of the cloud bounds, we probably don't
     let overall_score: f32 = forward_matrix.get_special(params.target_end, SPECIAL_C)
         + profile.special_transition_score(SPECIAL_C, SPECIAL_MOVE);
 

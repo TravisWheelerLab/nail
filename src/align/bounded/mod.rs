@@ -1,7 +1,7 @@
 pub mod structs;
 
 mod cloud_search;
-pub use cloud_search::cloud_search;
+pub use cloud_search::{cloud_search_backward, cloud_search_forward};
 
 mod forward_bounded;
 pub use forward_bounded::forward_bounded;

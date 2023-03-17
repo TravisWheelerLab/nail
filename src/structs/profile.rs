@@ -342,7 +342,7 @@ impl Profile {
     /// Sets the length of the current target sequence to which the profile will be aligned.
     ///
     /// This also adjusts the loop and move transition scores for the special states N, J, C.
-    pub fn configure_for_length(&mut self, length: usize) {
+    pub fn configure_for_target_length(&mut self, length: usize) {
         // TODO: should we set up some sort of flag to try to make
         //       sure the model has been initialized for scoring?
         self.target_length = length;

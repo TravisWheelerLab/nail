@@ -22,8 +22,8 @@ pub fn traceback(
     let mut previous_state: usize = TRACE_C;
     let mut current_state: usize;
 
-    trace.append_with_posterior_probability(TRACE_T, profile_idx, target_idx, 0.0);
-    trace.append_with_posterior_probability(TRACE_C, profile_idx, target_idx, 0.0);
+    trace.append_with_posterior_probability(TRACE_T, target_idx, profile_idx, 0.0);
+    trace.append_with_posterior_probability(TRACE_C, target_idx, profile_idx, 0.0);
 
     while previous_state != TRACE_S {
         match previous_state {
@@ -69,8 +69,8 @@ pub fn traceback(
         );
         trace.append_with_posterior_probability(
             current_state,
-            profile_idx,
             target_idx,
+            profile_idx,
             posterior_probability,
         );
 

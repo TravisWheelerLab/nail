@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         "{} / {} : {}",
         naive_elapsed,
         bounded_elapsed,
-        naive_elapsed / bounded_elapsed
+        naive_elapsed as f32 / bounded_elapsed as f32
     );
 
     Ok(())

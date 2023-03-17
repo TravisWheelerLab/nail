@@ -63,6 +63,7 @@ impl CloudBound {
     }
 }
 
+#[derive(Default)]
 pub struct CloudBoundGroup {
     pub bounds: Vec<CloudBound>,
     pub target_length: usize,

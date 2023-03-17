@@ -22,10 +22,11 @@ use crate::structs::{Profile, Sequence};
 use constants::*;
 use std::io::Write;
 
+#[derive(Default)]
 pub struct Trace {
     pub length: usize,
     pub profile_length: usize,
-    pub sequence_length: usize,
+    pub target_length: usize,
     pub states: Vec<usize>,
     /// node index
     pub profile_idx: Vec<usize>,
@@ -35,11 +36,11 @@ pub struct Trace {
 }
 
 impl Trace {
-    pub fn new(profile_length: usize, sequence_length: usize) -> Self {
+    pub fn new(target_length: usize, profile_length: usize) -> Self {
         Trace {
             length: 0,
             profile_length,
-            sequence_length,
+            target_length,
             states: vec![],
             profile_idx: vec![],
             target_idx: vec![],
@@ -47,11 +48,15 @@ impl Trace {
         }
     }
 
+    pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+        todo!();
+    }
+
     pub fn append_with_posterior_probability(
         &mut self,
         state: usize,
-        profile_idx: usize,
         target_idx: usize,
+        profile_idx: usize,
         posterior_probability: f32,
     ) {
         match state {

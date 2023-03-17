@@ -4,6 +4,9 @@ pub use alignment::Alignment;
 pub mod dp_matrix;
 pub use dp_matrix::DpMatrix;
 
+mod dp_matrix_flat;
+pub use dp_matrix_flat::DpMatrixFlat;
+
 pub mod hmm;
 pub use hmm::Hmm;
 
