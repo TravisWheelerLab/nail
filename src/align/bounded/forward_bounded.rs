@@ -6,13 +6,15 @@ use crate::structs::profile::constants::{
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix, Profile, Sequence};
+use crate::structs::{DpMatrix3D, Profile, Sequence};
+use crate::structs::dp_matrix::DpMatrix;
 use crate::util::log_add;
 
 pub fn forward_bounded(
     profile: &Profile,
     target: &Sequence,
-    dp_matrix: &mut DpMatrix,
+    // dp_matrix: &mut DpMatrix3D,
+    dp_matrix: &mut impl DpMatrix,
     params: &RowBoundParams,
 ) {
     let end_score: f32 = 0.0;

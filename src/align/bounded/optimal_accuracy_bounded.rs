@@ -1,18 +1,20 @@
-use crate::align::bounded::structs::bound::CloudBoundGroup;
 use crate::align::bounded::structs::row_bound_params::RowBoundParams;
 use crate::max_f32;
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{
     PROFILE_BEGIN_TO_MATCH, PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH,
     PROFILE_INSERT_TO_INSERT, PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE,
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix, Profile};
+use crate::structs::{DpMatrix3D, Profile};
 
 pub fn optimal_accuracy_bounded(
     profile: &Profile,
-    posterior_matrix: &DpMatrix,
-    optimal_matrix: &mut DpMatrix,
+    // posterior_matrix: &DpMatrix3D,
+    // optimal_matrix: &mut DpMatrix3D,
+    posterior_matrix: &impl DpMatrix,
+    optimal_matrix: &mut impl DpMatrix,
     params: &RowBoundParams,
 ) {
     let end_score: f32 = 1.0;

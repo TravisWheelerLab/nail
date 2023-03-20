@@ -1,5 +1,16 @@
 use lazy_static::lazy_static;
 
+pub trait Average<T> {
+    fn avg(&self) -> T;
+}
+
+impl Average<usize> for Vec<usize> {
+    fn avg(&self) -> usize {
+        let sum: usize = self.iter().sum();
+        sum / self.len()
+    }
+}
+
 pub trait PrintMe {
     fn print(&self);
 }

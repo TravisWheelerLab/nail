@@ -3,21 +3,24 @@ use std::io::Write;
 use crate::structs::profile::constants::{NUM_SPECIAL_STATES, SPECIAL_STATE_IDX_TO_NAME};
 use anyhow::Result;
 
-// pub trait DpMatrix {
-//     fn resize(&mut self, new_target_length: usize, new_profile_length: usize);
-//     fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32;
-//     fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) -> f32;
-//     fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32;
-//     fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) -> f32;
-//     fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32;
-//     fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) -> f32;
-//     fn get_special(&self, target_idx: usize, profile_idx: usize) -> f32;
-//     fn set_special(&mut self, target_idx: usize, profile_idx: usize, value: f32) -> f32;
-//     fn dump(&self, out: &mut impl Write) -> Result<()>;
-// }
+pub trait DpMatrix {
+    fn target_length(&self) -> usize;
+    fn profile_length(&self) -> usize;
+    fn resize(&mut self, new_target_length: usize, new_profile_length: usize);
+    fn reset(&mut self);
+    fn reuse(&mut self, new_target_length: usize, new_profile_length: usize);
+    fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32;
+    fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32);
+    fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32;
+    fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32);
+    fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32;
+    fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32);
+    fn get_special(&self, target_idx: usize, profile_idx: usize) -> f32;
+    fn set_special(&mut self, target_idx: usize, profile_idx: usize, value: f32);
+}
 
 #[derive(Default)]
-pub struct DpMatrix {
+pub struct DpMatrix3D {
     pub target_length: usize,
     pub profile_length: usize,
     pub row_count: usize,
@@ -28,9 +31,9 @@ pub struct DpMatrix {
     pub special_matrix: Vec<Vec<f32>>,
 }
 
-impl DpMatrix {
+impl DpMatrix3D {
     pub fn new(target_length: usize, profile_length: usize) -> Self {
-        DpMatrix {
+        DpMatrix3D {
             target_length,
             profile_length,
             row_count: target_length + 1,
@@ -40,95 +43,6 @@ impl DpMatrix {
             delete_matrix: vec![vec![-f32::INFINITY; profile_length + 1]; target_length + 1],
             special_matrix: vec![vec![-f32::INFINITY; 5]; target_length + 1],
         }
-    }
-
-    pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
-        // resizing this struct seems likely to make an absolute mess of the
-        // memory layout, so it's probably not even worth implementing this
-        todo!()
-    }
-
-    pub fn reset(&mut self) {
-        for target_idx in 0..=self.target_length {
-            for special_state_idx in 0..NUM_SPECIAL_STATES {
-                self.set_special(target_idx, special_state_idx, -f32::INFINITY);
-            }
-            for profile_idx in 0..=self.profile_length {
-                self.set_match(target_idx, profile_idx, -f32::INFINITY);
-                self.set_insert(target_idx, profile_idx, -f32::INFINITY);
-                self.set_delete(target_idx, profile_idx, -f32::INFINITY);
-            }
-        }
-    }
-
-    pub fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
-        let new_row_count = new_target_length + 1;
-        let new_col_count = new_profile_length + 1;
-
-        if new_row_count > self.row_count || new_col_count > self.col_count {
-            panic!("tried to resize DpMatrix");
-        }
-
-        self.target_length = new_target_length;
-        self.profile_length = new_profile_length;
-
-        self.reset();
-    }
-
-    #[inline]
-    pub fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.insert_matrix[target_idx][profile_idx]
-    }
-
-    #[inline]
-    pub fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.insert_matrix[target_idx][profile_idx] = value;
-    }
-
-    #[inline]
-    pub fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.match_matrix[target_idx][profile_idx]
-    }
-
-    #[inline]
-    pub fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.match_matrix[target_idx][profile_idx] = value;
-    }
-
-    #[inline]
-    pub fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.delete_matrix[target_idx][profile_idx]
-    }
-
-    #[inline]
-    pub fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.delete_matrix[target_idx][profile_idx] = value;
-    }
-
-    #[inline]
-    pub fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(special_idx < NUM_SPECIAL_STATES);
-        self.special_matrix[target_idx][special_idx]
-    }
-
-    #[inline]
-    pub fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(special_idx < NUM_SPECIAL_STATES);
-        self.special_matrix[target_idx][special_idx] = value;
     }
 
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {
@@ -213,5 +127,102 @@ impl DpMatrix {
         }
 
         Ok(())
+    }
+}
+
+impl DpMatrix for DpMatrix3D {
+    fn target_length(&self) -> usize {
+        self.target_length
+    }
+
+    fn profile_length(&self) -> usize {
+        self.profile_length
+    }
+
+    fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+        todo!()
+    }
+
+    fn reset(&mut self) {
+        for target_idx in 0..=self.target_length {
+            for special_state_idx in 0..NUM_SPECIAL_STATES {
+                self.set_special(target_idx, special_state_idx, -f32::INFINITY);
+            }
+            for profile_idx in 0..=self.profile_length {
+                self.set_match(target_idx, profile_idx, -f32::INFINITY);
+                self.set_insert(target_idx, profile_idx, -f32::INFINITY);
+                self.set_delete(target_idx, profile_idx, -f32::INFINITY);
+            }
+        }
+    }
+
+    fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
+        let new_row_count = new_target_length + 1;
+        let new_col_count = new_profile_length + 1;
+
+        if new_row_count > self.row_count || new_col_count > self.col_count {
+            panic!("tried to resize DpMatrix");
+        }
+
+        self.target_length = new_target_length;
+        self.profile_length = new_profile_length;
+
+        self.reset();
+    }
+
+    #[inline]
+    fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.match_matrix[target_idx][profile_idx]
+    }
+
+    #[inline]
+    fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.match_matrix[target_idx][profile_idx] = value;
+    }
+
+    #[inline]
+    fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.insert_matrix[target_idx][profile_idx]
+    }
+
+    #[inline]
+    fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.insert_matrix[target_idx][profile_idx] = value;
+    }
+
+    #[inline]
+    fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.delete_matrix[target_idx][profile_idx]
+    }
+
+    #[inline]
+    fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.delete_matrix[target_idx][profile_idx] = value;
+    }
+
+    #[inline]
+    fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(special_idx < NUM_SPECIAL_STATES);
+        self.special_matrix[target_idx][special_idx]
+    }
+
+    #[inline]
+    fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(special_idx < NUM_SPECIAL_STATES);
+        self.special_matrix[target_idx][special_idx] = value;
     }
 }

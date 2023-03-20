@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{NUM_SPECIAL_STATES, SPECIAL_STATE_IDX_TO_NAME};
 use anyhow::Result;
 
@@ -58,77 +59,14 @@ pub struct DpMatrixFlat {
 
 impl DpMatrixFlat {
     pub fn new(target_length: usize, profile_length: usize) -> Self {
+        let core_length = 3 * (target_length + 1) * (profile_length + 1);
+        let special_length = 5 * (target_length + 1);
         DpMatrixFlat {
             target_length,
             profile_length,
-            core_data: vec![],
-            special_data: vec![],
+            core_data: vec![-f32::INFINITY; core_length],
+            special_data: vec![-f32::INFINITY; special_length],
         }
-    }
-
-    pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
-        let new_size = new_target_length * new_profile_length;
-        if new_size > self.core_data.len() {
-            self.core_data.resize(new_size, -f32::INFINITY);
-        }
-        self.target_length = new_target_length;
-        self.profile_length = new_profile_length;
-    }
-
-    #[inline]
-    pub fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.core_data[target_idx * (3 * (self.profile_length + 1)) + profile_idx]
-    }
-
-    #[inline]
-    pub fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.core_data[target_idx * (3 * (self.profile_length + 1)) + profile_idx] = value;
-    }
-
-    #[inline]
-    pub fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.core_data[target_idx * (3 * (self.profile_length + 1)) + (profile_idx + 1)]
-    }
-
-    #[inline]
-    pub fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.core_data[target_idx * (3 * (self.profile_length + 1)) + (profile_idx + 1)] = value;
-    }
-
-    #[inline]
-    pub fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.core_data[target_idx * (3 * (self.profile_length + 1)) + (profile_idx + 2)]
-    }
-
-    #[inline]
-    pub fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
-        self.core_data[target_idx * (3 * (self.profile_length + 1)) + (profile_idx + 2)] = value;
-    }
-
-    #[inline]
-    pub fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(special_idx < NUM_SPECIAL_STATES);
-        self.special_data[target_idx * 5 + special_idx]
-    }
-
-    #[inline]
-    pub fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
-        debug_assert!(target_idx <= self.target_length);
-        debug_assert!(special_idx < NUM_SPECIAL_STATES);
-        self.special_data[target_idx * 5 + special_idx] = value;
     }
 
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {
@@ -213,5 +151,108 @@ impl DpMatrixFlat {
         }
 
         Ok(())
+    }
+}
+impl DpMatrix for DpMatrixFlat {
+    fn target_length(&self) -> usize {
+        self.target_length
+    }
+
+    fn profile_length(&self) -> usize {
+        self.profile_length
+    }
+
+    fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+        let new_size = new_target_length * new_profile_length;
+        if new_size > self.core_data.len() {
+            self.core_data.resize(new_size, -f32::INFINITY);
+        }
+        self.target_length = new_target_length;
+        self.profile_length = new_profile_length;
+    }
+
+    fn reset(&mut self) {
+        for core_idx in 0..(3 * (self.target_length + 1) * (self.profile_length + 1)) {
+            self.core_data[core_idx] = -f32::INFINITY;
+        }
+
+        for special_idx in 0..((self.target_length + 1) * 5) {
+            self.special_data[special_idx] = -f32::INFINITY;
+        }
+    }
+
+    fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
+        // TODO: need logic for resizing self.special_data
+        let new_core_length = 3 * (new_target_length + 1) * (new_profile_length + 1);
+        let new_special_length = 5 * (new_target_length + 1);
+
+        if new_core_length > self.core_data.len() {
+            panic!("tried to resize DpMatrix: core");
+        } else if new_special_length > self.special_data.len() {
+            panic!("tried to resize DpMatrix: special");
+        }
+
+        self.target_length = new_target_length;
+        self.profile_length = new_profile_length;
+
+        self.reset();
+    }
+
+    #[inline]
+    fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.core_data[target_idx * (3 * (self.profile_length + 1)) + (3 * profile_idx)]
+    }
+
+    #[inline]
+    fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.core_data[target_idx * (3 * (self.profile_length + 1)) + (3 * profile_idx)] = value;
+    }
+
+    #[inline]
+    fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.core_data[target_idx * (3 * (self.profile_length + 1)) + ((3 * profile_idx) + 1)]
+    }
+
+    #[inline]
+    fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.core_data[target_idx * (3 * (self.profile_length + 1)) + ((3 * profile_idx) + 1)] =
+            value;
+    }
+
+    #[inline]
+    fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.core_data[target_idx * (3 * (self.profile_length + 1)) + ((3 * profile_idx) + 2)]
+    }
+
+    #[inline]
+    fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(profile_idx <= self.profile_length);
+        self.core_data[target_idx * (3 * (self.profile_length + 1)) + ((3 * profile_idx) + 2)] =
+            value;
+    }
+
+    #[inline]
+    fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(special_idx < NUM_SPECIAL_STATES);
+        self.special_data[target_idx * 5 + special_idx]
+    }
+
+    #[inline]
+    fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(special_idx < NUM_SPECIAL_STATES);
+        self.special_data[target_idx * 5 + special_idx] = value;
     }
 }

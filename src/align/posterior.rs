@@ -1,15 +1,19 @@
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{
     SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J, SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix, Profile};
+use crate::structs::{DpMatrix3D, Profile};
 
 pub fn posterior(
     profile: &Profile,
-    forward_matrix: &DpMatrix,
-    backward_matrix: &DpMatrix,
-    posterior_matrix: &mut DpMatrix,
+    // forward_matrix: &DpMatrix3D,
+    // backward_matrix: &DpMatrix3D,
+    // posterior_matrix: &mut DpMatrix3D,
+    forward_matrix: &impl DpMatrix,
+    backward_matrix: &impl DpMatrix,
+    posterior_matrix: &mut impl DpMatrix,
 ) {
-    let target_length = forward_matrix.target_length;
+    let target_length = forward_matrix.target_length();
     let overall_score: f32 = forward_matrix.get_special(target_length, SPECIAL_C)
         + profile.special_transition_score(SPECIAL_C, SPECIAL_MOVE);
     let mut denominator: f32;

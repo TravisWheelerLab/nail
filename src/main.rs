@@ -1,8 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
+use nale::output::write_tabular_output;
 use nale::pipelines::{pipeline_bounded, pipeline_naive};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
+use std::fs::File;
+use std::io::BufWriter;
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
@@ -17,19 +20,23 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // println!("{:?}", args);
-
     let hmms = parse_hmms_from_p7hmm_file(args.query)?;
     let mut profiles: Vec<Profile> = hmms.iter().map(|hmm| Profile::new(hmm)).collect();
     let targets = Sequence::amino_from_fasta(&args.target)?;
 
     let mut now = Instant::now();
-    pipeline_naive(&mut profiles, &targets)?;
+    let alignments_naive = pipeline_naive(&mut profiles, &targets)?;
     let naive_elapsed = now.elapsed().as_micros();
 
+    let mut naive_out = BufWriter::new(File::create("./naive.out")?);
+    write_tabular_output(&alignments_naive, &mut naive_out)?;
+
     now = Instant::now();
-    pipeline_bounded(&mut profiles, &targets)?;
+    let alignments_bounded = pipeline_bounded(&mut profiles, &targets)?;
     let bounded_elapsed = now.elapsed().as_micros() + 1;
+
+    let mut bounded_out = BufWriter::new(File::create("./bounded.out")?);
+    write_tabular_output(&alignments_bounded, &mut bounded_out)?;
 
     println!(
         "{} / {} : {}",

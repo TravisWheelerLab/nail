@@ -1,14 +1,16 @@
 use crate::log_sum;
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{
     PROFILE_BEGIN_TO_MATCH, PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH,
     PROFILE_INSERT_TO_INSERT, PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE,
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix, Profile, Sequence};
+use crate::structs::{DpMatrix3D, Profile, Sequence};
 use crate::util::log_add;
 
-pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix) {
+// pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix3D) {
+pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) {
     let esc: f32 = 0.0;
 
     // initialize the zero row

@@ -5,7 +5,7 @@ use crate::structs::profile::constants::{
     PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE, PROFILE_MATCH_TO_INSERT,
     PROFILE_MATCH_TO_MATCH,
 };
-use crate::structs::{DpMatrix, Profile, Sequence};
+use crate::structs::{DpMatrix3D, Profile, Sequence};
 use crate::util::{log_add, PrintMe};
 use crate::viz::SodaJson;
 use crate::{log_sum, max_f32};

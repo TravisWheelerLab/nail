@@ -2,7 +2,7 @@ pub mod alignment;
 pub use alignment::Alignment;
 
 pub mod dp_matrix;
-pub use dp_matrix::DpMatrix;
+pub use dp_matrix::DpMatrix3D;
 
 mod dp_matrix_flat;
 pub use dp_matrix_flat::DpMatrixFlat;

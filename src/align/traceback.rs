@@ -1,3 +1,4 @@
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{
     PROFILE_BEGIN_TO_MATCH, PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH,
     PROFILE_INSERT_TO_INSERT, PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE,
@@ -7,12 +8,12 @@ use crate::structs::profile::constants::{
 use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
-use crate::structs::{DpMatrix, Profile, Trace};
+use crate::structs::{DpMatrix3D, Profile, Trace};
 
 pub fn traceback(
     profile: &Profile,
-    posterior_matrix: &DpMatrix,
-    optimal_matrix: &DpMatrix,
+    posterior_matrix: &DpMatrix3D,
+    optimal_matrix: &DpMatrix3D,
     trace: &mut Trace,
 ) {
     let mut target_idx = optimal_matrix.target_length;
@@ -86,7 +87,7 @@ pub fn traceback(
 
 #[inline(always)]
 pub fn get_posterior_probability(
-    optimal_matrix: &DpMatrix,
+    optimal_matrix: &DpMatrix3D,
     current_state: usize,
     previous_state: usize,
     profile_idx: usize,
@@ -123,7 +124,7 @@ pub fn get_posterior_probability(
 #[inline(always)]
 pub fn select_m(
     profile: &Profile,
-    optimal_matrix: &DpMatrix,
+    optimal_matrix: &DpMatrix3D,
     target_idx: usize,
     profile_idx: usize,
 ) -> usize {
@@ -151,7 +152,7 @@ pub fn select_m(
 #[inline(always)]
 pub fn select_d(
     profile: &Profile,
-    optimal_matrix: &DpMatrix,
+    optimal_matrix: &DpMatrix3D,
     target_idx: usize,
     profile_idx: usize,
 ) -> usize {
@@ -172,7 +173,7 @@ pub fn select_d(
 #[inline(always)]
 pub fn select_i(
     profile: &Profile,
-    optimal_matrix: &DpMatrix,
+    optimal_matrix: &DpMatrix3D,
     target_idx: usize,
     profile_idx: usize,
 ) -> usize {
@@ -201,8 +202,8 @@ pub fn select_n(target_idx: usize) -> usize {
 #[inline(always)]
 pub fn select_c(
     profile: &Profile,
-    posterior_matrix: &DpMatrix,
-    optimal_matrix: &DpMatrix,
+    posterior_matrix: &DpMatrix3D,
+    optimal_matrix: &DpMatrix3D,
     target_idx: usize,
 ) -> usize {
     let c_to_c_path = profile.special_transition_score_delta(SPECIAL_C, SPECIAL_LOOP)
@@ -221,8 +222,8 @@ pub fn select_c(
 #[inline(always)]
 pub fn select_j(
     profile: &Profile,
-    posterior_matrix: &DpMatrix,
-    optimal_matrix: &DpMatrix,
+    posterior_matrix: &DpMatrix3D,
+    optimal_matrix: &DpMatrix3D,
     target_idx: usize,
 ) -> usize {
     let j_to_j_path = profile.special_transition_score_delta(SPECIAL_J, SPECIAL_LOOP)
@@ -241,7 +242,7 @@ pub fn select_j(
 #[inline(always)]
 pub fn select_e(
     profile: &Profile,
-    optimal_matrix: &DpMatrix,
+    optimal_matrix: &DpMatrix3D,
     target_idx: usize,
     return_profile_idx: &mut usize,
 ) -> usize {
@@ -267,7 +268,7 @@ pub fn select_e(
 }
 
 #[inline(always)]
-pub fn select_b(profile: &Profile, optimal_matrix: &DpMatrix, target_idx: usize) -> usize {
+pub fn select_b(profile: &Profile, optimal_matrix: &DpMatrix3D, target_idx: usize) -> usize {
     let n_to_b_path = profile.special_transition_score_delta(SPECIAL_N, SPECIAL_MOVE)
         * optimal_matrix.get_match(target_idx, SPECIAL_N);
     let j_to_b_path = profile.transition_score_delta(SPECIAL_J, SPECIAL_MOVE)

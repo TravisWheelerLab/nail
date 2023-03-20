@@ -1,3 +1,4 @@
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{
     PROFILE_BEGIN_TO_MATCH, PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH,
     PROFILE_INSERT_TO_INSERT, PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE,
@@ -5,14 +6,17 @@ use crate::structs::profile::constants::{
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
 use crate::structs::trace::constants::{
-    TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
+    TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_IDX_TO_NAME, TRACE_J, TRACE_M, TRACE_N,
+    TRACE_S, TRACE_T,
 };
-use crate::structs::{DpMatrix, Profile, Trace};
+use crate::structs::{DpMatrix3D, Profile, Trace};
 
 pub fn traceback_bounded(
     profile: &Profile,
-    posterior_matrix: &DpMatrix,
-    optimal_matrix: &DpMatrix,
+    // posterior_matrix: &DpMatrix3D,
+    // optimal_matrix: &DpMatrix3D,
+    posterior_matrix: &impl DpMatrix,
+    optimal_matrix: &impl DpMatrix,
     trace: &mut Trace,
     target_end: usize,
 ) {
@@ -187,7 +191,7 @@ pub fn traceback_bounded(
 }
 
 pub fn get_posterior_probability(
-    optimal_matrix: &DpMatrix,
+    optimal_matrix: &impl DpMatrix,
     current_state: usize,
     previous_state: usize,
     profile_idx: usize,
