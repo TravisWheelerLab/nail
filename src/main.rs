@@ -4,7 +4,7 @@ use nale::output::write_tabular_output;
 use nale::pipelines::{pipeline_bounded, pipeline_naive};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::BufWriter;
 use std::time::Instant;
 
@@ -37,7 +37,9 @@ fn main() -> Result<()> {
 
     let mut bounded_out = BufWriter::new(File::create("./bounded.out")?);
     write_tabular_output(&alignments_bounded, &mut bounded_out)?;
-
+    
+    create_dir_all("./out")?;
+      
     println!(
         "{} / {} : {}",
         naive_elapsed,

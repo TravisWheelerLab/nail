@@ -50,30 +50,26 @@ pub fn traceback_bounded(
                 }
             }
             TRACE_E => {
-                let mut max = -f32::INFINITY;
-                let mut state_max = 0;
-                let mut profile_idx_max = 0;
+                let mut max_score = -f32::INFINITY;
+                let mut state_of_max_score = 0;
+                let mut profile_idx_of_max_score = 0;
 
                 for profile_idx in 1..=profile.length {
-                    if optimal_matrix.get_match(target_idx, profile_idx) >= max {
-                        max = optimal_matrix.get_match(target_idx, profile_idx);
-                        state_max = TRACE_M;
-                        profile_idx_max = profile_idx;
+                    if optimal_matrix.get_match(target_idx, profile_idx) >= max_score {
+                        max_score = optimal_matrix.get_match(target_idx, profile_idx);
+                        state_of_max_score = TRACE_M;
+                        profile_idx_of_max_score = profile_idx;
                     }
-                    if optimal_matrix.get_delete(target_idx, profile_idx) >= max {
-                        max = optimal_matrix.get_delete(target_idx, profile_idx);
-                        state_max = TRACE_D;
-                        profile_idx_max = profile_idx;
+                    if optimal_matrix.get_delete(target_idx, profile_idx) > max_score {
+                        max_score = optimal_matrix.get_delete(target_idx, profile_idx);
+                        state_of_max_score = TRACE_D;
+                        profile_idx_of_max_score = profile_idx;
                     }
                 }
-                profile_idx = profile_idx_max;
-                state_max
+                profile_idx = profile_idx_of_max_score;
+                state_of_max_score
             }
             TRACE_M => {
-                // a match means we have moved forward in the both the profile and the target
-                profile_idx -= 1;
-                target_idx -= 1;
-
                 let possible_states: [usize; 4] = [TRACE_M, TRACE_I, TRACE_D, TRACE_B];
                 let possible_paths: [f32; 4] = [
                     profile.transition_score_delta(PROFILE_MATCH_TO_MATCH, profile_idx - 1)
@@ -92,18 +88,23 @@ pub fn traceback_bounded(
                         argmax = i;
                     }
                 }
+
+                // a match means we have moved forward in the both the profile and the target
+                profile_idx -= 1;
+                target_idx -= 1;
+
                 possible_states[argmax]
             }
             TRACE_I => {
-                // an insert means we moved forward only in the profile
-                target_idx -= 1;
-
                 let match_to_insert_path = profile
                     .transition_score_delta(PROFILE_MATCH_TO_INSERT, profile_idx)
                     * optimal_matrix.get_match(target_idx - 1, profile_idx);
                 let insert_to_insert_path: f32 = profile
                     .transition_score_delta(PROFILE_INSERT_TO_INSERT, profile_idx)
                     * optimal_matrix.get_insert(target_idx - 1, profile_idx);
+
+                // an insert means we moved forward only in the profile
+                target_idx -= 1;
 
                 if match_to_insert_path >= insert_to_insert_path {
                     TRACE_M
@@ -112,15 +113,15 @@ pub fn traceback_bounded(
                 }
             }
             TRACE_D => {
-                // a delete means we moved forward only in the profile
-                profile_idx -= 1;
-
                 let match_to_delete_path = profile
                     .transition_score_delta(PROFILE_MATCH_TO_DELETE, profile_idx - 1)
                     * optimal_matrix.get_match(target_idx, profile_idx - 1);
                 let delete_to_delete_path = profile
                     .transition_score_delta(PROFILE_DELETE_TO_DELETE, profile_idx - 1)
                     * optimal_matrix.get_delete(target_idx, profile_idx - 1);
+
+                // a delete means we moved forward only in the profile
+                profile_idx -= 1;
 
                 if match_to_delete_path >= delete_to_delete_path {
                     TRACE_M

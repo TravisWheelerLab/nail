@@ -4,7 +4,7 @@ use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Alignment, DpMatrix3D, DpMatrixFlat, Profile, Sequence, Trace};
 use crate::util::Average;
 use anyhow::Result;
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::{stdout, BufWriter};
 use std::time::Instant;
 
@@ -49,7 +49,7 @@ impl NaiveTimings {
 }
 
 pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<Vec<Alignment>> {
-    let dump = false;
+    let dump = true;
 
     let max_profile_length = profiles
         .iter()
@@ -58,11 +58,6 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
     let max_target_length = targets
         .iter()
         .fold(0usize, |acc: usize, s: &Sequence| acc.max(s.length));
-
-    // let mut forward_matrix = DpMatrix3D::new(max_target_length, max_profile_length);
-    // let mut backward_matrix = DpMatrix3D::new(max_target_length, max_profile_length);
-    // let mut posterior_matrix = DpMatrix3D::new(max_target_length, max_profile_length);
-    // let mut optimal_matrix = DpMatrix3D::new(max_target_length, max_profile_length);
 
     let mut forward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
     let mut backward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
@@ -75,6 +70,9 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
     for (alignment_cnt, (profile, target)) in profiles.iter_mut().zip(targets.iter()).enumerate() {
         // for profile in profiles.iter_mut() {
         //     for target in targets.iter() {
+
+        create_dir_all(format!("./out/{}", profile.name))?;
+
         profile.configure_for_target_length(target.length);
 
         let now = Instant::now();
@@ -91,7 +89,10 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
         timings.forward_times[alignment_cnt] = now.elapsed().as_micros() as usize;
 
         if dump {
-            let mut forward_out = BufWriter::new(File::create("./nale-dump/forward.mtx")?);
+            let mut forward_out = BufWriter::new(File::create(format!(
+                "./out/{}/{}-fwd-naive.mtx",
+                profile.name, target.name
+            ))?);
             forward_matrix.dump(&mut forward_out)?;
         }
 
@@ -100,7 +101,10 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
         timings.backward_times[alignment_cnt] = now.elapsed().as_micros() as usize;
 
         if dump {
-            let mut backward_out = BufWriter::new(File::create("./nale-dump/backward.mtx")?);
+            let mut backward_out = BufWriter::new(File::create(format!(
+                "./out/{}/{}-bwd-naive.mtx",
+                profile.name, target.name
+            ))?);
             backward_matrix.dump(&mut backward_out)?;
         }
 
@@ -114,7 +118,10 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
         timings.posterior_times[alignment_cnt] = now.elapsed().as_micros() as usize;
 
         if dump {
-            let mut posterior_out = BufWriter::new(File::create("./nale-dump/posterior.mtx")?);
+            let mut posterior_out = BufWriter::new(File::create(format!(
+                "./out/{}/{}-post-naive.mtx",
+                profile.name, target.name
+            ))?);
             posterior_matrix.dump(&mut posterior_out)?;
         }
 
@@ -123,7 +130,10 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
         timings.optimal_times[alignment_cnt] = now.elapsed().as_micros() as usize;
 
         if dump {
-            let mut optimal_out = BufWriter::new(File::create("./nale-dump/optimal.mtx")?);
+            let mut optimal_out = BufWriter::new(File::create(format!(
+                "./out/{}/{}-opt-naive.mtx",
+                profile.name, target.name
+            ))?);
             optimal_matrix.dump(&mut optimal_out)?;
         }
 
@@ -138,7 +148,10 @@ pub fn pipeline_naive(profiles: &mut [Profile], targets: &[Sequence]) -> Result<
         );
 
         if dump {
-            let mut trace_out = BufWriter::new(File::create("./nale-dump/trace.dump")?);
+            let mut trace_out = BufWriter::new(File::create(format!(
+                "./out/{}/{}-trace-naive.out",
+                profile.name, target.name
+            ))?);
             trace.dump(&mut trace_out, profile, target)?;
         }
 
