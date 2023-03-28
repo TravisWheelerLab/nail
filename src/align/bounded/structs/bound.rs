@@ -197,62 +197,62 @@ impl CloudBoundGroup {
             )
         }
     }
-}
 
-pub fn join_bounds(
-    forward_bounds: &mut CloudBoundGroup,
-    backward_bounds: &CloudBoundGroup,
-) -> Result<()> {
-    let start_idx = forward_bounds
-        .min_anti_diagonal_idx
-        .min(backward_bounds.min_anti_diagonal_idx);
+    pub fn join_bounds(
+        forward_bounds: &mut CloudBoundGroup,
+        backward_bounds: &CloudBoundGroup,
+    ) -> Result<()> {
+        let start_idx = forward_bounds
+            .min_anti_diagonal_idx
+            .min(backward_bounds.min_anti_diagonal_idx);
 
-    let end_idx = forward_bounds
-        .max_anti_diagonal_idx
-        .max(backward_bounds.max_anti_diagonal_idx);
+        let end_idx = forward_bounds
+            .max_anti_diagonal_idx
+            .max(backward_bounds.max_anti_diagonal_idx);
 
-    forward_bounds.min_anti_diagonal_idx = start_idx;
-    forward_bounds.max_anti_diagonal_idx = end_idx;
-    let forward_slice = &mut forward_bounds.bounds[start_idx..=end_idx];
-    let backward_slice = &backward_bounds.bounds[start_idx..=end_idx];
+        forward_bounds.min_anti_diagonal_idx = start_idx;
+        forward_bounds.max_anti_diagonal_idx = end_idx;
+        let forward_slice = &mut forward_bounds.bounds[start_idx..=end_idx];
+        let backward_slice = &backward_bounds.bounds[start_idx..=end_idx];
 
-    for (forward_bound, backward_bound) in forward_slice.iter_mut().zip(backward_slice) {
-        if forward_bound.was_pruned() {
-            // if there's no valid forward bound, just take the backward bound
-            forward_bound.left_target_idx = backward_bound.left_target_idx;
-            forward_bound.left_profile_idx = backward_bound.left_profile_idx;
-            forward_bound.right_target_idx = backward_bound.right_target_idx;
-            forward_bound.right_profile_idx = backward_bound.right_profile_idx;
-        } else if backward_bound.was_pruned() {
-            // if there's no valid backward bound, we can do nothing since we
-            // are consuming the forward bounds
-            continue;
+        for (forward_bound, backward_bound) in forward_slice.iter_mut().zip(backward_slice) {
+            if forward_bound.was_pruned() {
+                // if there's no valid forward bound, just take the backward bound
+                forward_bound.left_target_idx = backward_bound.left_target_idx;
+                forward_bound.left_profile_idx = backward_bound.left_profile_idx;
+                forward_bound.right_target_idx = backward_bound.right_target_idx;
+                forward_bound.right_profile_idx = backward_bound.right_profile_idx;
+            } else if backward_bound.was_pruned() {
+                // if there's no valid backward bound, we can do nothing since we
+                // are consuming the forward bounds
+                continue;
+            }
+
+            debug_assert_eq!(
+                forward_bound.anti_diagonal_idx(),
+                backward_bound.anti_diagonal_idx()
+            );
+
+            // otherwise we have two valid bounds and we can compare them
+            forward_bound.left_target_idx = forward_bound
+                .left_target_idx
+                .max(backward_bound.left_target_idx);
+
+            forward_bound.left_profile_idx = forward_bound
+                .left_profile_idx
+                .min(backward_bound.left_profile_idx);
+
+            forward_bound.right_target_idx = forward_bound
+                .right_target_idx
+                .min(backward_bound.right_target_idx);
+
+            forward_bound.right_profile_idx = forward_bound
+                .right_profile_idx
+                .max(backward_bound.right_profile_idx);
         }
 
-        debug_assert_eq!(
-            forward_bound.anti_diagonal_idx(),
-            backward_bound.anti_diagonal_idx()
-        );
-
-        // otherwise we have two valid bounds and we can compare them
-        forward_bound.left_target_idx = forward_bound
-            .left_target_idx
-            .max(backward_bound.left_target_idx);
-
-        forward_bound.left_profile_idx = forward_bound
-            .left_profile_idx
-            .min(backward_bound.left_profile_idx);
-
-        forward_bound.right_target_idx = forward_bound
-            .right_target_idx
-            .min(backward_bound.right_target_idx);
-
-        forward_bound.right_profile_idx = forward_bound
-            .right_profile_idx
-            .max(backward_bound.right_profile_idx);
+        Ok(())
     }
-
-    Ok(())
 }
 
 impl PrintMe for Vec<CloudBound> {

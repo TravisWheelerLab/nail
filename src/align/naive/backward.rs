@@ -6,12 +6,15 @@ use crate::structs::profile::constants::{
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix3D, Profile, Sequence};
+use crate::structs::{Profile, Sequence};
+use crate::timing::time;
 use crate::util::log_add;
+use anyhow::Result;
 
-// pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix3D) {
-pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) {
-    let esc: f32 = 0.0;
+#[funci::timed(timer = time)]
+pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> Result<()> {
+    let end_score: f32 = 0.0;
+
     // initialize the L row
     dp_matrix.set_special(target.length, SPECIAL_J, -f32::INFINITY);
     dp_matrix.set_special(target.length, SPECIAL_B, -f32::INFINITY);
@@ -48,7 +51,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
             target.length,
             profile_idx,
             log_sum!(
-                dp_matrix.get_special(target.length, SPECIAL_E) + esc,
+                dp_matrix.get_special(target.length, SPECIAL_E) + end_score,
                 dp_matrix.get_delete(target.length, profile_idx + 1)
                     + profile.transition_score(PROFILE_MATCH_TO_DELETE, profile_idx)
             ),
@@ -59,7 +62,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
             target.length,
             profile_idx,
             log_sum!(
-                dp_matrix.get_special(target.length, SPECIAL_E) + esc,
+                dp_matrix.get_special(target.length, SPECIAL_E) + end_score,
                 dp_matrix.get_delete(target.length, profile_idx + 1)
                     + profile.transition_score(PROFILE_DELETE_TO_DELETE, profile_idx)
             ),
@@ -156,7 +159,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
                     dp_matrix.get_insert(target_idx + 1, profile_idx)
                         + profile.transition_score(PROFILE_MATCH_TO_INSERT, profile_idx)
                         + profile.insert_score(current_residue, profile_idx),
-                    dp_matrix.get_special(target_idx, SPECIAL_E) + esc,
+                    dp_matrix.get_special(target_idx, SPECIAL_E) + end_score,
                     dp_matrix.get_delete(target_idx, profile_idx + 1)
                         + profile.transition_score(PROFILE_MATCH_TO_DELETE, profile_idx)
                 ),
@@ -184,7 +187,7 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
                         + profile.match_score(current_residue, profile_idx + 1),
                     dp_matrix.get_delete(target_idx, profile_idx + 1)
                         + profile.transition_score(PROFILE_DELETE_TO_DELETE, profile_idx),
-                    dp_matrix.get_special(target_idx, SPECIAL_E) + esc
+                    dp_matrix.get_special(target_idx, SPECIAL_E) + end_score
                 ),
             );
         }
@@ -231,4 +234,6 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
         dp_matrix.set_insert(0, profile_idx, -f32::INFINITY);
         dp_matrix.set_delete(0, profile_idx, -f32::INFINITY);
     }
+
+    Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::row_bound_params::RowBoundParams;
+use crate::align::bounded::structs::RowBoundParams;
 use crate::max_f32;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::profile::constants::{
@@ -7,12 +7,12 @@ use crate::structs::profile::constants::{
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix3D, Profile};
+use crate::structs::Profile;
+use crate::timing::time;
 
+#[funci::timed(timer = time)]
 pub fn optimal_accuracy_bounded(
     profile: &Profile,
-    // posterior_matrix: &DpMatrix3D,
-    // optimal_matrix: &mut DpMatrix3D,
     posterior_matrix: &impl DpMatrix,
     optimal_matrix: &mut impl DpMatrix,
     params: &RowBoundParams,

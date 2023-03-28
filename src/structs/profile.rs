@@ -11,13 +11,10 @@ use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
 use crate::structs::Hmm;
-use crate::util::{f32_vec_argmax, LogAbuse, PrintMe};
+use crate::util::{f32_vec_argmax, LogAbuse};
 
 use std::fmt;
 use std::fmt::Formatter;
-use std::io::Write;
-
-use anyhow::Result;
 
 pub mod constants {
     // this is p7_MAXABET; (4 or 20)

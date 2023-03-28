@@ -1,5 +1,4 @@
 use crate::align::bounded::structs::cloud_matrix::CloudAntiDiagonal;
-use anyhow::Result;
 
 #[derive(Default)]
 pub struct CloudMatrixQuadratic {

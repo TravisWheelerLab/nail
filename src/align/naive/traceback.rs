@@ -9,8 +9,10 @@ use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
 use crate::structs::{DpMatrix3D, Profile, Trace};
+use crate::timing::time;
 
-pub fn traceback(
+#[funci::timed(timer = time)]
+pub fn taaaraceback(
     profile: &Profile,
     posterior_matrix: &DpMatrix3D,
     optimal_matrix: &DpMatrix3D,

@@ -49,6 +49,7 @@ impl Trace {
     }
 
     pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+        #![allow(unused_variables)]
         todo!();
     }
 

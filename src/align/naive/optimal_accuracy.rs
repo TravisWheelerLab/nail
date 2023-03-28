@@ -5,16 +5,16 @@ use crate::structs::profile::constants::{
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix3D, Profile};
+use crate::structs::Profile;
+use crate::timing::time;
 
+#[funci::timed(timer = time)]
 pub fn optimal_accuracy(
     profile: &Profile,
-    // posterior_matrix: &DpMatrix3D,
-    // optimal_matrix: &mut DpMatrix3D,
     posterior_matrix: &impl DpMatrix,
     optimal_matrix: &mut impl DpMatrix,
 ) {
-    let esc: f32 = 1.0;
+    let end_score: f32 = 1.0;
 
     // initialization of the zero row
     optimal_matrix.set_special(0, SPECIAL_N, 0.0);
@@ -67,7 +67,7 @@ pub fn optimal_accuracy(
                 SPECIAL_E,
                 f32::max(
                     optimal_matrix.get_special(i, SPECIAL_E),
-                    optimal_matrix.get_match(i, k) * esc,
+                    optimal_matrix.get_match(i, k) * end_score,
                 ),
             );
 

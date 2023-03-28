@@ -1,51 +1,89 @@
 use anyhow::Result;
+use clap::ArgAction;
 use clap::Parser;
-use nale::output::write_tabular_output;
-use nale::pipelines::{pipeline_bounded, pipeline_naive};
+use nale::align::bounded::structs::CloudSearchParams;
+use nale::output::output_tabular::write_tabular_output;
+use nale::pipelines::{
+    pipeline_bounded, pipeline_naive, BoundedPipelineParams, NaivePipelineParams,
+};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
-use std::fs::{create_dir_all, File};
-use std::io::BufWriter;
-use std::time::Instant;
+use std::io;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
-    /// query hmm
+pub struct Args {
+    /// Query hmm file
     query: String,
-    /// target fasta
+    /// Target fasta file
     target: String,
+    /// Path for alignment output
+    #[arg(long)]
+    ali_out: Option<String>,
+    /// Path for tabular output
+    table_out: Option<String>,
+    /// Write debugging information
+    #[arg(long, action = ArgAction::SetTrue)]
+    debug: Option<bool>,
+    /// Allow output files to be overwritten
+    #[arg(long, action = ArgAction::SetTrue)]
+    allow_overwrite: Option<bool>,
+}
+
+impl Args {
+    pub fn params_naive(&self) -> NaivePipelineParams {
+        NaivePipelineParams {
+            write_debug: match self.debug {
+                Some(val) => val,
+                None => false,
+            },
+            allow_overwrite: match self.allow_overwrite {
+                Some(val) => val,
+                None => false,
+            },
+            // TODO: parameterize this
+            root_debug_dir_path: PathBuf::from("./nale-debug"),
+        }
+    }
+
+    pub fn params_bounded(&self) -> BoundedPipelineParams {
+        BoundedPipelineParams {
+            write_debug: match self.debug {
+                Some(val) => val,
+                None => false,
+            },
+            allow_overwrite: match self.allow_overwrite {
+                Some(val) => val,
+                None => false,
+            },
+            // TODO: parameterize this
+            root_debug_dir_path: PathBuf::from("./nale-debug"),
+            cloud_search_params: CloudSearchParams {
+                target_start: 0,
+                target_end: 0,
+                profile_start: 0,
+                profile_end: 0,
+                gamma: 0,
+                alpha: 0.0,
+                beta: 0.0,
+            },
+        }
+    }
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
-    let hmms = parse_hmms_from_p7hmm_file(args.query)?;
+    let hmms = parse_hmms_from_p7hmm_file(&args.query)?;
     let mut profiles: Vec<Profile> = hmms.iter().map(|hmm| Profile::new(hmm)).collect();
     let targets = Sequence::amino_from_fasta(&args.target)?;
 
-    let mut now = Instant::now();
-    let alignments_naive = pipeline_naive(&mut profiles, &targets)?;
-    let naive_elapsed = now.elapsed().as_micros();
+    let params_naive = args.params_naive();
+    let alignments_naive = pipeline_naive(&mut profiles, &targets, &params_naive)?;
 
-    let mut naive_out = BufWriter::new(File::create("./naive.out")?);
-    write_tabular_output(&alignments_naive, &mut naive_out)?;
+    let params_bounded = args.params_bounded();
+    let alignments_bounded = pipeline_bounded(&mut profiles, &targets, &params_bounded)?;
 
-    now = Instant::now();
-    let alignments_bounded = pipeline_bounded(&mut profiles, &targets)?;
-    let bounded_elapsed = now.elapsed().as_micros() + 1;
-
-    let mut bounded_out = BufWriter::new(File::create("./bounded.out")?);
-    write_tabular_output(&alignments_bounded, &mut bounded_out)?;
-    
-    create_dir_all("./out")?;
-      
-    println!(
-        "{} / {} : {}",
-        naive_elapsed,
-        bounded_elapsed,
-        naive_elapsed as f32 / bounded_elapsed as f32
-    );
-
+    write_tabular_output(&alignments_bounded, &mut io::stdout())?;
     Ok(())
 }

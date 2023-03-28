@@ -17,6 +17,89 @@ pub trait DpMatrix {
     fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32);
     fn get_special(&self, target_idx: usize, profile_idx: usize) -> f32;
     fn set_special(&mut self, target_idx: usize, profile_idx: usize, value: f32);
+    fn dump(&self, out: &mut impl Write) -> Result<()> {
+        let target_idx_width = self.target_length().to_string().len();
+        let first_column_width = target_idx_width + 3;
+        // TODO: should these be global statics or something?
+        let column_width = 13;
+        let precision = 3;
+
+        // write the profile indices
+        write!(out, "{}", " ".repeat(first_column_width - 1))?;
+        for profile_idx in 0..=self.profile_length() {
+            write!(out, "{:w$} ", profile_idx, w = column_width)?;
+        }
+
+        for special_idx in 0..NUM_SPECIAL_STATES {
+            write!(
+                out,
+                "{:.w$} ",
+                SPECIAL_STATE_IDX_TO_NAME[special_idx],
+                w = column_width
+            )?;
+        }
+        writeln!(out)?;
+
+        write!(out, "{}", " ".repeat(first_column_width))?;
+        for _ in 0..=self.profile_length() + NUM_SPECIAL_STATES {
+            write!(out, "   {} ", "-".repeat(column_width - 3))?;
+        }
+        writeln!(out)?;
+
+        for target_idx in 0..=self.target_length() {
+            // write the match line
+            write!(out, "{:w$} M ", target_idx, w = target_idx_width)?;
+            for profile_idx in 0..=self.profile_length() {
+                write!(
+                    out,
+                    "{:w$.p$} ",
+                    self.get_match(target_idx, profile_idx),
+                    w = column_width,
+                    p = precision
+                )?;
+            }
+
+            // write the special states on the match line
+            for special_idx in 0..NUM_SPECIAL_STATES {
+                write!(
+                    out,
+                    "{:w$.p$} ",
+                    self.get_special(target_idx, special_idx),
+                    w = column_width,
+                    p = precision
+                )?;
+            }
+            writeln!(out)?;
+
+            // write the insert line
+            write!(out, "{:w$} I ", target_idx, w = target_idx_width)?;
+            for profile_idx in 0..=self.profile_length() {
+                write!(
+                    out,
+                    "{:w$.p$} ",
+                    self.get_insert(target_idx, profile_idx),
+                    w = column_width,
+                    p = precision
+                )?;
+            }
+            writeln!(out)?;
+
+            // write the delete line
+            write!(out, "{:w$} D ", target_idx, w = target_idx_width)?;
+            for profile_idx in 0..=self.profile_length() {
+                write!(
+                    out,
+                    "{:w$.p$} ",
+                    self.get_delete(target_idx, profile_idx),
+                    w = column_width,
+                    p = precision
+                )?;
+            }
+            writeln!(out, "\n")?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -44,90 +127,6 @@ impl DpMatrix3D {
             special_matrix: vec![vec![-f32::INFINITY; 5]; target_length + 1],
         }
     }
-
-    pub fn dump(&self, out: &mut impl Write) -> Result<()> {
-        let target_idx_width = self.target_length.to_string().len();
-        let first_column_width = target_idx_width + 3;
-        // TODO: should these be global statics or something?
-        let column_width = 13;
-        let precision = 3;
-
-        // write the profile indices
-        write!(out, "{}", " ".repeat(first_column_width - 1))?;
-        for profile_idx in 0..=self.profile_length {
-            write!(out, "{:w$} ", profile_idx, w = column_width)?;
-        }
-
-        for special_idx in 0..NUM_SPECIAL_STATES {
-            write!(
-                out,
-                "{:.w$} ",
-                SPECIAL_STATE_IDX_TO_NAME[special_idx],
-                w = column_width
-            )?;
-        }
-        writeln!(out)?;
-
-        write!(out, "{}", " ".repeat(first_column_width))?;
-        for _ in 0..=self.profile_length + NUM_SPECIAL_STATES {
-            write!(out, "   {} ", "-".repeat(column_width - 3))?;
-        }
-        writeln!(out)?;
-
-        for target_idx in 0..=self.target_length {
-            // write the match line
-            write!(out, "{:w$} M ", target_idx, w = target_idx_width)?;
-            for profile_idx in 0..=self.profile_length {
-                write!(
-                    out,
-                    "{:w$.p$} ",
-                    self.get_match(target_idx, profile_idx),
-                    w = column_width,
-                    p = precision
-                )?;
-            }
-
-            // write the special states on the match line
-            for special_idx in 0..NUM_SPECIAL_STATES {
-                write!(
-                    out,
-                    "{:w$.p$} ",
-                    self.get_special(target_idx, special_idx),
-                    w = column_width,
-                    p = precision
-                )?;
-            }
-            writeln!(out)?;
-
-            // write the insert line
-            write!(out, "{:w$} I ", target_idx, w = target_idx_width)?;
-            for profile_idx in 0..=self.profile_length {
-                write!(
-                    out,
-                    "{:w$.p$} ",
-                    self.get_insert(target_idx, profile_idx),
-                    w = column_width,
-                    p = precision
-                )?;
-            }
-            writeln!(out)?;
-
-            // write the delete line
-            write!(out, "{:w$} D ", target_idx, w = target_idx_width)?;
-            for profile_idx in 0..=self.profile_length {
-                write!(
-                    out,
-                    "{:w$.p$} ",
-                    self.get_delete(target_idx, profile_idx),
-                    w = column_width,
-                    p = precision
-                )?;
-            }
-            writeln!(out, "\n")?;
-        }
-
-        Ok(())
-    }
 }
 
 impl DpMatrix for DpMatrix3D {
@@ -140,6 +139,7 @@ impl DpMatrix for DpMatrix3D {
     }
 
     fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+        #![allow(unused_variables)]
         todo!()
     }
 

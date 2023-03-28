@@ -1,13 +1,17 @@
-pub mod bound;
-pub use bound::CloudBound;
+mod bound;
+pub use bound::{CloudBound, CloudBoundGroup};
 
-pub mod cloud_matrix;
+mod cloud_matrix;
 pub use cloud_matrix::CloudMatrixLinear;
 
 mod cloud_matrix_sparse;
 pub use cloud_matrix_sparse::CloudMatrixQuadratic;
 
-pub mod cloud_search_params;
+mod cloud_search_params;
 pub use cloud_search_params::CloudSearchParams;
 
-pub mod row_bound_params;
+mod row_bound_params;
+pub use row_bound_params::RowBoundParams;
+
+mod cloud_seed;
+pub use cloud_seed::CloudSeed;

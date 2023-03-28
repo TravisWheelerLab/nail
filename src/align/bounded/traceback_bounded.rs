@@ -6,22 +6,20 @@ use crate::structs::profile::constants::{
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
 use crate::structs::trace::constants::{
-    TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_IDX_TO_NAME, TRACE_J, TRACE_M, TRACE_N,
-    TRACE_S, TRACE_T,
+    TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
-use crate::structs::{DpMatrix3D, Profile, Trace};
+use crate::structs::{Profile, Trace};
 
+use crate::timing::time;
+
+#[funci::timed(timer = time)]
 pub fn traceback_bounded(
     profile: &Profile,
-    // posterior_matrix: &DpMatrix3D,
-    // optimal_matrix: &DpMatrix3D,
     posterior_matrix: &impl DpMatrix,
     optimal_matrix: &impl DpMatrix,
     trace: &mut Trace,
     target_end: usize,
 ) {
-    // let mut target_idx = params.target_end;
-    // let mut profile_idx = params.profile_start;
     let mut target_idx = target_end;
     let mut profile_idx = 0;
 

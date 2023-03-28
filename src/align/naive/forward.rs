@@ -6,12 +6,14 @@ use crate::structs::profile::constants::{
     PROFILE_MATCH_TO_INSERT, PROFILE_MATCH_TO_MATCH, SPECIAL_B, SPECIAL_C, SPECIAL_E, SPECIAL_J,
     SPECIAL_LOOP, SPECIAL_MOVE, SPECIAL_N,
 };
-use crate::structs::{DpMatrix3D, Profile, Sequence};
+use crate::structs::{Profile, Sequence};
+use crate::timing::time;
 use crate::util::log_add;
+use anyhow::Result;
 
-// pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut DpMatrix3D) {
-pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) {
-    let esc: f32 = 0.0;
+#[funci::timed(timer = time)]
+pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> Result<()> {
+    let end_score: f32 = 0.0;
 
     // initialize the zero row
     dp_matrix.set_special(0, SPECIAL_N, 0.0);
@@ -85,8 +87,8 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatr
                 target_idx,
                 SPECIAL_E,
                 log_sum!(
-                    dp_matrix.get_match(target_idx, profile_idx) + esc,
-                    dp_matrix.get_delete(target_idx, profile_idx) + esc,
+                    dp_matrix.get_match(target_idx, profile_idx) + end_score,
+                    dp_matrix.get_delete(target_idx, profile_idx) + end_score,
                     dp_matrix.get_special(target_idx, SPECIAL_E)
                 ),
             );
@@ -178,4 +180,6 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatr
             ),
         );
     }
+
+    Ok(())
 }
