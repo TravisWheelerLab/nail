@@ -1,11 +1,6 @@
 use crate::align::bounded::cloud_search_common::{prune_and_scrub, scrub_co_located, PruneStatus};
 use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams};
 use crate::log_sum;
-use crate::structs::profile::constants::{
-    PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH, PROFILE_INSERT_TO_INSERT,
-    PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE, PROFILE_MATCH_TO_INSERT,
-    PROFILE_MATCH_TO_MATCH,
-};
 use crate::structs::{Profile, Sequence};
 use crate::timing::time;
 use crate::util::log_add;
@@ -48,11 +43,11 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, source_profile_idx)
-                + profile.transition_score(PROFILE_MATCH_TO_MATCH, source_profile_idx),
+                + profile.transition_score(Profile::PROFILE_MATCH_TO_MATCH, source_profile_idx),
             cloud_matrix.get_insert(source_row_idx, source_profile_idx)
-                + profile.transition_score(PROFILE_INSERT_TO_MATCH, source_profile_idx),
+                + profile.transition_score(Profile::PROFILE_INSERT_TO_MATCH, source_profile_idx),
             cloud_matrix.get_delete(source_row_idx, source_profile_idx)
-                + profile.transition_score(PROFILE_DELETE_TO_MATCH, source_profile_idx)
+                + profile.transition_score(Profile::PROFILE_DELETE_TO_MATCH, source_profile_idx)
         ) + profile.match_score(current_target_character as usize, profile_idx),
     );
 
@@ -69,9 +64,9 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, profile_idx)
-                + profile.transition_score(PROFILE_MATCH_TO_INSERT, profile_idx),
+                + profile.transition_score(Profile::PROFILE_MATCH_TO_INSERT, profile_idx),
             cloud_matrix.get_insert(source_row_idx, profile_idx)
-                + profile.transition_score(PROFILE_INSERT_TO_INSERT, profile_idx)
+                + profile.transition_score(Profile::PROFILE_INSERT_TO_INSERT, profile_idx)
         ) + profile.insert_score(current_target_character as usize, profile_idx),
     );
 
@@ -88,9 +83,9 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, source_profile_idx)
-                + profile.transition_score(PROFILE_MATCH_TO_DELETE, source_profile_idx),
+                + profile.transition_score(Profile::PROFILE_MATCH_TO_DELETE, source_profile_idx),
             cloud_matrix.get_delete(source_row_idx, source_profile_idx)
-                + profile.transition_score(PROFILE_DELETE_TO_DELETE, source_profile_idx)
+                + profile.transition_score(Profile::PROFILE_DELETE_TO_DELETE, source_profile_idx)
         ),
     );
 }

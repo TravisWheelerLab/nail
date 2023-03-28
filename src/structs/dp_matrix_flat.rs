@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crate::structs::dp_matrix::DpMatrix;
-use crate::structs::profile::constants::{NUM_SPECIAL_STATES, SPECIAL_STATE_IDX_TO_NAME};
+use crate::structs::Profile;
 use anyhow::Result;
 
 #[derive(Default)]
@@ -82,18 +82,18 @@ impl DpMatrixFlat {
             write!(out, "{:w$} ", profile_idx, w = column_width)?;
         }
 
-        for special_idx in 0..NUM_SPECIAL_STATES {
+        for special_idx in 0..Profile::NUM_SPECIAL_STATES {
             write!(
                 out,
                 "{:.w$} ",
-                SPECIAL_STATE_IDX_TO_NAME[special_idx],
+                Profile::SPECIAL_STATE_IDX_TO_NAME[special_idx],
                 w = column_width
             )?;
         }
         writeln!(out)?;
 
         write!(out, "{}", " ".repeat(first_column_width))?;
-        for _ in 0..=self.profile_length + NUM_SPECIAL_STATES {
+        for _ in 0..=self.profile_length + Profile::NUM_SPECIAL_STATES {
             write!(out, "   {} ", "-".repeat(column_width - 3))?;
         }
         writeln!(out)?;
@@ -112,7 +112,7 @@ impl DpMatrixFlat {
             }
 
             // write the special states on the match line
-            for special_idx in 0..NUM_SPECIAL_STATES {
+            for special_idx in 0..Profile::NUM_SPECIAL_STATES {
                 write!(
                     out,
                     "{:w$.p$} ",
@@ -245,14 +245,14 @@ impl DpMatrix for DpMatrixFlat {
     #[inline]
     fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
         debug_assert!(target_idx <= self.target_length);
-        debug_assert!(special_idx < NUM_SPECIAL_STATES);
+        debug_assert!(special_idx < Profile::NUM_SPECIAL_STATES);
         self.special_data[target_idx * 5 + special_idx]
     }
 
     #[inline]
     fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
         debug_assert!(target_idx <= self.target_length);
-        debug_assert!(special_idx < NUM_SPECIAL_STATES);
+        debug_assert!(special_idx < Profile::NUM_SPECIAL_STATES);
         self.special_data[target_idx * 5 + special_idx] = value;
     }
 }

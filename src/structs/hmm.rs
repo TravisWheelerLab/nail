@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use crate::structs::profile::constants::MAX_DEGENERATE_ALPHABET_SIZE;
+use crate::structs::Profile;
 use anyhow::{Context, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -162,10 +162,10 @@ impl Hmm {
 
         hmm.model
             .match_probabilities
-            .push(vec![0.0; MAX_DEGENERATE_ALPHABET_SIZE]);
+            .push(vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE]);
         hmm.model
             .insert_probabilities
-            .push(vec![0.0; MAX_DEGENERATE_ALPHABET_SIZE]);
+            .push(vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE]);
 
         hmm.model.transition_probabilities.push(vec![0.0f32; 7]);
 

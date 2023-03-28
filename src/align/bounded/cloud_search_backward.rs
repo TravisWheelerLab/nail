@@ -2,11 +2,6 @@ use crate::align::bounded::cloud_search_common::PruneStatus;
 use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams};
 use crate::align::bounded::{prune_and_scrub, scrub_co_located};
 use crate::log_sum;
-use crate::structs::profile::constants::{
-    PROFILE_DELETE_TO_DELETE, PROFILE_DELETE_TO_MATCH, PROFILE_INSERT_TO_INSERT,
-    PROFILE_INSERT_TO_MATCH, PROFILE_MATCH_TO_DELETE, PROFILE_MATCH_TO_INSERT,
-    PROFILE_MATCH_TO_MATCH,
-};
 use crate::structs::{Profile, Sequence};
 use crate::timing::time;
 use crate::util::log_add;
@@ -57,13 +52,13 @@ pub fn compute_backward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(match_source_row_idx, profile_idx + 1)
-                + profile.transition_score(PROFILE_MATCH_TO_MATCH, profile_idx)
+                + profile.transition_score(Profile::PROFILE_MATCH_TO_MATCH, profile_idx)
                 + profile.match_score(previous_target_character, profile_idx + 1),
             cloud_matrix.get_insert(insert_source_row_idx, profile_idx)
-                + profile.transition_score(PROFILE_MATCH_TO_INSERT, profile_idx)
+                + profile.transition_score(Profile::PROFILE_MATCH_TO_INSERT, profile_idx)
                 + profile.insert_score(previous_target_character, profile_idx),
             cloud_matrix.get_delete(delete_source_row_idx, profile_idx + 1)
-                + profile.transition_score(PROFILE_MATCH_TO_DELETE, profile_idx)
+                + profile.transition_score(Profile::PROFILE_MATCH_TO_DELETE, profile_idx)
         ),
     );
 
@@ -78,10 +73,10 @@ pub fn compute_backward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(match_source_row_idx, profile_idx + 1)
-                + profile.transition_score(PROFILE_INSERT_TO_MATCH, profile_idx)
+                + profile.transition_score(Profile::PROFILE_INSERT_TO_MATCH, profile_idx)
                 + profile.match_score(previous_target_character, profile_idx + 1),
             cloud_matrix.get_insert(insert_source_row_idx, profile_idx)
-                + profile.transition_score(PROFILE_INSERT_TO_INSERT, profile_idx)
+                + profile.transition_score(Profile::PROFILE_INSERT_TO_INSERT, profile_idx)
                 + profile.insert_score(previous_target_character, profile_idx)
         ),
     );
@@ -97,10 +92,10 @@ pub fn compute_backward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(match_source_row_idx, profile_idx + 1)
-                + profile.transition_score(PROFILE_DELETE_TO_MATCH, profile_idx)
+                + profile.transition_score(Profile::PROFILE_DELETE_TO_MATCH, profile_idx)
                 + profile.match_score(previous_target_character, profile_idx + 1),
             cloud_matrix.get_delete(delete_source_row_idx, profile_idx + 1)
-                + profile.transition_score(PROFILE_DELETE_TO_DELETE, profile_idx)
+                + profile.transition_score(Profile::PROFILE_DELETE_TO_DELETE, profile_idx)
         ),
     );
 }
