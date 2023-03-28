@@ -39,21 +39,21 @@ pub fn backward_bounded(
     //       the last row defined in the row bounds
     //       is initialized with special conditions
 
-    dp_matrix.set_special(params.target_start, Profile::SPECIAL_J, -f32::INFINITY);
-    dp_matrix.set_special(params.target_start, Profile::SPECIAL_B, -f32::INFINITY);
-    dp_matrix.set_special(params.target_start, Profile::SPECIAL_N, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start, Profile::SPECIAL_J_IDX, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start, Profile::SPECIAL_B_IDX, -f32::INFINITY);
+    dp_matrix.set_special(params.target_start, Profile::SPECIAL_N_IDX, -f32::INFINITY);
 
     dp_matrix.set_special(
         params.target_end,
-        Profile::SPECIAL_C,
-        profile.special_transition_score(Profile::SPECIAL_C, Profile::SPECIAL_MOVE),
+        Profile::SPECIAL_C_IDX,
+        profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX),
     );
 
     dp_matrix.set_special(
         params.target_end,
-        Profile::SPECIAL_E,
-        profile.special_transition_score(Profile::SPECIAL_C, Profile::SPECIAL_MOVE)
-            + profile.special_transition_score(Profile::SPECIAL_E, Profile::SPECIAL_MOVE),
+        Profile::SPECIAL_E_IDX,
+        profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX)
+            + profile.special_transition_score(Profile::SPECIAL_E_IDX, Profile::SPECIAL_MOVE_IDX),
     );
 
     let profile_start_on_last_row = params.left_row_bounds[params.target_end];
@@ -73,13 +73,13 @@ pub fn backward_bounded(
     dp_matrix.set_match(
         params.target_end,
         profile_end_on_last_row,
-        dp_matrix.get_special(params.target_end, Profile::SPECIAL_E),
+        dp_matrix.get_special(params.target_end, Profile::SPECIAL_E_IDX),
     );
 
     dp_matrix.set_delete(
         params.target_end,
         profile_end_on_last_row,
-        dp_matrix.get_special(params.target_end, Profile::SPECIAL_E),
+        dp_matrix.get_special(params.target_end, Profile::SPECIAL_E_IDX),
     );
 
     dp_matrix.set_insert(params.target_end, profile_end_on_last_row, -f32::INFINITY);
@@ -103,9 +103,9 @@ pub fn backward_bounded(
             params.target_end,
             profile_idx,
             log_sum!(
-                dp_matrix.get_special(params.target_end, Profile::SPECIAL_E) + end_score,
+                dp_matrix.get_special(params.target_end, Profile::SPECIAL_E_IDX) + end_score,
                 dp_matrix.get_delete(params.target_end, profile_idx + 1)
-                    + profile.transition_score(Profile::PROFILE_MATCH_TO_DELETE, profile_idx)
+                    + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
             ),
         );
 
@@ -114,9 +114,9 @@ pub fn backward_bounded(
             params.target_end,
             profile_idx,
             log_sum!(
-                dp_matrix.get_special(params.target_end, Profile::SPECIAL_E) + end_score,
+                dp_matrix.get_special(params.target_end, Profile::SPECIAL_E_IDX) + end_score,
                 dp_matrix.get_delete(params.target_end, profile_idx + 1)
-                    + profile.transition_score(Profile::PROFILE_DELETE_TO_DELETE, profile_idx)
+                    + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx)
             ),
         );
     }
@@ -148,10 +148,12 @@ pub fn backward_bounded(
         //       if we do need to do this for some reason, we need to change the bounds of the next loop
         dp_matrix.set_special(
             target_idx,
-            Profile::SPECIAL_B,
+            Profile::SPECIAL_B_IDX,
             dp_matrix.get_match(target_idx + 1, 1)
-                + profile
-                    .transition_score(Profile::PROFILE_BEGIN_TO_MATCH, profile_start_on_current_row - 1)
+                + profile.transition_score(
+                    Profile::BEGIN_TO_MATCH_IDX,
+                    profile_start_on_current_row - 1,
+                )
                 + profile.match_score(current_residue, profile_start_on_current_row),
         );
 
@@ -162,11 +164,11 @@ pub fn backward_bounded(
         for profile_idx in (profile_start_on_current_row + 1)..=profile_end_on_current_row {
             dp_matrix.set_special(
                 target_idx,
-                Profile::SPECIAL_B,
+                Profile::SPECIAL_B_IDX,
                 log_sum!(
-                    dp_matrix.get_special(target_idx, Profile::SPECIAL_B),
+                    dp_matrix.get_special(target_idx, Profile::SPECIAL_B_IDX),
                     dp_matrix.get_match(target_idx + 1, profile_idx)
-                        + profile.transition_score(Profile::PROFILE_BEGIN_TO_MATCH, profile_idx - 1)
+                        + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, profile_idx - 1)
                         + profile.match_score(current_residue, profile_idx)
                 ),
             );
@@ -174,48 +176,67 @@ pub fn backward_bounded(
 
         dp_matrix.set_special(
             target_idx,
-            Profile::SPECIAL_J,
+            Profile::SPECIAL_J_IDX,
             log_sum!(
-                dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_J)
-                    + profile.special_transition_score(Profile::SPECIAL_J, Profile::SPECIAL_LOOP),
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_B)
-                    + profile.special_transition_score(Profile::SPECIAL_J, Profile::SPECIAL_MOVE)
+                dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_J_IDX)
+                    + profile.special_transition_score(
+                        Profile::SPECIAL_J_IDX,
+                        Profile::SPECIAL_LOOP_IDX
+                    ),
+                dp_matrix.get_special(target_idx, Profile::SPECIAL_B_IDX)
+                    + profile.special_transition_score(
+                        Profile::SPECIAL_J_IDX,
+                        Profile::SPECIAL_MOVE_IDX
+                    )
             ),
         );
 
         dp_matrix.set_special(
             target_idx,
-            Profile::SPECIAL_C,
-            dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_C)
-                + profile.special_transition_score(Profile::SPECIAL_C, Profile::SPECIAL_LOOP),
+            Profile::SPECIAL_C_IDX,
+            dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_C_IDX)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_LOOP_IDX),
         );
 
         dp_matrix.set_special(
             target_idx,
-            Profile::SPECIAL_E,
+            Profile::SPECIAL_E_IDX,
             log_sum!(
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_J)
-                    + profile.special_transition_score(Profile::SPECIAL_E, Profile::SPECIAL_LOOP),
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_C)
-                    + profile.special_transition_score(Profile::SPECIAL_E, Profile::SPECIAL_MOVE)
+                dp_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
+                    + profile.special_transition_score(
+                        Profile::SPECIAL_E_IDX,
+                        Profile::SPECIAL_LOOP_IDX
+                    ),
+                dp_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX)
+                    + profile.special_transition_score(
+                        Profile::SPECIAL_E_IDX,
+                        Profile::SPECIAL_MOVE_IDX
+                    )
             ),
         );
 
         dp_matrix.set_special(
             target_idx,
-            Profile::SPECIAL_N,
+            Profile::SPECIAL_N_IDX,
             log_sum!(
-                dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_N)
-                    + profile.special_transition_score(Profile::SPECIAL_N, Profile::SPECIAL_LOOP),
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_B)
-                    + profile.special_transition_score(Profile::SPECIAL_N, Profile::SPECIAL_MOVE)
+                dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_N_IDX)
+                    + profile.special_transition_score(
+                        Profile::SPECIAL_N_IDX,
+                        Profile::SPECIAL_LOOP_IDX
+                    ),
+                dp_matrix.get_special(target_idx, Profile::SPECIAL_B_IDX)
+                    + profile.special_transition_score(
+                        Profile::SPECIAL_N_IDX,
+                        Profile::SPECIAL_MOVE_IDX
+                    )
             ),
         );
 
         dp_matrix.set_match(
             target_idx,
             profile_end_on_current_row,
-            dp_matrix.get_special(target_idx, Profile::SPECIAL_E),
+            dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX),
         );
 
         dp_matrix.set_insert(target_idx, profile_end_on_current_row, -f32::INFINITY);
@@ -223,7 +244,7 @@ pub fn backward_bounded(
         dp_matrix.set_delete(
             target_idx,
             profile_end_on_current_row,
-            dp_matrix.get_special(target_idx, Profile::SPECIAL_E),
+            dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX),
         );
 
         // for profile_idx in (1..profile.length).rev() {
@@ -233,14 +254,14 @@ pub fn backward_bounded(
                 profile_idx,
                 log_sum!(
                     dp_matrix.get_match(target_idx + 1, profile_idx + 1)
-                        + profile.transition_score(Profile::PROFILE_MATCH_TO_MATCH, profile_idx)
+                        + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, profile_idx)
                         + profile.match_score(current_residue, profile_idx + 1),
                     dp_matrix.get_insert(target_idx + 1, profile_idx)
-                        + profile.transition_score(Profile::PROFILE_MATCH_TO_INSERT, profile_idx)
+                        + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx)
                         + profile.insert_score(current_residue, profile_idx),
-                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E) + end_score,
+                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX) + end_score,
                     dp_matrix.get_delete(target_idx, profile_idx + 1)
-                        + profile.transition_score(Profile::PROFILE_MATCH_TO_DELETE, profile_idx)
+                        + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
                 ),
             );
 
@@ -249,10 +270,10 @@ pub fn backward_bounded(
                 profile_idx,
                 log_sum!(
                     dp_matrix.get_match(target_idx + 1, profile_idx + 1)
-                        + profile.transition_score(Profile::PROFILE_INSERT_TO_MATCH, profile_idx)
+                        + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, profile_idx)
                         + profile.match_score(current_residue, profile_idx + 1),
                     dp_matrix.get_insert(target_idx + 1, profile_idx)
-                        + profile.transition_score(Profile::PROFILE_INSERT_TO_INSERT, profile_idx)
+                        + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
                         + profile.insert_score(current_residue, profile_idx)
                 ),
             );
@@ -262,11 +283,11 @@ pub fn backward_bounded(
                 profile_idx,
                 log_sum!(
                     dp_matrix.get_match(target_idx + 1, profile_idx + 1)
-                        + profile.transition_score(Profile::PROFILE_DELETE_TO_MATCH, profile_idx)
+                        + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, profile_idx)
                         + profile.match_score(current_residue, profile_idx + 1),
                     dp_matrix.get_delete(target_idx, profile_idx + 1)
-                        + profile.transition_score(Profile::PROFILE_DELETE_TO_DELETE, profile_idx),
-                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E) + end_score
+                        + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx),
+                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX) + end_score
                 ),
             );
         }
@@ -279,9 +300,9 @@ pub fn backward_bounded(
 
     dp_matrix.set_special(
         params.target_start - 1,
-        Profile::SPECIAL_B,
+        Profile::SPECIAL_B_IDX,
         dp_matrix.get_match(params.target_start, profile_start_in_first_row)
-            + profile.transition_score(Profile::PROFILE_BEGIN_TO_MATCH, 0)
+            + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, 0)
             + profile.match_score(first_target_character, 1),
     );
 
@@ -289,27 +310,41 @@ pub fn backward_bounded(
     for profile_idx in (profile_start_in_first_row + 1)..=profile_end_in_first_row {
         dp_matrix.set_special(
             params.target_start - 1,
-            Profile::SPECIAL_B,
+            Profile::SPECIAL_B_IDX,
             log_sum!(
-                dp_matrix.get_special(params.target_start - 1, Profile::SPECIAL_B),
+                dp_matrix.get_special(params.target_start - 1, Profile::SPECIAL_B_IDX),
                 dp_matrix.get_match(params.target_start, profile_idx)
-                    + profile.transition_score(Profile::PROFILE_BEGIN_TO_MATCH, profile_idx - 1)
+                    + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, profile_idx - 1)
                     + profile.match_score(first_target_character, profile_idx)
             ),
         );
     }
 
-    dp_matrix.set_special(params.target_start - 1, Profile::SPECIAL_J, -f32::INFINITY);
-    dp_matrix.set_special(params.target_start - 1, Profile::SPECIAL_C, -f32::INFINITY);
-    dp_matrix.set_special(params.target_start - 1, Profile::SPECIAL_E, -f32::INFINITY);
     dp_matrix.set_special(
         params.target_start - 1,
-        Profile::SPECIAL_N,
+        Profile::SPECIAL_J_IDX,
+        -f32::INFINITY,
+    );
+    dp_matrix.set_special(
+        params.target_start - 1,
+        Profile::SPECIAL_C_IDX,
+        -f32::INFINITY,
+    );
+    dp_matrix.set_special(
+        params.target_start - 1,
+        Profile::SPECIAL_E_IDX,
+        -f32::INFINITY,
+    );
+    dp_matrix.set_special(
+        params.target_start - 1,
+        Profile::SPECIAL_N_IDX,
         log_sum!(
-            dp_matrix.get_special(params.target_start, Profile::SPECIAL_N)
-                + profile.special_transition_score(Profile::SPECIAL_N, Profile::SPECIAL_LOOP),
-            dp_matrix.get_special(params.target_start - 1, Profile::SPECIAL_B)
-                + profile.special_transition_score(Profile::SPECIAL_N, Profile::SPECIAL_MOVE)
+            dp_matrix.get_special(params.target_start, Profile::SPECIAL_N_IDX)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX),
+            dp_matrix.get_special(params.target_start - 1, Profile::SPECIAL_B_IDX)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_MOVE_IDX)
         ),
     );
     for profile_idx in (profile_start_in_first_row..=profile_end_in_first_row).rev() {

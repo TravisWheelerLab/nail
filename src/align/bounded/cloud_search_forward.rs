@@ -43,11 +43,11 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::PROFILE_MATCH_TO_MATCH, source_profile_idx),
+                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, source_profile_idx),
             cloud_matrix.get_insert(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::PROFILE_INSERT_TO_MATCH, source_profile_idx),
+                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, source_profile_idx),
             cloud_matrix.get_delete(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::PROFILE_DELETE_TO_MATCH, source_profile_idx)
+                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, source_profile_idx)
         ) + profile.match_score(current_target_character as usize, profile_idx),
     );
 
@@ -64,9 +64,9 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, profile_idx)
-                + profile.transition_score(Profile::PROFILE_MATCH_TO_INSERT, profile_idx),
+                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx),
             cloud_matrix.get_insert(source_row_idx, profile_idx)
-                + profile.transition_score(Profile::PROFILE_INSERT_TO_INSERT, profile_idx)
+                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
         ) + profile.insert_score(current_target_character as usize, profile_idx),
     );
 
@@ -83,9 +83,9 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::PROFILE_MATCH_TO_DELETE, source_profile_idx),
+                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, source_profile_idx),
             cloud_matrix.get_delete(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::PROFILE_DELETE_TO_DELETE, source_profile_idx)
+                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, source_profile_idx)
         ),
     );
 }

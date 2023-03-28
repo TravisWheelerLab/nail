@@ -28,14 +28,16 @@ pub fn traceback_bounded(
     while previous_state != TRACE_S {
         current_state = match previous_state {
             TRACE_C => {
-                let c_to_c_path = profile
-                    .special_transition_score_delta(Profile::SPECIAL_C, Profile::SPECIAL_LOOP)
-                    * (optimal_matrix.get_special(target_idx - 1, Profile::SPECIAL_C)
-                        + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C));
+                let c_to_c_path = profile.special_transition_score_delta(
+                    Profile::SPECIAL_C_IDX,
+                    Profile::SPECIAL_LOOP_IDX,
+                ) * (optimal_matrix
+                    .get_special(target_idx - 1, Profile::SPECIAL_C_IDX)
+                    + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX));
 
                 let c_to_e_path = profile
-                    .transition_score_delta(Profile::SPECIAL_E, Profile::SPECIAL_MOVE)
-                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_E);
+                    .transition_score_delta(Profile::SPECIAL_E_IDX, Profile::SPECIAL_MOVE_IDX)
+                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX);
 
                 if c_to_c_path > c_to_e_path {
                     TRACE_C
@@ -66,18 +68,14 @@ pub fn traceback_bounded(
             TRACE_M => {
                 let possible_states: [usize; 4] = [TRACE_M, TRACE_I, TRACE_D, TRACE_B];
                 let possible_paths: [f32; 4] = [
-                    profile
-                        .transition_score_delta(Profile::PROFILE_MATCH_TO_MATCH, profile_idx - 1)
+                    profile.transition_score_delta(Profile::MATCH_TO_MATCH_IDX, profile_idx - 1)
                         * optimal_matrix.get_match(target_idx - 1, profile_idx - 1),
-                    profile
-                        .transition_score_delta(Profile::PROFILE_INSERT_TO_MATCH, profile_idx - 1)
+                    profile.transition_score_delta(Profile::INSERT_TO_MATCH_IDX, profile_idx - 1)
                         * optimal_matrix.get_insert(target_idx - 1, profile_idx - 1),
-                    profile
-                        .transition_score_delta(Profile::PROFILE_DELETE_TO_MATCH, profile_idx - 1)
+                    profile.transition_score_delta(Profile::DELETE_TO_MATCH_IDX, profile_idx - 1)
                         * optimal_matrix.get_delete(target_idx - 1, profile_idx - 1),
-                    profile
-                        .transition_score_delta(Profile::PROFILE_BEGIN_TO_MATCH, profile_idx - 1)
-                        * optimal_matrix.get_special(target_idx - 1, Profile::SPECIAL_B),
+                    profile.transition_score_delta(Profile::BEGIN_TO_MATCH_IDX, profile_idx - 1)
+                        * optimal_matrix.get_special(target_idx - 1, Profile::SPECIAL_B_IDX),
                 ];
 
                 let mut argmax: usize = 0;
@@ -95,10 +93,10 @@ pub fn traceback_bounded(
             }
             TRACE_I => {
                 let match_to_insert_path = profile
-                    .transition_score_delta(Profile::PROFILE_MATCH_TO_INSERT, profile_idx)
+                    .transition_score_delta(Profile::MATCH_TO_INSERT_IDX, profile_idx)
                     * optimal_matrix.get_match(target_idx - 1, profile_idx);
                 let insert_to_insert_path: f32 = profile
-                    .transition_score_delta(Profile::PROFILE_INSERT_TO_INSERT, profile_idx)
+                    .transition_score_delta(Profile::INSERT_TO_INSERT_IDX, profile_idx)
                     * optimal_matrix.get_insert(target_idx - 1, profile_idx);
 
                 // an insert means we moved forward only in the profile
@@ -112,10 +110,10 @@ pub fn traceback_bounded(
             }
             TRACE_D => {
                 let match_to_delete_path = profile
-                    .transition_score_delta(Profile::PROFILE_MATCH_TO_DELETE, profile_idx - 1)
+                    .transition_score_delta(Profile::MATCH_TO_DELETE_IDX, profile_idx - 1)
                     * optimal_matrix.get_match(target_idx, profile_idx - 1);
                 let delete_to_delete_path = profile
-                    .transition_score_delta(Profile::PROFILE_DELETE_TO_DELETE, profile_idx - 1)
+                    .transition_score_delta(Profile::DELETE_TO_DELETE_IDX, profile_idx - 1)
                     * optimal_matrix.get_delete(target_idx, profile_idx - 1);
 
                 // a delete means we moved forward only in the profile
@@ -128,12 +126,13 @@ pub fn traceback_bounded(
                 }
             }
             TRACE_B => {
-                let n_to_b_path = profile
-                    .special_transition_score_delta(Profile::SPECIAL_N, Profile::SPECIAL_MOVE)
-                    * optimal_matrix.get_match(target_idx, Profile::SPECIAL_N);
+                let n_to_b_path = profile.special_transition_score_delta(
+                    Profile::SPECIAL_N_IDX,
+                    Profile::SPECIAL_MOVE_IDX,
+                ) * optimal_matrix.get_match(target_idx, Profile::SPECIAL_N_IDX);
                 let j_to_b_path = profile
-                    .transition_score_delta(Profile::SPECIAL_J, Profile::SPECIAL_MOVE)
-                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_J);
+                    .transition_score_delta(Profile::SPECIAL_J_IDX, Profile::SPECIAL_MOVE_IDX)
+                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX);
 
                 if n_to_b_path >= j_to_b_path {
                     TRACE_N
@@ -149,13 +148,15 @@ pub fn traceback_bounded(
                 }
             }
             TRACE_J => {
-                let j_to_j_path = profile
-                    .special_transition_score_delta(Profile::SPECIAL_J, Profile::SPECIAL_LOOP)
-                    * (optimal_matrix.get_special(target_idx - 1, Profile::SPECIAL_J)
-                        + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J));
+                let j_to_j_path = profile.special_transition_score_delta(
+                    Profile::SPECIAL_J_IDX,
+                    Profile::SPECIAL_LOOP_IDX,
+                ) * (optimal_matrix
+                    .get_special(target_idx - 1, Profile::SPECIAL_J_IDX)
+                    + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX));
                 let e_to_j_path = profile
-                    .transition_score_delta(Profile::SPECIAL_E, Profile::SPECIAL_LOOP)
-                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_E);
+                    .transition_score_delta(Profile::SPECIAL_E_IDX, Profile::SPECIAL_LOOP_IDX)
+                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX);
 
                 if j_to_j_path > e_to_j_path {
                     TRACE_J
@@ -205,21 +206,21 @@ pub fn get_posterior_probability(
         TRACE_I => optimal_matrix.get_insert(target_idx, profile_idx),
         TRACE_N => {
             if current_state == previous_state {
-                optimal_matrix.get_special(target_idx, Profile::SPECIAL_N)
+                optimal_matrix.get_special(target_idx, Profile::SPECIAL_N_IDX)
             } else {
                 0.0
             }
         }
         TRACE_C => {
             if current_state == previous_state {
-                optimal_matrix.get_special(target_idx, Profile::SPECIAL_C)
+                optimal_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX)
             } else {
                 0.0
             }
         }
         TRACE_J => {
             if current_state == previous_state {
-                optimal_matrix.get_special(target_idx, Profile::SPECIAL_J)
+                optimal_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
             } else {
                 0.0
             }

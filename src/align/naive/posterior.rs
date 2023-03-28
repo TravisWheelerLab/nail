@@ -10,15 +10,15 @@ pub fn posterior(
     posterior_matrix: &mut impl DpMatrix,
 ) {
     let target_length = forward_matrix.target_length();
-    let overall_score: f32 = forward_matrix.get_special(target_length, Profile::SPECIAL_C)
-        + profile.special_transition_score(Profile::SPECIAL_C, Profile::SPECIAL_MOVE);
+    let overall_score: f32 = forward_matrix.get_special(target_length, Profile::SPECIAL_C_IDX)
+        + profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX);
     let mut denominator: f32;
 
-    posterior_matrix.set_special(0, Profile::SPECIAL_E, 0.0);
-    posterior_matrix.set_special(0, Profile::SPECIAL_N, 0.0);
-    posterior_matrix.set_special(0, Profile::SPECIAL_J, 0.0);
-    posterior_matrix.set_special(0, Profile::SPECIAL_B, 0.0);
-    posterior_matrix.set_special(0, Profile::SPECIAL_C, 0.0);
+    posterior_matrix.set_special(0, Profile::SPECIAL_E_IDX, 0.0);
+    posterior_matrix.set_special(0, Profile::SPECIAL_N_IDX, 0.0);
+    posterior_matrix.set_special(0, Profile::SPECIAL_J_IDX, 0.0);
+    posterior_matrix.set_special(0, Profile::SPECIAL_B_IDX, 0.0);
+    posterior_matrix.set_special(0, Profile::SPECIAL_C_IDX, 0.0);
 
     for k in 0..=profile.length {
         posterior_matrix.set_match(0, k, 0.0);
@@ -67,42 +67,45 @@ pub fn posterior(
         posterior_matrix.set_insert(i, profile.length, 0.0);
         posterior_matrix.set_delete(i, profile.length, 0.0);
 
-        posterior_matrix.set_special(i, Profile::SPECIAL_E, 0.0);
+        posterior_matrix.set_special(i, Profile::SPECIAL_E_IDX, 0.0);
         posterior_matrix.set_special(
             i,
-            Profile::SPECIAL_N,
-            (forward_matrix.get_special(i - 1, Profile::SPECIAL_N)
-                + backward_matrix.get_special(i, Profile::SPECIAL_N)
-                + profile.special_transition_score(Profile::SPECIAL_N, Profile::SPECIAL_LOOP)
+            Profile::SPECIAL_N_IDX,
+            (forward_matrix.get_special(i - 1, Profile::SPECIAL_N_IDX)
+                + backward_matrix.get_special(i, Profile::SPECIAL_N_IDX)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX)
                 - overall_score)
                 .exp(),
         );
 
         posterior_matrix.set_special(
             i,
-            Profile::SPECIAL_J,
-            (forward_matrix.get_special(i - 1, Profile::SPECIAL_J)
-                + backward_matrix.get_special(i, Profile::SPECIAL_J)
-                + profile.special_transition_score(Profile::SPECIAL_J, Profile::SPECIAL_LOOP)
+            Profile::SPECIAL_J_IDX,
+            (forward_matrix.get_special(i - 1, Profile::SPECIAL_J_IDX)
+                + backward_matrix.get_special(i, Profile::SPECIAL_J_IDX)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_J_IDX, Profile::SPECIAL_LOOP_IDX)
                 - overall_score)
                 .exp(),
         );
 
-        posterior_matrix.set_special(i, Profile::SPECIAL_B, 0.0);
+        posterior_matrix.set_special(i, Profile::SPECIAL_B_IDX, 0.0);
 
         posterior_matrix.set_special(
             i,
-            Profile::SPECIAL_C,
-            (forward_matrix.get_special(i - 1, Profile::SPECIAL_C)
-                + backward_matrix.get_special(i, Profile::SPECIAL_C)
-                + profile.special_transition_score(Profile::SPECIAL_C, Profile::SPECIAL_LOOP)
+            Profile::SPECIAL_C_IDX,
+            (forward_matrix.get_special(i - 1, Profile::SPECIAL_C_IDX)
+                + backward_matrix.get_special(i, Profile::SPECIAL_C_IDX)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_LOOP_IDX)
                 - overall_score)
                 .exp(),
         );
 
-        denominator += posterior_matrix.get_special(i, Profile::SPECIAL_N);
-        denominator += posterior_matrix.get_special(i, Profile::SPECIAL_J);
-        denominator += posterior_matrix.get_special(i, Profile::SPECIAL_C);
+        denominator += posterior_matrix.get_special(i, Profile::SPECIAL_N_IDX);
+        denominator += posterior_matrix.get_special(i, Profile::SPECIAL_J_IDX);
+        denominator += posterior_matrix.get_special(i, Profile::SPECIAL_C_IDX);
 
         denominator = 1.0 / denominator;
 
@@ -117,18 +120,18 @@ pub fn posterior(
         );
         posterior_matrix.set_special(
             i,
-            Profile::SPECIAL_N,
-            posterior_matrix.get_special(i, Profile::SPECIAL_N) * denominator,
+            Profile::SPECIAL_N_IDX,
+            posterior_matrix.get_special(i, Profile::SPECIAL_N_IDX) * denominator,
         );
         posterior_matrix.set_special(
             i,
-            Profile::SPECIAL_J,
-            posterior_matrix.get_special(i, Profile::SPECIAL_J) * denominator,
+            Profile::SPECIAL_J_IDX,
+            posterior_matrix.get_special(i, Profile::SPECIAL_J_IDX) * denominator,
         );
         posterior_matrix.set_special(
             i,
-            Profile::SPECIAL_C,
-            posterior_matrix.get_special(i, Profile::SPECIAL_C) * denominator,
+            Profile::SPECIAL_C_IDX,
+            posterior_matrix.get_special(i, Profile::SPECIAL_C_IDX) * denominator,
         );
     }
 }
