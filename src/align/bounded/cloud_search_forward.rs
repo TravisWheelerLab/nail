@@ -156,7 +156,6 @@ pub fn cloud_search_forward(
                 cloud_matrix_row_idx,
                 target_idx,
                 profile_idx,
-                // &mut debug,
             );
         }
     }
@@ -215,7 +214,6 @@ pub fn cloud_search_forward(
                 cloud_matrix_row_idx,
                 target_idx,
                 profile_idx,
-                // &mut debug,
             );
         }
 
@@ -226,7 +224,6 @@ pub fn cloud_search_forward(
             params.alpha,
             params.beta,
             &mut overall_max_score,
-            // &mut debug,
         );
 
         match prune_status {

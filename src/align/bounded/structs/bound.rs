@@ -152,7 +152,6 @@ impl CloudBoundGroup {
     pub fn cloud_size(&self) -> usize {
         let mut cloud_size = 0usize;
         for bound in self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx].iter() {
-            bound.print();
             cloud_size += bound.left_target_idx - bound.right_target_idx;
         }
         cloud_size
@@ -240,12 +239,43 @@ impl CloudBoundGroup {
         }
     }
 
+    /// Add a square block of bounds to the group with side length of `size`.
+    ///
+    /// This is currently intended for debugging.
+    pub fn bound_block(&mut self, target_start: usize, profile_start: usize, size: usize) {
+        let idx = target_start + profile_start;
+        for i in 0..size {
+            self.set(
+                idx + i,
+                target_start + i,
+                profile_start,
+                target_start,
+                profile_start + i,
+            );
+        }
+        let idx = target_start + profile_start + size;
+        for i in 0..=size {
+            self.set(
+                idx + i,
+                target_start + size,
+                profile_start + i,
+                target_start + i,
+                profile_start + size,
+            );
+        }
+    }
+
     pub fn join_bounds(
         forward_bounds: &mut CloudBoundGroup,
         backward_bounds: &CloudBoundGroup,
     ) -> Result<()> {
         // first check if the forward & backward bounds happened not to intersect
         if forward_bounds.max_anti_diagonal_idx < backward_bounds.min_anti_diagonal_idx {
+            // TODO: **this is going to need to be rewritten**
+            //       I think a better idea is going to be to interpolate two lines:
+            //         1. one between the highest point on the forward & backward bounds
+            //         2. one between the lowest point on the forward & backward bounds
+            //
             // if they do not intersect, we need to interpolate
             //
             // we are going to do that by:
@@ -283,8 +313,35 @@ impl CloudBoundGroup {
             // integer division is truncated, which is probably what we want
             let avg_anti_diagonal_length = cloud_size_sum / num_anti_diagonals;
 
-            let profile_start = forward_x as usize + 1;
-            let profile_end = backward_x as usize - 1;
+            // I have elected to make this a closure since it's convenient
+            // to have it capture the kine_equation closure, and I don't think
+            // we'll ever call this from outside of this function
+            let bound_fn = |center_profile_idx: usize| {
+                let center_target_idx = line_equation(center_profile_idx as f32).round() as usize;
+                let anti_diagonal_idx = center_profile_idx + center_target_idx;
+
+                // note: if the avg_anti_diagonal_length is even, this
+                //       will cause us to fill with +1 of that length
+                let left_profile_idx = center_profile_idx - avg_anti_diagonal_length / 2;
+                let right_profile_idx = center_profile_idx + avg_anti_diagonal_length / 2;
+                let left_target_idx = anti_diagonal_idx - left_profile_idx;
+                let right_target_idx = anti_diagonal_idx - right_profile_idx;
+                CloudBound {
+                    left_target_idx,
+                    left_profile_idx,
+                    right_target_idx,
+                    right_profile_idx,
+                }
+            };
+
+            let first_bound = bound_fn(forward_x as usize);
+            forward_bounds.set(
+                first_bound.anti_diagonal_idx() + 1,
+                first_bound.left_target_idx,
+                first_bound.left_profile_idx + 1,
+                first_bound.right_target_idx + 1,
+                first_bound.right_profile_idx,
+            );
 
             // fill in the missing bounds using the line equation:
             //   - iterate across the profile indices that span the missing bounds
@@ -295,23 +352,25 @@ impl CloudBoundGroup {
             //     along the current anti-diagonal that we are filling
             //   - then we can just extend that bound out from the center to produce an
             //     anti-diagonal equal to the average anti-diagonal length
+            let profile_start = forward_x as usize + 1;
+            let profile_end = backward_x as usize - 1;
             for center_profile_idx in profile_start..=profile_end {
-                let center_target_idx = line_equation(center_profile_idx as f32).round() as usize;
-                let anti_diagonal_idx = center_profile_idx + center_target_idx;
-
-                // note: if the avg_anti_diagonal_length is even, this
-                //       will cause us to fill with +1 of that length
-                let left_profile_idx = center_profile_idx - avg_anti_diagonal_length / 2;
-                let right_profile_idx = center_profile_idx + avg_anti_diagonal_length / 2;
-                let left_target_idx = anti_diagonal_idx - left_profile_idx;
-                let right_target_idx = anti_diagonal_idx - right_profile_idx;
+                let bound = bound_fn(center_profile_idx);
 
                 forward_bounds.set(
-                    anti_diagonal_idx,
-                    left_target_idx,
-                    left_profile_idx,
-                    right_target_idx,
-                    right_profile_idx,
+                    bound.anti_diagonal_idx(),
+                    bound.left_target_idx,
+                    bound.left_profile_idx,
+                    bound.right_target_idx,
+                    bound.right_profile_idx,
+                );
+
+                forward_bounds.set(
+                    bound.anti_diagonal_idx() + 1,
+                    bound.left_target_idx,
+                    bound.left_profile_idx + 1,
+                    bound.right_target_idx + 1,
+                    bound.right_profile_idx,
                 );
             }
 
@@ -329,6 +388,8 @@ impl CloudBoundGroup {
                 )
             }
         } else {
+            // if they do intersect, we can join them by taking
+            // the longest anti-diagonal at each index
             let start_idx = forward_bounds
                 .min_anti_diagonal_idx
                 .min(backward_bounds.min_anti_diagonal_idx);
