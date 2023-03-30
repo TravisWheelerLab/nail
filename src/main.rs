@@ -8,8 +8,11 @@ use nale::pipelines::{
 };
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
+use regex::internal::Inst;
+use std::fs::File;
 use std::io::stdout;
 use std::path::PathBuf;
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -78,12 +81,16 @@ fn main() -> Result<()> {
     let mut profiles: Vec<Profile> = hmms.iter().map(|hmm| Profile::new(hmm)).collect();
     let targets = Sequence::amino_from_fasta(&args.target)?;
 
-    let params_naive = args.params_naive();
-    let alignments_naive = pipeline_naive(&mut profiles, &targets, &params_naive)?;
+    // let params_naive = args.params_naive();
+    // let alignments_naive = pipeline_naive(&mut profiles, &targets, &params_naive)?;
 
     let params_bounded = args.params_bounded();
+    let now = Instant::now();
     let alignments_bounded = pipeline_bounded(&mut profiles, &targets, &params_bounded)?;
+    let elapsed = now.elapsed().as_micros();
 
-    write_tabular_output(&alignments_bounded, &mut stdout())?;
+    println!("{}µs", elapsed);
+    // write_tabular_output(&alignments_bounded, &mut stdout())?;
+    write_tabular_output(&alignments_bounded, &mut File::create("./results.out")?)?;
     Ok(())
 }
