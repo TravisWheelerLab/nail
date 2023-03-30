@@ -6,9 +6,9 @@ use anyhow::Result;
 pub trait DpMatrix {
     fn target_length(&self) -> usize;
     fn profile_length(&self) -> usize;
-    fn resize(&mut self, new_target_length: usize, new_profile_length: usize);
-    fn reset(&mut self);
-    fn reuse(&mut self, new_target_length: usize, new_profile_length: usize);
+    // fn resize(&mut self, new_target_length: usize, new_profile_length: usize);
+    // fn reset(&mut self);
+    // fn reuse(&mut self, new_target_length: usize, new_profile_length: usize);
     fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32;
     fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32);
     fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32;
@@ -127,23 +127,13 @@ impl DpMatrix3D {
             special_matrix: vec![vec![-f32::INFINITY; 5]; target_length + 1],
         }
     }
-}
 
-impl DpMatrix for DpMatrix3D {
-    fn target_length(&self) -> usize {
-        self.target_length
-    }
-
-    fn profile_length(&self) -> usize {
-        self.profile_length
-    }
-
-    fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+    pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
         #![allow(unused_variables)]
         todo!()
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         for target_idx in 0..=self.target_length {
             for special_state_idx in 0..Profile::NUM_SPECIAL_STATES {
                 self.set_special(target_idx, special_state_idx, -f32::INFINITY);
@@ -156,7 +146,7 @@ impl DpMatrix for DpMatrix3D {
         }
     }
 
-    fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
+    pub fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
         let new_row_count = new_target_length + 1;
         let new_col_count = new_profile_length + 1;
 
@@ -168,6 +158,16 @@ impl DpMatrix for DpMatrix3D {
         self.profile_length = new_profile_length;
 
         self.reset();
+    }
+}
+
+impl DpMatrix for DpMatrix3D {
+    fn target_length(&self) -> usize {
+        self.target_length
+    }
+
+    fn profile_length(&self) -> usize {
+        self.profile_length
     }
 
     #[inline]

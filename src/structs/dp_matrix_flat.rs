@@ -1,8 +1,5 @@
-use std::io::Write;
-
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
-use anyhow::Result;
 
 #[derive(Default)]
 pub struct DpMatrixFlat {
@@ -68,18 +65,8 @@ impl DpMatrixFlat {
             special_data: vec![-f32::INFINITY; special_length],
         }
     }
-}
 
-impl DpMatrix for DpMatrixFlat {
-    fn target_length(&self) -> usize {
-        self.target_length
-    }
-
-    fn profile_length(&self) -> usize {
-        self.profile_length
-    }
-
-    fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
+    pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
         let new_size = new_target_length * new_profile_length;
         if new_size > self.core_data.len() {
             self.core_data.resize(new_size, -f32::INFINITY);
@@ -88,7 +75,7 @@ impl DpMatrix for DpMatrixFlat {
         self.profile_length = new_profile_length;
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         for core_idx in 0..(3 * (self.target_length + 1) * (self.profile_length + 1)) {
             self.core_data[core_idx] = -f32::INFINITY;
         }
@@ -98,7 +85,7 @@ impl DpMatrix for DpMatrixFlat {
         }
     }
 
-    fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
+    pub fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
         // TODO: need logic for resizing self.special_data
         let new_core_length = 3 * (new_target_length + 1) * (new_profile_length + 1);
         let new_special_length = 5 * (new_target_length + 1);
@@ -113,6 +100,16 @@ impl DpMatrix for DpMatrixFlat {
         self.profile_length = new_profile_length;
 
         self.reset();
+    }
+}
+
+impl DpMatrix for DpMatrixFlat {
+    fn target_length(&self) -> usize {
+        self.target_length
+    }
+
+    fn profile_length(&self) -> usize {
+        self.profile_length
     }
 
     #[inline]

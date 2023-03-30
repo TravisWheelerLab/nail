@@ -8,9 +8,7 @@ use nale::pipelines::{
 };
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
-use regex::internal::Inst;
 use std::fs::File;
-use std::io::stdout;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -90,7 +88,6 @@ fn main() -> Result<()> {
     let elapsed = now.elapsed().as_micros();
 
     println!("{}µs", elapsed);
-    // write_tabular_output(&alignments_bounded, &mut stdout())?;
     write_tabular_output(&alignments_bounded, &mut File::create("./results.out")?)?;
     Ok(())
 }

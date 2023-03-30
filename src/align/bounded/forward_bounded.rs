@@ -36,9 +36,6 @@ pub fn forward_bounded(
         -f32::INFINITY,
     );
 
-    // TODO: probably need B & N state computation from 0..target_start
-    //       also maybe remove J state?
-
     for target_idx in params.target_start..=params.target_end {
         let current_target_character = target.digital_bytes[target_idx];
 
