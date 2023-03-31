@@ -1,5 +1,5 @@
 use crate::align::bounded::structs::{
-    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, RowBoundParams,
+    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBoundParams,
 };
 use crate::align::bounded::{
     backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded,
@@ -10,6 +10,7 @@ use crate::output::output_debug::{
 };
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Alignment, DpMatrixFlat, Profile, Sequence, Trace};
+use crate::util::PrintMe;
 use anyhow::Result;
 use std::path::PathBuf;
 
@@ -54,10 +55,16 @@ pub fn pipeline_bounded(
     // TODO: (todo after sparse DpMatrix is implemented)
     //       we probably want to overwrite these matrices
     //       i.e. forward becomes posterior, backward becomes optimal or something
-    let mut forward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
-    let mut backward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
-    let mut posterior_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
-    let mut optimal_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
+
+    // let mut forward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
+    // let mut backward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
+    // let mut posterior_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
+    // let mut optimal_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
+
+    let mut forward_matrix = DpMatrixSparse::default();
+    let mut backward_matrix = DpMatrixSparse::default();
+    let mut posterior_matrix = DpMatrixSparse::default();
+    let mut optimal_matrix = DpMatrixSparse::default();
 
     // TODO: this needs to be implemented
     // let mut trace = Trace::default();
@@ -87,11 +94,6 @@ pub fn pipeline_bounded(
         forward_bounds.reuse(target.length, profile.length);
         backward_bounds.reuse(target.length, profile.length);
 
-        forward_matrix.reuse(target.length, profile.length);
-        backward_matrix.reuse(target.length, profile.length);
-        posterior_matrix.reuse(target.length, profile.length);
-        optimal_matrix.reuse(target.length, profile.length);
-
         // TODO: ***BIGTIME TODO***
         //       these need to be passed in on a vector to be set for each profile/target pair
         cloud_search_params.target_start = 1;
@@ -120,6 +122,16 @@ pub fn pipeline_bounded(
         forward_bounds.trim_wings();
 
         let row_bound_params = RowBoundParams::new(&forward_bounds);
+
+        // forward_matrix.reuse(target.length, profile.length);
+        // backward_matrix.reuse(target.length, profile.length);
+        // posterior_matrix.reuse(target.length, profile.length);
+        // optimal_matrix.reuse(target.length, profile.length);
+
+        forward_matrix.reuse(target.length, profile.length, &row_bound_params);
+        backward_matrix.reuse(target.length, profile.length, &row_bound_params);
+        posterior_matrix.reuse(target.length, profile.length, &row_bound_params);
+        optimal_matrix.reuse(target.length, profile.length, &row_bound_params);
 
         forward_bounded(profile, target, &mut forward_matrix, &row_bound_params);
 

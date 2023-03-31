@@ -149,7 +149,7 @@ pub fn backward_bounded(
         dp_matrix.set_special(
             target_idx,
             Profile::SPECIAL_B_IDX,
-            dp_matrix.get_match(target_idx + 1, 1)
+            dp_matrix.get_match(target_idx + 1, profile_start_on_current_row)
                 + profile.transition_score(
                     Profile::BEGIN_TO_MATCH_IDX,
                     profile_start_on_current_row - 1,

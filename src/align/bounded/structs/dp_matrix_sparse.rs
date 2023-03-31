@@ -6,6 +6,8 @@ use crate::structs::Profile;
 pub struct DpMatrixSparse {
     pub target_length: usize,
     pub profile_length: usize,
+    pub target_start: usize,
+    pub target_end: usize,
     /// These point to the start of each "row block" in the `core_data` vector. They are absolute
     /// in the sense that they are not relative to the logical non-sparse matrix coordinate space.
     pub block_offsets: Vec<usize>,
@@ -17,11 +19,35 @@ pub struct DpMatrixSparse {
 
 impl DpMatrixSparse {
     pub fn new(target_length: usize, profile_length: usize, row_bounds: &RowBoundParams) -> Self {
+        let mut matrix = DpMatrixSparse::default();
+        matrix.reuse(target_length, profile_length, row_bounds);
+        matrix
+    }
+
+    pub fn reset(&mut self) {
+        for core_idx in 0..self.block_offsets[self.target_end + 1] {
+            self.core_data[core_idx] = -f32::INFINITY;
+        }
+
+        for special_idx in 0..(5 * (self.target_length + 1)) {
+            self.special_data[special_idx] = -f32::INFINITY;
+        }
+    }
+
+    pub fn reuse(
+        &mut self,
+        new_target_length: usize,
+        new_profile_length: usize,
+        row_bounds: &RowBoundParams,
+    ) {
         let mut core_length = 0;
         // +1 for 0 row, + 1 for target_length + 1 row (serves as an end pointer)
-        let mut block_offsets = vec![0; target_length + 2];
+        let mut block_offsets = vec![0; new_target_length + 2];
         // +1 for 0 row
-        let mut row_offsets = vec![0; target_length + 1];
+        let mut row_offsets = vec![0; new_target_length + 1];
+
+        // iterate across the row bounds to compute
+        // how many cells we need for the core data
         for target_idx in row_bounds.target_start..=row_bounds.target_end {
             let row_length = (row_bounds.right_row_bounds[target_idx]
                 - row_bounds.left_row_bounds[target_idx]
@@ -32,30 +58,28 @@ impl DpMatrixSparse {
 
             core_length += row_length;
             block_offsets[target_idx + 1] = block_offsets[target_idx] + row_length;
-            row_offsets[target_idx] = row_bounds.target_start;
+            row_offsets[target_idx] = row_bounds.left_row_bounds[target_idx] - 1;
         }
 
-        let special_length = 5 * (target_length + 1);
-        DpMatrixSparse {
-            target_length,
-            profile_length,
-            block_offsets,
-            row_offsets,
-            core_data: vec![-f32::INFINITY; core_length],
-            special_data: vec![-f32::INFINITY; special_length],
+        let new_special_length = 5 * (new_target_length + 1);
+
+        if core_length > self.core_data.len() {
+            self.core_data.resize(core_length, -f32::INFINITY);
         }
-    }
 
-    pub fn resize(&mut self, new_target_length: usize, new_profile_length: usize) {
-        todo!()
-    }
+        if new_special_length > self.special_data.len() {
+            self.special_data.resize(new_special_length, -f32::INFINITY);
+        }
 
-    pub fn reset(&mut self) {
-        todo!()
-    }
+        self.row_offsets = row_offsets;
+        self.block_offsets = block_offsets;
+        self.target_length = new_target_length;
+        self.profile_length = new_profile_length;
 
-    pub fn reuse(&mut self, new_target_length: usize, new_profile_length: usize) {
-        todo!()
+        self.target_start = row_bounds.target_start;
+        self.target_end = row_bounds.target_end;
+
+        self.reset();
     }
 }
 
@@ -76,7 +100,7 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(profile_idx <= self.profile_length);
         let block_offset = self.block_offsets[target_idx];
         let row_offset = self.row_offsets[target_idx];
-        self.core_data[block_offset + (3 * profile_idx) - row_offset]
+        self.core_data[block_offset + (3 * (profile_idx.saturating_sub(row_offset)))]
     }
 
     #[inline]
@@ -85,7 +109,7 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(profile_idx <= self.profile_length);
         let block_offset = self.block_offsets[target_idx];
         let row_offset = self.row_offsets[target_idx];
-        self.core_data[block_offset + (3 * profile_idx) - row_offset] = value;
+        self.core_data[block_offset + (3 * (profile_idx.saturating_sub(row_offset)))] = value;
     }
 
     #[inline]
@@ -94,7 +118,7 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(profile_idx <= self.profile_length);
         let block_offset = self.block_offsets[target_idx];
         let row_offset = self.row_offsets[target_idx];
-        self.core_data[block_offset + (3 * profile_idx) - row_offset + 1]
+        self.core_data[block_offset + (3 * (profile_idx.saturating_sub(row_offset))) + 1]
     }
 
     #[inline]
@@ -103,7 +127,7 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(profile_idx <= self.profile_length);
         let block_offset = self.block_offsets[target_idx];
         let row_offset = self.row_offsets[target_idx];
-        self.core_data[block_offset + (3 * profile_idx) - row_offset + 1] = value;
+        self.core_data[block_offset + (3 * (profile_idx.saturating_sub(row_offset))) + 1] = value;
     }
 
     #[inline]
@@ -112,7 +136,7 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(profile_idx <= self.profile_length);
         let block_offset = self.block_offsets[target_idx];
         let row_offset = self.row_offsets[target_idx];
-        self.core_data[block_offset + (3 * profile_idx) - row_offset + 2]
+        self.core_data[block_offset + (3 * (profile_idx.saturating_sub(row_offset))) + 2]
     }
 
     #[inline]
@@ -121,7 +145,7 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(profile_idx <= self.profile_length);
         let block_offset = self.block_offsets[target_idx];
         let row_offset = self.row_offsets[target_idx];
-        self.core_data[block_offset + (3 * profile_idx) - row_offset + 2] = value;
+        self.core_data[block_offset + (3 * (profile_idx.saturating_sub(row_offset))) + 2] = value;
     }
 
     #[inline]
