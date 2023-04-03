@@ -37,6 +37,7 @@ pub fn pipeline_bounded(
     targets: &[Sequence],
     params: &BoundedPipelineParams,
 ) -> Result<Vec<Alignment>> {
+    // TODO: use params.cloud_search_params
     let mut cloud_search_params = CloudSearchParams::default();
 
     let max_profile_length = profiles

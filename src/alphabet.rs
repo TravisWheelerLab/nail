@@ -146,6 +146,7 @@ pub const AMINO_INVERSE_MAP_LOWER: phf::Map<u8, u8> = phf_map! {
     255u8 => 32,   // space
 };
 
+// TODO: where did these come from?
 pub const AMINO_BACKGROUND_FREQUENCIES: [f32; 20] = [
     0.0787945, // A
     0.0151600, // C

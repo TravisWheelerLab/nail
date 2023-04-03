@@ -100,6 +100,7 @@ impl CloudBoundGroup {
         self.min_anti_diagonal_idx = new_size;
         self.max_anti_diagonal_idx = 0;
 
+        // TODO: think about this
         for bound in self.bounds.iter_mut() {
             bound.left_target_idx = 0;
             bound.left_profile_idx = 1;
@@ -110,6 +111,7 @@ impl CloudBoundGroup {
 
     pub fn set(
         &mut self,
+        // TODO: remove this
         anti_diagonal_idx: usize,
         left_target_idx: usize,
         left_profile_idx: usize,
