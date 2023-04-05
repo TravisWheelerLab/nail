@@ -9,6 +9,8 @@ use nale::pipelines::{
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
 use std::fs::File;
+use std::io;
+use std::io::BufRead;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -23,6 +25,7 @@ pub struct Args {
     #[arg(long)]
     ali_out: Option<String>,
     /// Path for tabular output
+    #[arg(long)]
     table_out: Option<String>,
     /// Write debugging information
     #[arg(long, action = ArgAction::SetTrue)]
@@ -60,15 +63,7 @@ impl Args {
             },
             // TODO: parameterize this
             root_debug_dir_path: PathBuf::from("./nale-debug"),
-            cloud_search_params: CloudSearchParams {
-                target_start: 0,
-                target_end: 0,
-                profile_start: 0,
-                profile_end: 0,
-                gamma: 0,
-                alpha: 0.0,
-                beta: 0.0,
-            },
+            cloud_search_params: CloudSearchParams::default(),
         }
     }
 }
@@ -82,12 +77,12 @@ fn main() -> Result<()> {
     // let params_naive = args.params_naive();
     // let alignments_naive = pipeline_naive(&mut profiles, &targets, &params_naive)?;
 
-    let params_bounded = args.params_bounded();
-    let now = Instant::now();
-    let alignments_bounded = pipeline_bounded(&mut profiles, &targets, &params_bounded)?;
-    let elapsed = now.elapsed().as_micros();
+    // let params_bounded = args.params_bounded();
+    // let now = Instant::now();
+    // let alignments_bounded = pipeline_bounded(&mut profiles, &targets, &params_bounded)?;
+    // let elapsed = now.elapsed().as_micros();
 
-    println!("{}µs", elapsed);
-    write_tabular_output(&alignments_bounded, &mut File::create("./results.out")?)?;
+    // println!("{}µs", elapsed);
+    // write_tabular_output(&alignments_bounded, &mut File::create("./results.out")?)?;
     Ok(())
 }

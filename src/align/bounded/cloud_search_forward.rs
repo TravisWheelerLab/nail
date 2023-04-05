@@ -1,6 +1,7 @@
 use crate::align::bounded::cloud_search_common::{prune_and_scrub, scrub_co_located, PruneStatus};
 use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams};
 use crate::log_sum;
+use crate::pipelines::Seed;
 use crate::structs::{Profile, Sequence};
 use crate::timing::time;
 use crate::util::log_add;
@@ -94,6 +95,7 @@ pub fn compute_forward_cell(
 pub fn cloud_search_forward(
     profile: &Profile,
     target: &Sequence,
+    seed: &Seed,
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut CloudBoundGroup,
@@ -114,24 +116,24 @@ pub fn cloud_search_forward(
     //                          ^
     //                   profile_start = 3
 
-    let first_anti_diagonal_idx = params.target_start + params.profile_start;
+    let first_anti_diagonal_idx = seed.target_start + seed.profile_start;
     let gamma_anti_diagonal_idx = first_anti_diagonal_idx + params.gamma;
     let max_anti_diagonal_idx = target.length + profile.length;
 
     let first_cloud_matrix_row_idx = first_anti_diagonal_idx % 3;
     // setting the scores to 0 is like setting
     // the log odds ratio to 1, since log(0) = 1
-    cloud_matrix.set_match(first_cloud_matrix_row_idx, params.profile_start, 0.0);
-    cloud_matrix.set_insert(first_cloud_matrix_row_idx, params.profile_start, 0.0);
-    cloud_matrix.set_delete(first_cloud_matrix_row_idx, params.profile_start, 0.0);
+    cloud_matrix.set_match(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
+    cloud_matrix.set_insert(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
+    cloud_matrix.set_delete(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
 
     // the first bound is just the starting cell
     bounds.set(
         first_anti_diagonal_idx,
-        params.target_start,
-        params.profile_start,
-        params.target_start,
-        params.profile_start,
+        seed.target_start,
+        seed.profile_start,
+        seed.target_start,
+        seed.profile_start,
     );
 
     for anti_diagonal_idx in (first_anti_diagonal_idx + 1)..gamma_anti_diagonal_idx {

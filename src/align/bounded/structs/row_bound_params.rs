@@ -1,5 +1,7 @@
 use crate::align::bounded::structs::bound::CloudBoundGroup;
+use anyhow::Result;
 use std::fmt::{Debug, Formatter};
+use std::io::Write;
 
 #[derive(Default)]
 pub struct RowBoundParams {
@@ -39,6 +41,26 @@ impl RowBoundParams {
             self.right_row_bounds[bound.right_target_idx] =
                 self.right_row_bounds[bound.right_target_idx].max(bound.right_profile_idx);
         }
+    }
+
+    pub fn valid(&self) -> bool {
+        for row_idx in self.target_start..=self.target_end {
+            if self.left_row_bounds[row_idx] > self.right_row_bounds[row_idx] {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn dump(&self, out: &mut impl Write) -> Result<()> {
+        for row_idx in self.target_start..=self.target_end {
+            writeln!(
+                out,
+                "{}: {}-{}",
+                row_idx, self.left_row_bounds[row_idx], self.right_row_bounds[row_idx]
+            )?;
+        }
+        Ok(())
     }
 }
 

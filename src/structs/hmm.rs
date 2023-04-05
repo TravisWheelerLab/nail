@@ -173,6 +173,7 @@ impl Hmm {
     }
 }
 
+// TODO: remove the Display trait bound
 pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<Vec<Hmm>> {
     let phmm_file = File::open(&path)?;
     let mut phmm_lines = BufReader::new(phmm_file).lines();

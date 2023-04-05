@@ -12,6 +12,3 @@ pub use dp_matrix_sparse::DpMatrixSparse;
 
 mod row_bound_params;
 pub use row_bound_params::RowBoundParams;
-
-mod cloud_seed;
-pub use cloud_seed::CloudSeed;

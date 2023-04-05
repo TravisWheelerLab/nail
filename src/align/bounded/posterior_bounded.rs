@@ -40,12 +40,13 @@ pub fn posterior_bounded(
     // for target_idx in 1..=target_length {
     for target_idx in params.target_start..=params.target_end {
         denominator = 0.0;
-        posterior_matrix.set_match(target_idx, params.target_start - 1, 0.0);
-        posterior_matrix.set_insert(target_idx, params.target_start - 1, 0.0);
-        posterior_matrix.set_delete(target_idx, params.target_start - 1, 0.0);
 
         let profile_start_in_current_row = params.left_row_bounds[target_idx];
         let profile_end_in_current_row = params.right_row_bounds[target_idx];
+
+        posterior_matrix.set_match(target_idx, profile_start_in_current_row - 1, 0.0);
+        posterior_matrix.set_insert(target_idx, profile_start_in_current_row - 1, 0.0);
+        posterior_matrix.set_delete(target_idx, profile_start_in_current_row - 1, 0.0);
 
         // for profile_idx in 1..profile.length {
         for profile_idx in profile_start_in_current_row..profile_end_in_current_row {
