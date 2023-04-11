@@ -62,7 +62,7 @@ impl Args {
                 None => false,
             },
             // TODO: parameterize this
-            root_debug_dir_path: PathBuf::from("./nale-debug"),
+            debug_path: PathBuf::from("./nale-debug"),
             cloud_search_params: CloudSearchParams::default(),
         }
     }

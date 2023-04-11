@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::RowBoundParams;
+use crate::align::bounded::structs::RowBounds;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
 use crate::timing::time;
@@ -12,7 +12,7 @@ pub fn posterior_bounded(
     forward_matrix: &impl DpMatrix,
     backward_matrix: &impl DpMatrix,
     posterior_matrix: &mut impl DpMatrix,
-    params: &RowBoundParams,
+    params: &RowBounds,
 ) {
     // let target_length = forward_matrix.target_length;
 

@@ -1,25 +1,22 @@
 use crate::align::bounded::structs::{
-    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, RowBoundParams,
+    CloudBoundGroup, CloudDebugAnnotations, CloudMatrixLinear, CloudSearchParams, RowBounds,
 };
 use crate::align::bounded::{
     backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded,
     optimal_accuracy_bounded, posterior_bounded, traceback_bounded,
 };
-use crate::output::output_debug::{
-    get_profile_target_output_dir_path, set_file_name_and_get_buf_writer,
-};
-use crate::structs::dp_matrix::DpMatrix;
+use crate::output::path_buf_ext::PathBufExt;
 use crate::structs::{Alignment, DpMatrixFlat, Profile, Sequence, Trace};
-use crate::viz::SodaJson;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::io::Write;
 use std::path::PathBuf;
 
 pub struct BoundedPipelineParams {
     pub write_debug: bool,
     pub allow_overwrite: bool,
-    pub root_debug_dir_path: PathBuf,
+    pub debug_path: PathBuf,
     pub cloud_search_params: CloudSearchParams,
 }
 
@@ -28,12 +25,13 @@ impl Default for BoundedPipelineParams {
         Self {
             write_debug: false,
             allow_overwrite: false,
-            root_debug_dir_path: PathBuf::from("./nale-debug"),
+            debug_path: PathBuf::from("./nale-debug"),
             cloud_search_params: CloudSearchParams::default(),
         }
     }
 }
 
+// TODO: rename and put this elsewhere
 pub struct Seed {
     pub target_name: String,
     pub target_start: usize,
@@ -90,7 +88,12 @@ pub fn pipeline_bounded(
     let mut profile_names: Vec<&String> = profile_seeds.keys().collect();
     profile_names.sort();
 
-    // for (i, profile_name) in profile_seeds.keys().enumerate() {
+    let mut cloud_debug = if params.write_debug {
+        Some(CloudDebugAnnotations::default())
+    } else {
+        None
+    };
+
     for profile_name in &profile_names {
         let profile = profile_map.get_mut(*profile_name).unwrap();
         let seeds = profile_seeds.get(*profile_name).unwrap();
@@ -99,17 +102,6 @@ pub fn pipeline_bounded(
 
             println!("{}", profile.name);
             println!("{}", seed);
-
-            let mut current_debug_dir_path = if params.write_debug {
-                let path = get_profile_target_output_dir_path(
-                    &params.root_debug_dir_path,
-                    &profile.name,
-                    &target.name,
-                )?;
-                Some(path)
-            } else {
-                None
-            };
 
             profile.configure_for_target_length(target.length);
 
@@ -137,51 +129,29 @@ pub fn pipeline_bounded(
                 &mut backward_bounds,
             )?;
 
-            if params.write_debug {
-                if let Some(ref mut path) = current_debug_dir_path {
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "forward-bounds.json",
-                        params.allow_overwrite,
-                    )?;
-                    forward_bounds.soda_json(out)?;
-
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "backward-bounds.json",
-                        params.allow_overwrite,
-                    )?;
-                    backward_bounds.soda_json(out)?;
-                }
+            if let Some(ref mut cloud_debug) = cloud_debug {
+                cloud_debug.add_forward_bounds(&forward_bounds);
+                cloud_debug.add_backward_bounds(&backward_bounds);
             }
 
             CloudBoundGroup::join_bounds(&mut forward_bounds, &backward_bounds)?;
 
             forward_bounds.trim_wings();
 
-            let row_bound_params = RowBoundParams::new(&forward_bounds);
+            let row_bounds = RowBounds::new(&forward_bounds);
 
-            if params.write_debug {
-                if let Some(ref mut path) = current_debug_dir_path {
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "joined-bounds.json",
-                        params.allow_overwrite,
-                    )?;
-                    forward_bounds.soda_json(out)?;
+            if let Some(ref mut cloud_debug) = cloud_debug {
+                cloud_debug.add_joined_bounds(&forward_bounds);
+                cloud_debug.add_row_bounds(&row_bounds);
 
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "row-bounds.txt",
-                        params.allow_overwrite,
-                    )?;
-                    row_bound_params.dump(out)?;
-                }
+                let mut out = params
+                    .debug_path
+                    .join(&format!("{}-{}.bounds.json", profile_name, target.name))
+                    .open(params.allow_overwrite)?;
+
+                let serialized = serde_json::to_string(&cloud_debug).unwrap();
+                write!(out, "{serialized}")?;
             }
-
-            // if !row_bound_params.valid() {
-            //     continue;
-            // }
 
             forward_matrix.reuse(target.length, profile.length);
             backward_matrix.reuse(target.length, profile.length);
@@ -193,42 +163,19 @@ pub fn pipeline_bounded(
             // posterior_matrix.reuse(target.length, profile.length, &row_bound_params);
             // optimal_matrix.reuse(target.length, profile.length, &row_bound_params);
 
-            forward_bounded(profile, target, &mut forward_matrix, &row_bound_params);
+            forward_bounded(profile, target, &mut forward_matrix, &row_bounds);
 
-            backward_bounded(profile, target, &mut backward_matrix, &row_bound_params);
-
-            if params.write_debug {
-                if let Some(ref mut path) = current_debug_dir_path {
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "bounded-forward.mtx",
-                        params.allow_overwrite,
-                    )?;
-                    forward_matrix.dump(out)?;
-
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "bounded-backward.mtx",
-                        params.allow_overwrite,
-                    )?;
-                    backward_matrix.dump(out)?;
-                }
-            }
+            backward_bounded(profile, target, &mut backward_matrix, &row_bounds);
 
             posterior_bounded(
                 profile,
                 &forward_matrix,
                 &backward_matrix,
                 &mut posterior_matrix,
-                &row_bound_params,
+                &row_bounds,
             );
 
-            optimal_accuracy_bounded(
-                profile,
-                &posterior_matrix,
-                &mut optimal_matrix,
-                &row_bound_params,
-            );
+            optimal_accuracy_bounded(profile, &posterior_matrix, &mut optimal_matrix, &row_bounds);
 
             let mut trace = Trace::new(target.length, profile.length);
             traceback_bounded(
@@ -236,33 +183,8 @@ pub fn pipeline_bounded(
                 &posterior_matrix,
                 &optimal_matrix,
                 &mut trace,
-                row_bound_params.target_end,
+                row_bounds.target_end,
             );
-
-            if params.write_debug {
-                if let Some(ref mut path) = current_debug_dir_path {
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "bounded-posterior.mtx",
-                        params.allow_overwrite,
-                    )?;
-                    posterior_matrix.dump(out)?;
-
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "bounded-optimal.mtx",
-                        params.allow_overwrite,
-                    )?;
-                    optimal_matrix.dump(out)?;
-
-                    let out = &mut set_file_name_and_get_buf_writer(
-                        path,
-                        "bounded-trace.mtx",
-                        params.allow_overwrite,
-                    )?;
-                    trace.dump(out, profile, target)?;
-                }
-            }
 
             alignments.push(Alignment::new(&trace, profile, target));
         }

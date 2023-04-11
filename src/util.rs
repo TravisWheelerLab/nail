@@ -15,6 +15,22 @@ pub trait PrintMe {
     fn print(&self);
 }
 
+impl<T: PrintMe> PrintMe for Vec<T> {
+    fn print(&self) {
+        for val in self.iter() {
+            val.print();
+        }
+    }
+}
+
+impl<T: PrintMe> PrintMe for &[T] {
+    fn print(&self) {
+        for val in self.iter() {
+            val.print();
+        }
+    }
+}
+
 impl PrintMe for String {
     fn print(&self) {
         println!("{}", self)
@@ -36,33 +52,6 @@ impl PrintMe for i32 {
 impl PrintMe for f32 {
     fn print(&self) {
         println!("{:.3}", self)
-    }
-}
-
-impl PrintMe for Vec<usize> {
-    fn print(&self) {
-        for value in self {
-            print!("{:8.3} ", value)
-        }
-        println!();
-    }
-}
-
-impl PrintMe for Vec<f32> {
-    fn print(&self) {
-        for value in self {
-            print!("{:8.3} ", value)
-        }
-        println!();
-    }
-}
-
-impl PrintMe for &[f32] {
-    fn print(&self) {
-        for i in 0..self.len() {
-            print!("{:8.3} ", self[i])
-        }
-        println!();
     }
 }
 

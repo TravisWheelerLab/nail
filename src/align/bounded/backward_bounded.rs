@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::RowBoundParams;
+use crate::align::bounded::structs::RowBounds;
 use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
@@ -11,7 +11,7 @@ pub fn backward_bounded(
     target: &Sequence,
     // dp_matrix: &mut DpMatrix3D,
     dp_matrix: &mut impl DpMatrix,
-    params: &RowBoundParams,
+    params: &RowBounds,
 ) {
     let end_score: f32 = 0.0;
     //  M   s_D

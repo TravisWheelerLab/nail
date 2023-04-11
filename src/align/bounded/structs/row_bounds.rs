@@ -4,7 +4,7 @@ use std::fmt::{Debug, Formatter};
 use std::io::Write;
 
 #[derive(Default)]
-pub struct RowBoundParams {
+pub struct RowBounds {
     pub target_start: usize,
     pub target_end: usize,
     pub row_capacity: usize,
@@ -12,7 +12,7 @@ pub struct RowBoundParams {
     pub right_row_bounds: Vec<usize>,
 }
 
-impl RowBoundParams {
+impl RowBounds {
     pub fn new(cloud_bounds: &CloudBoundGroup) -> Self {
         let mut params = Self::default();
         params.reuse(cloud_bounds);
@@ -37,6 +37,12 @@ impl RowBoundParams {
         for bound in &cloud_bounds.bounds {
             self.left_row_bounds[bound.left_target_idx] =
                 self.left_row_bounds[bound.left_target_idx].min(bound.left_profile_idx);
+
+            self.left_row_bounds[bound.right_target_idx] =
+                self.left_row_bounds[bound.right_target_idx].min(bound.right_profile_idx);
+
+            self.right_row_bounds[bound.left_target_idx] =
+                self.right_row_bounds[bound.left_target_idx].max(bound.left_profile_idx);
 
             self.right_row_bounds[bound.right_target_idx] =
                 self.right_row_bounds[bound.right_target_idx].max(bound.right_profile_idx);
@@ -64,7 +70,7 @@ impl RowBoundParams {
     }
 }
 
-impl Debug for RowBoundParams {
+impl Debug for RowBounds {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "rows: {}-{}", self.target_start, self.target_end)?;
         for row_idx in self.target_start..=self.target_end {

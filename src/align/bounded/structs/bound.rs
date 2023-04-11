@@ -444,13 +444,9 @@ impl CloudBoundGroup {
 
         Ok(())
     }
-}
 
-impl PrintMe for Vec<CloudBound> {
-    fn print(&self) {
-        for b in self {
-            b.print();
-        }
+    pub fn soda_annotations(&self) -> (Vec<SodaAnnotation>, Vec<SodaAnnotation>) {
+        todo!()
     }
 }
 

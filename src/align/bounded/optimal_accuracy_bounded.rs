@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::RowBoundParams;
+use crate::align::bounded::structs::RowBounds;
 use crate::max_f32;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
@@ -9,7 +9,7 @@ pub fn optimal_accuracy_bounded(
     profile: &Profile,
     posterior_matrix: &impl DpMatrix,
     optimal_matrix: &mut impl DpMatrix,
-    params: &RowBoundParams,
+    params: &RowBounds,
 ) {
     let end_score: f32 = 1.0;
 

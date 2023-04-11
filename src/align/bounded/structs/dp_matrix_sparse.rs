@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::RowBoundParams;
+use crate::align::bounded::structs::RowBounds;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
 
@@ -18,7 +18,7 @@ pub struct DpMatrixSparse {
 }
 
 impl DpMatrixSparse {
-    pub fn new(target_length: usize, profile_length: usize, row_bounds: &RowBoundParams) -> Self {
+    pub fn new(target_length: usize, profile_length: usize, row_bounds: &RowBounds) -> Self {
         let mut matrix = DpMatrixSparse::default();
         matrix.reuse(target_length, profile_length, row_bounds);
         matrix
@@ -38,7 +38,7 @@ impl DpMatrixSparse {
         &mut self,
         new_target_length: usize,
         new_profile_length: usize,
-        row_bounds: &RowBoundParams,
+        row_bounds: &RowBounds,
     ) {
         let mut core_length = 0;
         // +1 for 0 row, + 1 for target_length + 1 row (serves as an end pointer)
