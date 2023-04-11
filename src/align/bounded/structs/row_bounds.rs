@@ -35,6 +35,11 @@ impl RowBounds {
         }
 
         for bound in &cloud_bounds.bounds {
+            // TODO: this is a band-aid fix!
+            if bound.was_pruned() {
+                continue;
+            }
+
             self.left_row_bounds[bound.left_target_idx] =
                 self.left_row_bounds[bound.left_target_idx].min(bound.left_profile_idx);
 

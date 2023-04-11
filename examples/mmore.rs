@@ -4,7 +4,7 @@ use clap::Parser;
 use nale::align::bounded::structs::CloudSearchParams;
 use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
 use nale::output::output_tabular::write_tabular_output;
-use nale::pipelines::{pipeline_bounded, BoundedPipelineParams, Seed};
+use nale::pipelines::{pipeline_bounded, BoundedPipelineParams, DebugParams, Seed};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
 use std::collections::HashMap;
@@ -40,17 +40,27 @@ pub struct Args {
 impl Args {
     pub fn params_bounded(&self) -> BoundedPipelineParams {
         BoundedPipelineParams {
-            write_debug: match self.debug {
-                Some(val) => val,
-                None => false,
-            },
             allow_overwrite: match self.allow_overwrite {
                 Some(val) => val,
                 None => false,
             },
-            // TODO: parameterize this
-            debug_path: PathBuf::from("./nale-debug"),
             cloud_search_params: CloudSearchParams::default(),
+            debug_params: DebugParams {
+                // TODO: parameterize this
+                debug_path: PathBuf::from("./nale-debug"),
+                write_matrices: match self.debug {
+                    Some(val) => val,
+                    None => false,
+                },
+                write_bounds: match self.debug {
+                    Some(val) => val,
+                    None => false,
+                },
+                write_trace: match self.debug {
+                    Some(val) => val,
+                    None => false,
+                },
+            },
         }
     }
 }
@@ -300,7 +310,7 @@ fn main() -> Result<()> {
     let mmseqs_results_file = File::open(&mmseqs_file_paths.results)?;
     let mmseqs_results_buf_reader = BufReader::new(mmseqs_results_file);
 
-    println!("hmmbuild...");
+    // println!("hmmbuild...");
     let hmm_path = root_path.join("query.hmm");
     Command::new("hmmbuild")
         .arg(&hmm_path)
@@ -388,7 +398,7 @@ fn main() -> Result<()> {
                 target_name,
                 target_start,
                 target_end,
-                profile_start: profile_idx_map[profile_start],
+                profile_start: profile_idx_map[profile_start].max(1),
                 profile_end: profile_idx_map[profile_end],
             })
         }

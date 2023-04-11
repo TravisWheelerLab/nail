@@ -6,6 +6,7 @@ use crate::align::bounded::{
     optimal_accuracy_bounded, posterior_bounded, traceback_bounded,
 };
 use crate::output::path_buf_ext::PathBufExt;
+use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Alignment, DpMatrixFlat, Profile, Sequence, Trace};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -13,22 +14,29 @@ use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::path::PathBuf;
 
-pub struct BoundedPipelineParams {
-    pub write_debug: bool,
-    pub allow_overwrite: bool,
+pub struct DebugParams {
     pub debug_path: PathBuf,
-    pub cloud_search_params: CloudSearchParams,
+    pub write_bounds: bool,
+    pub write_matrices: bool,
+    pub write_trace: bool,
 }
 
-impl Default for BoundedPipelineParams {
+impl Default for DebugParams {
     fn default() -> Self {
         Self {
-            write_debug: false,
-            allow_overwrite: false,
             debug_path: PathBuf::from("./nale-debug"),
-            cloud_search_params: CloudSearchParams::default(),
+            write_bounds: false,
+            write_matrices: false,
+            write_trace: false,
         }
     }
+}
+
+#[derive(Default)]
+pub struct BoundedPipelineParams {
+    pub allow_overwrite: bool,
+    pub cloud_search_params: CloudSearchParams,
+    pub debug_params: DebugParams,
 }
 
 // TODO: rename and put this elsewhere
@@ -88,7 +96,7 @@ pub fn pipeline_bounded(
     let mut profile_names: Vec<&String> = profile_seeds.keys().collect();
     profile_names.sort();
 
-    let mut cloud_debug = if params.write_debug {
+    let mut cloud_debug = if params.debug_params.write_bounds {
         Some(CloudDebugAnnotations::default())
     } else {
         None
@@ -145,6 +153,7 @@ pub fn pipeline_bounded(
                 cloud_debug.add_row_bounds(&row_bounds);
 
                 let mut out = params
+                    .debug_params
                     .debug_path
                     .join(&format!("{}-{}.bounds.json", profile_name, target.name))
                     .open(params.allow_overwrite)?;
@@ -167,6 +176,22 @@ pub fn pipeline_bounded(
 
             backward_bounded(profile, target, &mut backward_matrix, &row_bounds);
 
+            if params.debug_params.write_matrices {
+                let mut out = params
+                    .debug_params
+                    .debug_path
+                    .join(format!("{}-{}.fwd.mtx", profile_name, target.name))
+                    .open(params.allow_overwrite)?;
+                forward_matrix.dump(&mut out)?;
+
+                out = params
+                    .debug_params
+                    .debug_path
+                    .join(format!("{}-{}.bwd.mtx", profile_name, target.name))
+                    .open(params.allow_overwrite)?;
+                backward_matrix.dump(&mut out)?;
+            }
+
             posterior_bounded(
                 profile,
                 &forward_matrix,
@@ -177,6 +202,22 @@ pub fn pipeline_bounded(
 
             optimal_accuracy_bounded(profile, &posterior_matrix, &mut optimal_matrix, &row_bounds);
 
+            if params.debug_params.write_matrices {
+                let mut out = params
+                    .debug_params
+                    .debug_path
+                    .join(format!("{}-{}.post.mtx", profile_name, target.name))
+                    .open(params.allow_overwrite)?;
+                posterior_matrix.dump(&mut out)?;
+
+                out = params
+                    .debug_params
+                    .debug_path
+                    .join(format!("{}-{}.opt.mtx", profile_name, target.name))
+                    .open(params.allow_overwrite)?;
+                optimal_matrix.dump(&mut out)?;
+            }
+
             let mut trace = Trace::new(target.length, profile.length);
             traceback_bounded(
                 profile,
@@ -185,6 +226,15 @@ pub fn pipeline_bounded(
                 &mut trace,
                 row_bounds.target_end,
             );
+
+            if params.debug_params.write_trace {
+                let mut out = params
+                    .debug_params
+                    .debug_path
+                    .join(format!("{}-{}.trace", profile_name, target.name))
+                    .open(params.allow_overwrite)?;
+                trace.dump(&mut out, profile, target)?;
+            }
 
             alignments.push(Alignment::new(&trace, profile, target));
         }

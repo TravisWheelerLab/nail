@@ -4,7 +4,7 @@ use clap::Parser;
 use nale::align::bounded::structs::CloudSearchParams;
 use nale::output::output_tabular::write_tabular_output;
 use nale::pipelines::{
-    pipeline_bounded, pipeline_naive, BoundedPipelineParams, NaivePipelineParams,
+    pipeline_bounded, pipeline_naive, BoundedPipelineParams, DebugParams, NaivePipelineParams,
 };
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
@@ -53,17 +53,27 @@ impl Args {
 
     pub fn params_bounded(&self) -> BoundedPipelineParams {
         BoundedPipelineParams {
-            write_debug: match self.debug {
-                Some(val) => val,
-                None => false,
-            },
             allow_overwrite: match self.allow_overwrite {
                 Some(val) => val,
                 None => false,
             },
-            // TODO: parameterize this
-            debug_path: PathBuf::from("./nale-debug"),
             cloud_search_params: CloudSearchParams::default(),
+            debug_params: DebugParams {
+                // TODO: parameterize this
+                debug_path: PathBuf::from("./nale-debug"),
+                write_matrices: match self.debug {
+                    Some(val) => val,
+                    None => false,
+                },
+                write_bounds: match self.debug {
+                    Some(val) => val,
+                    None => false,
+                },
+                write_trace: match self.debug {
+                    Some(val) => val,
+                    None => false,
+                },
+            },
         }
     }
 }
