@@ -1,5 +1,5 @@
 use crate::align::bounded::structs::{
-    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBoundParams,
+    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, RowBoundParams,
 };
 use crate::align::bounded::{
     backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded,
@@ -11,7 +11,7 @@ use crate::output::output_debug::{
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Alignment, DpMatrixFlat, Profile, Sequence, Trace};
 use crate::viz::SodaJson;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -91,21 +91,14 @@ pub fn pipeline_bounded(
     profile_names.sort();
 
     // for (i, profile_name) in profile_seeds.keys().enumerate() {
-    for (i, profile_name) in profile_names.iter().enumerate() {
+    for profile_name in &profile_names {
         let profile = profile_map.get_mut(*profile_name).unwrap();
         let seeds = profile_seeds.get(*profile_name).unwrap();
         for seed in seeds {
             let target = target_map.get(&seed.target_name[..]).unwrap();
 
-            if seed.profile_end > profile.length {
-                // println!(
-                //     "fail: profile length {} > {}",
-                //     seed.profile_end, profile.length
-                // );
-                continue;
-            }
-
-            println!("{} - {}", profile.name, target.name);
+            println!("{}", profile.name);
+            println!("{}", seed);
 
             let mut current_debug_dir_path = if params.write_debug {
                 let path = get_profile_target_output_dir_path(
@@ -186,9 +179,9 @@ pub fn pipeline_bounded(
                 }
             }
 
-            if !row_bound_params.valid() {
-                continue;
-            }
+            // if !row_bound_params.valid() {
+            //     continue;
+            // }
 
             forward_matrix.reuse(target.length, profile.length);
             backward_matrix.reuse(target.length, profile.length);

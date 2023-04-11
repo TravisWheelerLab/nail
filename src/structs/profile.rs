@@ -95,6 +95,7 @@ impl Profile {
             ],
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
+            // buffered with a space so that indexing starts at 1
             consensus_sequence: vec![UTF8_SPACE],
             alphabet: P7Alphabet::Amino,
         };

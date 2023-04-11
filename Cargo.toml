@@ -10,7 +10,13 @@ path = "./src/main.rs"
 #required-features = ["binary"]
 
 [[example]]
+name = "mmpf"
+
+[[example]]
 name = "mmore"
+
+[[example]]
+name = "nw"
 
 [lib]
 name = "nale"

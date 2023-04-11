@@ -1,13 +1,14 @@
 use seq_io::fasta::{Reader, Record};
+use std::fmt::{Debug, Formatter};
 use std::path::Path;
 
-use crate::alphabet::UTF8_TO_DIGITAL_AMINO;
+use crate::alphabet::{AMINO_INVERSE_MAP, UTF8_TO_DIGITAL_AMINO};
 use anyhow::{Context, Result};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 #[error("unknown fasta sequence character")]
-struct UnknownSequenceCharacterError;
+pub struct UnknownSequenceCharacterError;
 
 /// This holds the both the "digital" data and string data of a biological sequence.
 pub struct Sequence {
@@ -58,5 +59,54 @@ impl Sequence {
             });
         }
         Ok(seqs)
+    }
+
+    pub fn from_digital(bytes: &[u8]) -> Result<Self> {
+        let mut digital_bytes: Vec<u8> = vec![255; bytes.len() + 1];
+        digital_bytes[1..].copy_from_slice(bytes);
+        let mut utf8_bytes: Vec<u8> = vec![255; digital_bytes.len()];
+
+        for (idx, digital_byte) in digital_bytes[1..].iter().enumerate() {
+            let utf8_byte = match AMINO_INVERSE_MAP.get(digital_byte) {
+                Some(b) => *b,
+                None => return Err(UnknownSequenceCharacterError.into()),
+            };
+            utf8_bytes[idx + 1] = utf8_byte;
+        }
+
+        Ok(Sequence {
+            name: "".to_string(),
+            length: utf8_bytes.len() - 1,
+            digital_bytes,
+            utf8_bytes,
+        })
+    }
+
+    pub fn from_utf8(bytes: &[u8]) -> Result<Self> {
+        let mut utf8_bytes: Vec<u8> = vec![255; bytes.len() + 1];
+        utf8_bytes[1..].copy_from_slice(bytes);
+        let mut digital_bytes: Vec<u8> = vec![255; utf8_bytes.len()];
+
+        for (idx, utf8_byte) in utf8_bytes[1..].iter().enumerate() {
+            let digital_byte = match UTF8_TO_DIGITAL_AMINO.get(utf8_byte) {
+                Some(b) => *b,
+                None => return Err(UnknownSequenceCharacterError.into()),
+            };
+            digital_bytes[idx + 1] = digital_byte;
+        }
+
+        Ok(Sequence {
+            name: "".to_string(),
+            length: digital_bytes.len() - 1,
+            digital_bytes,
+            utf8_bytes,
+        })
+    }
+}
+
+impl Debug for Sequence {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", std::str::from_utf8(&self.utf8_bytes).unwrap())?;
+        Ok(())
     }
 }
