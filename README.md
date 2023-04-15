@@ -14,7 +14,7 @@ Once that's done, you can then build nale:
 
     git clone https://github.com/TravisWheelerLab/nale
     cd nale/
-    cargo build/
+    cargo build
 
 ## Usage
 
