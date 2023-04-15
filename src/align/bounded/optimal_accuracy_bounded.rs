@@ -2,9 +2,7 @@ use crate::align::bounded::structs::RowBounds;
 use crate::max_f32;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
-use crate::timing::time;
 
-#[funci::timed(timer = time)]
 pub fn optimal_accuracy_bounded(
     profile: &Profile,
     posterior_matrix: &impl DpMatrix,

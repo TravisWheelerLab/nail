@@ -19,6 +19,8 @@ use std::fmt::Formatter;
 pub struct Profile {
     /// The name of the profile
     pub name: String,
+    /// The accession number of the profile
+    pub accession: String,
     /// Model length (number of nodes)
     pub length: usize,
     /// Current target sequence length
@@ -39,6 +41,8 @@ pub struct Profile {
     pub consensus_sequence: Vec<u8>,
     /// The sequence alphabet
     pub alphabet: P7Alphabet,
+    pub forward_tau: f32,
+    pub forward_lambda: f32,
 }
 
 impl Profile {
@@ -81,6 +85,7 @@ impl Profile {
     pub fn new(hmm: &Hmm) -> Self {
         let mut profile = Profile {
             name: hmm.header.name.clone(),
+            accession: hmm.header.accession_number.clone(),
             length: hmm.header.model_length,
             target_length: 0,
             max_length: 0,
@@ -98,6 +103,8 @@ impl Profile {
             // buffered with a space so that indexing starts at 1
             consensus_sequence: vec![UTF8_SPACE],
             alphabet: P7Alphabet::Amino,
+            forward_tau: hmm.stats.forward_tau,
+            forward_lambda: hmm.stats.forward_lambda,
         };
 
         for state in 0..Profile::NUM_STATE_TRANSITIONS {

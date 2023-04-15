@@ -1,8 +1,6 @@
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
-use crate::timing::time;
 
-#[funci::timed(timer = time)]
 pub fn posterior(
     profile: &Profile,
     forward_matrix: &impl DpMatrix,

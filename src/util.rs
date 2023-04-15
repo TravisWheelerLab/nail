@@ -82,19 +82,6 @@ pub fn f32_vec_argmax(vec: &Vec<f32>) -> usize {
     argmax
 }
 
-pub fn max_of_f32_matrix(matrix: &Vec<Vec<f32>>) -> f32 {
-    let mut max = 0.0;
-    for row in matrix {
-        for value in row {
-            let abs_value = value.abs();
-            if abs_value != f32::INFINITY && abs_value >= max {
-                max = abs_value
-            }
-        }
-    }
-    max
-}
-
 lazy_static! {
     pub static ref LOGSUM_LOOKUP: Vec<f32> = {
         let mut f: Vec<f32> = vec![];
@@ -107,18 +94,6 @@ lazy_static! {
 
 const LOGSUM_SCALE: f32 = 1000.0;
 const LOGSUM_TABLE_SIZE: usize = 16000;
-
-pub fn log_sum_table_dump() {
-    let mut line_break_counter = 0;
-    for i in 0..LOGSUM_TABLE_SIZE {
-        line_break_counter += 1;
-        print!("{:2.8} ", LOGSUM_LOOKUP[i]);
-        if line_break_counter > 8 {
-            println!();
-            line_break_counter = 0;
-        }
-    }
-}
 
 /// A fast, table driven approximation of the sum of two floats in log space.
 #[inline(always)]

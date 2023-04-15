@@ -1,11 +1,9 @@
 use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
-use crate::timing::time;
 use crate::util::log_add;
 use anyhow::Result;
 
-#[funci::timed(timer = time)]
 pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> Result<()> {
     let end_score: f32 = 0.0;
 

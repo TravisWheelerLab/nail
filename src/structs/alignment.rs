@@ -156,6 +156,16 @@ impl Alignment {
                 }
             }
         }
+
+        // if (pli->Z_setby == p7_ZSETBY_NTARGETS && pli->mode == p7_SEARCH_SEQS) pli->Z = pli->nseqs;
+
+        // lnP
+        // if (x < mu) return 0.0;
+        // return -lambda * (x-mu);
+
+        // E-value
+        // exp(th->hit[h]->lnP) * pli->Z,
+
         Alignment {
             profile_name: profile.name.clone(),
             target_name: target.name.clone(),

@@ -2,10 +2,8 @@ use crate::align::bounded::structs::RowBounds;
 use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
-use crate::timing::time;
 use crate::util::log_add;
 
-#[funci::timed(timer = time)]
 pub fn forward_bounded(
     profile: &Profile,
     target: &Sequence,

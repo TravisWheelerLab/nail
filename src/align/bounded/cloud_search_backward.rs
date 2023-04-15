@@ -1,10 +1,8 @@
 use crate::align::bounded::cloud_search_common::PruneStatus;
-use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams};
+use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, Seed};
 use crate::align::bounded::{prune_and_scrub, scrub_co_located};
 use crate::log_sum;
-use crate::pipelines::Seed;
 use crate::structs::{Profile, Sequence};
-use crate::timing::time;
 use crate::util::log_add;
 
 #[inline]
@@ -101,7 +99,6 @@ pub fn compute_backward_cell(
     );
 }
 
-#[funci::timed(timer = time)]
 pub fn cloud_search_backward(
     profile: &Profile,
     target: &Sequence,

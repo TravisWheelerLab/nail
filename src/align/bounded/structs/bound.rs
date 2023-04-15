@@ -1,9 +1,6 @@
 use crate::util::PrintMe;
-use crate::viz::{SodaAnnotation, SodaJson};
 use anyhow::Result;
-use serde::Serialize;
 use std::fmt::{Display, Formatter};
-use std::io::Write;
 use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
 
@@ -442,47 +439,6 @@ impl CloudBoundGroup {
             }
         }
 
-        Ok(())
-    }
-
-    pub fn soda_annotations(&self) -> (Vec<SodaAnnotation>, Vec<SodaAnnotation>) {
-        todo!()
-    }
-}
-
-#[derive(Serialize)]
-pub struct CloudBoundAnnotations {
-    left: Vec<SodaAnnotation>,
-    right: Vec<SodaAnnotation>,
-}
-
-impl SodaJson for CloudBoundGroup {
-    fn soda_json(&self, out: &mut impl Write) -> Result<()> {
-        let left: Vec<SodaAnnotation> = self.bounds
-            [self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
-            .iter()
-            .map(|b| SodaAnnotation {
-                id: format!("left-{}", b.left_target_idx + b.left_profile_idx),
-                start: b.left_profile_idx,
-                end: b.left_profile_idx + 1,
-                row: b.left_target_idx,
-            })
-            .collect();
-
-        let right: Vec<SodaAnnotation> = self.bounds
-            [self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
-            .iter()
-            .map(|b| SodaAnnotation {
-                id: format!("right-{}", b.right_target_idx + b.right_profile_idx),
-                start: b.right_profile_idx,
-                end: b.right_profile_idx + 1,
-                row: b.right_target_idx,
-            })
-            .collect();
-
-        let cloud_ann = CloudBoundAnnotations { left, right };
-        let serialized = serde_json::to_string(&cloud_ann).unwrap();
-        write!(out, "{serialized}")?;
         Ok(())
     }
 }

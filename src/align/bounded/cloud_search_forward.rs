@@ -1,9 +1,7 @@
 use crate::align::bounded::cloud_search_common::{prune_and_scrub, scrub_co_located, PruneStatus};
-use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams};
+use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, Seed};
 use crate::log_sum;
-use crate::pipelines::Seed;
 use crate::structs::{Profile, Sequence};
-use crate::timing::time;
 use crate::util::log_add;
 
 #[inline]
@@ -91,7 +89,6 @@ pub fn compute_forward_cell(
     );
 }
 
-#[funci::timed(timer = time)]
 pub fn cloud_search_forward(
     profile: &Profile,
     target: &Sequence,

@@ -1,11 +1,9 @@
 use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
-use crate::timing::time;
 use crate::util::log_add;
 use anyhow::Result;
 
-#[funci::timed(timer = time)]
 pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> Result<()> {
     let end_score: f32 = 0.0;
 
@@ -153,7 +151,9 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
             profile.length,
             dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX),
         );
+
         dp_matrix.set_insert(target_idx, profile.length, -f32::INFINITY);
+
         dp_matrix.set_delete(
             target_idx,
             profile.length,

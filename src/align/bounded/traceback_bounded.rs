@@ -4,9 +4,6 @@ use crate::structs::trace::constants::{
 };
 use crate::structs::{Profile, Trace};
 
-use crate::timing::time;
-
-#[funci::timed(timer = time)]
 pub fn traceback_bounded(
     profile: &Profile,
     posterior_matrix: &impl DpMatrix,
