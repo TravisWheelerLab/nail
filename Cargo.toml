@@ -5,6 +5,7 @@ authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
 license = "BSD 3-Clause"
 repository = "https://github.com/TravisWheelerLab/nale"
+description = "Nale is a library that performs profile Hidden Markov Model (PHMM) biological sequence alignment."
 
 [lib]
 name = "nale"
