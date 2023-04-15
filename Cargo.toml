@@ -3,6 +3,8 @@ name = "nale"
 version = "0.1.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
+license = "BSD 3-Clause"
+repository = "https://github.com/TravisWheelerLab/nale"
 
 [lib]
 name = "nale"

@@ -3,7 +3,9 @@ Nale ALigns Efficiently
 
 ## About
 
-Nale performs profile Hidden Markov Model (PHMM) biological sequence alignment.
+Nale is a library that performs profile Hidden Markov Model (PHMM) biological sequence alignment.
+
+This libary is in early stages of development. The API should be considered highly unstable, and documentation is lacking.
 
 ## Installation
 
@@ -15,10 +17,6 @@ Once that's done, you can then build nale:
     git clone https://github.com/TravisWheelerLab/nale
     cd nale/
     cargo build
-
-## Usage
-
-TBD
 
 ## License
 
