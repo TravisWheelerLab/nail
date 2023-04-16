@@ -14,7 +14,7 @@ pub struct Alignment {
     /// The name of the target sequence
     pub target_name: String,
     /// The bit score of the alignment
-    pub score: f32,
+    pub bit_score: f32,
     /// The E-value of the alignment
     pub evalue: f32,
     /// The length of the alignment
@@ -75,7 +75,7 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
 }
 
 impl Alignment {
-    pub fn new(trace: &Trace, profile: &Profile, target: &Sequence) -> Self {
+    pub fn new(trace: &Trace, profile: &Profile, target: &Sequence, target_count: usize) -> Self {
         let mut profile_bytes: Vec<u8> = vec![];
         let mut target_bytes: Vec<u8> = vec![];
         let mut mid_bytes: Vec<u8> = vec![];
@@ -86,8 +86,9 @@ impl Alignment {
         let mut target_start: usize = 0;
         let mut target_end: usize = 0;
 
-        let mut search_state: SearchState = SearchState::Begin;
+        let mut bit_score: f32 = 0.0;
 
+        let mut search_state: SearchState = SearchState::Begin;
         for trace_idx in 0..trace.length {
             let trace_state = trace.states[trace_idx];
             let profile_idx = trace.profile_idx[trace_idx];
@@ -110,68 +111,90 @@ impl Alignment {
                         profile_start = trace.profile_idx[trace_idx + 1];
                         target_start = trace.target_idx[trace_idx + 1];
 
+                        let transition_score = profile.generic_transition_score(
+                            trace_state,
+                            trace.profile_idx[trace_idx],
+                            trace.states[trace_idx + 1],
+                            trace.profile_idx[trace_idx + 1],
+                        );
+                        bit_score += transition_score;
+
                         search_state = SearchState::Alignment;
                     }
                     _ => {
                         panic!();
                     }
                 },
-                SearchState::Alignment => match trace_state {
-                    TRACE_M => {
-                        profile_bytes.push(profile_string_byte);
+                SearchState::Alignment => {
+                    let transition_score = profile.generic_transition_score(
+                        trace_state,
+                        trace.profile_idx[trace_idx],
+                        trace.states[trace_idx + 1],
+                        trace.profile_idx[trace_idx + 1],
+                    );
+                    bit_score += transition_score;
 
-                        let match_emission_score = profile
-                            .match_score(target.digital_bytes[target_idx] as usize, profile_idx);
-                        mid_bytes.push(select_middle_character(
-                            profile_string_byte,
-                            target_string_byte,
-                            match_emission_score,
-                        ));
+                    match trace_state {
+                        TRACE_M => {
+                            let match_emission_score = profile.match_score(
+                                target.digital_bytes[target_idx] as usize,
+                                profile_idx,
+                            );
 
-                        target_bytes.push(target_string_byte);
+                            bit_score += match_emission_score;
+
+                            profile_bytes.push(profile_string_byte);
+                            mid_bytes.push(select_middle_character(
+                                profile_string_byte,
+                                target_string_byte,
+                                match_emission_score,
+                            ));
+                            target_bytes.push(target_string_byte);
+                        }
+                        TRACE_I => {
+                            let insert_emission_score = profile.insert_score(
+                                target.digital_bytes[target_idx] as usize,
+                                profile_idx,
+                            );
+
+                            bit_score += insert_emission_score;
+
+                            profile_bytes.push(UTF8_DOT);
+                            target_bytes.push(target_string_byte);
+                            mid_bytes.push(UTF8_SPACE);
+                        }
+                        TRACE_D => {
+                            profile_bytes.push(profile.consensus_sequence[profile_idx]);
+                            target_bytes.push(UTF8_DASH);
+                            mid_bytes.push(UTF8_SPACE);
+                        }
+                        TRACE_E => {
+                            // if we've hit an E state, then the previous trace
+                            // position should be the end of the alignment
+                            profile_end = trace.profile_idx[trace_idx - 1];
+                            target_end = trace.target_idx[trace_idx - 1];
+                            search_state = SearchState::End;
+                        }
+                        _ => {
+                            panic!()
+                        }
                     }
-                    TRACE_I => {
-                        profile_bytes.push(UTF8_DOT);
-                        target_bytes.push(target_string_byte);
-                        mid_bytes.push(UTF8_SPACE);
-                    }
-                    TRACE_D => {
-                        profile_bytes.push(profile.consensus_sequence[profile_idx]);
-                        target_bytes.push(UTF8_DASH);
-                        mid_bytes.push(UTF8_SPACE);
-                    }
-                    TRACE_E => {
-                        // if we've hit an E state, then the previous trace
-                        // position should be the end of the alignment
-                        profile_end = trace.profile_idx[trace_idx - 1];
-                        target_end = trace.target_idx[trace_idx - 1];
-                        search_state = SearchState::End;
-                    }
-                    _ => {
-                        panic!()
-                    }
-                },
+                }
                 SearchState::End => {
                     // no-op on the final trace positions for now
                 }
             }
         }
 
-        // if (pli->Z_setby == p7_ZSETBY_NTARGETS && pli->mode == p7_SEARCH_SEQS) pli->Z = pli->nseqs;
-
-        // lnP
-        // if (x < mu) return 0.0;
-        // return -lambda * (x-mu);
-
-        // E-value
-        // exp(th->hit[h]->lnP) * pli->Z,
+        // TODO: double check these calculations
+        let pvalue = (-profile.forward_lambda * (bit_score - profile.forward_tau)).exp();
+        let evalue = pvalue * target_count as f32;
 
         Alignment {
             profile_name: profile.name.clone(),
             target_name: target.name.clone(),
-            // TODO: compute scores and E-values
-            score: 0.0,
-            evalue: 0.0,
+            bit_score,
+            evalue,
             length: profile_bytes.len(),
             profile_start,
             profile_end,
@@ -194,7 +217,7 @@ impl Alignment {
         writeln!(
             out,
             "==  score: {:3.1} bits;  E-value: {:1.1e}",
-            self.score, self.evalue
+            self.bit_score, self.evalue
         )?;
 
         while start_offset <= self.length {
