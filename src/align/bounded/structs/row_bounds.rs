@@ -3,13 +3,24 @@ use anyhow::Result;
 use std::fmt::{Debug, Formatter};
 use std::io::Write;
 
-#[derive(Default)]
 pub struct RowBounds {
     pub target_start: usize,
     pub target_end: usize,
     pub row_capacity: usize,
     pub left_row_bounds: Vec<usize>,
     pub right_row_bounds: Vec<usize>,
+}
+
+impl Default for RowBounds {
+    fn default() -> Self {
+        Self {
+            target_start: 1,
+            target_end: 1,
+            row_capacity: 1,
+            left_row_bounds: vec![1, 1],
+            right_row_bounds: vec![1, 1],
+        }
+    }
 }
 
 impl RowBounds {
