@@ -66,10 +66,27 @@ impl RowBounds {
     }
 
     pub fn valid(&self) -> bool {
+        let mut prev_row_range = (
+            self.left_row_bounds[self.target_start],
+            self.right_row_bounds[self.target_start],
+        );
+
         for row_idx in self.target_start..=self.target_end {
-            if self.left_row_bounds[row_idx] > self.right_row_bounds[row_idx] {
+            let row_range = (
+                self.left_row_bounds[row_idx],
+                self.right_row_bounds[row_idx],
+            );
+
+            if row_range.0 > row_range.1 {
                 return false;
             }
+
+            // check if this range overlaps with the previous one
+            if prev_row_range.0 > row_range.1 || prev_row_range.1 < row_range.0 {
+                return false;
+            }
+
+            prev_row_range = row_range;
         }
         true
     }

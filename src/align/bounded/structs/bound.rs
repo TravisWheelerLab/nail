@@ -60,7 +60,7 @@ impl CloudBound {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CloudBoundGroup {
     pub bounds: Vec<CloudBound>,
     pub target_length: usize,
@@ -145,6 +145,16 @@ impl CloudBoundGroup {
 
     pub fn get_last(&self) -> &CloudBound {
         self.get(self.max_anti_diagonal_idx)
+    }
+
+    pub fn valid(&self) -> bool {
+        for idx in self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx {
+            let bound = &self.bounds[idx];
+            if bound.was_pruned() {
+                return false;
+            }
+        }
+        true
     }
 
     /// Get the total number of cells that exist within the cloud boundaries.
@@ -262,6 +272,10 @@ impl CloudBoundGroup {
                 profile_start + size,
             );
         }
+    }
+
+    pub fn bounds(&self) -> &[CloudBound] {
+        &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
     }
 
     pub fn join_bounds(

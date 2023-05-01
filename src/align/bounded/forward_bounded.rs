@@ -8,36 +8,36 @@ pub fn forward_bounded(
     profile: &Profile,
     target: &Sequence,
     dp_matrix: &mut impl DpMatrix,
-    params: &RowBounds,
-) {
+    bounds: &RowBounds,
+) -> f32 {
     let end_score: f32 = 0.0;
 
-    dp_matrix.set_special(params.target_start - 1, Profile::SPECIAL_N_IDX, 0.0);
+    dp_matrix.set_special(bounds.target_start - 1, Profile::SPECIAL_N_IDX, 0.0);
     dp_matrix.set_special(
-        params.target_start - 1,
+        bounds.target_start - 1,
         Profile::SPECIAL_B_IDX,
         profile.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_MOVE_IDX),
     );
     dp_matrix.set_special(
-        params.target_start - 1,
+        bounds.target_start - 1,
         Profile::SPECIAL_E_IDX,
         -f32::INFINITY,
     );
     dp_matrix.set_special(
-        params.target_start - 1,
+        bounds.target_start - 1,
         Profile::SPECIAL_C_IDX,
         -f32::INFINITY,
     );
     dp_matrix.set_special(
-        params.target_start - 1,
+        bounds.target_start - 1,
         Profile::SPECIAL_J_IDX,
         -f32::INFINITY,
     );
 
-    for target_idx in params.target_start..=params.target_end {
+    for target_idx in bounds.target_start..=bounds.target_end {
         let current_target_character = target.digital_bytes[target_idx];
 
-        for profile_idx in params.left_row_bounds[target_idx]..params.right_row_bounds[target_idx] {
+        for profile_idx in bounds.left_row_bounds[target_idx]..bounds.right_row_bounds[target_idx] {
             // match state
             dp_matrix.set_match(
                 target_idx,
@@ -90,7 +90,7 @@ pub fn forward_bounded(
             );
         }
 
-        let last_profile_idx = params.right_row_bounds[target_idx];
+        let last_profile_idx = bounds.right_row_bounds[target_idx];
 
         // unrolled match state match[M]
         dp_matrix.set_match(
@@ -197,4 +197,6 @@ pub fn forward_bounded(
             ),
         );
     }
+
+    dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX)
 }

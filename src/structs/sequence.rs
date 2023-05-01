@@ -30,7 +30,8 @@ impl Sequence {
 
         while let Some(record) = reader.next() {
             let record = record.expect("Error reading record");
-            let record_name = String::from_utf8(record.head().to_vec())?;
+            let record_header = String::from_utf8(record.head().to_vec())?;
+            let record_name = record_header.split_whitespace().next().unwrap().to_string();
             // We want position 1 of the sequence to be at index 1, so we'll buffer with 255
             let mut utf8_bytes: Vec<u8> = vec![255];
             let mut digital_bytes: Vec<u8> = vec![255];

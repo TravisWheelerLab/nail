@@ -30,7 +30,7 @@ impl CloudAntiDiagonal {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CloudMatrixLinear {
     profile_length: usize,
     col_count: usize,

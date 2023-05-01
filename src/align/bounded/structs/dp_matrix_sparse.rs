@@ -2,7 +2,7 @@ use crate::align::bounded::structs::RowBounds;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DpMatrixSparse {
     pub target_length: usize,
     pub profile_length: usize,

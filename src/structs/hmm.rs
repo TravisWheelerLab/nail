@@ -52,7 +52,7 @@ const P7_BODY_END_FLAG: &str = "//";
 
 // this static regex is used to find float strings
 lazy_static! {
-    static ref FLOAT_RE: Regex = Regex::new(r"\d\.*\d*").unwrap();
+    static ref FLOAT_RE: Regex = Regex::new(r"-*\d\.*\d*").unwrap();
 }
 
 enum ParserState {
@@ -87,7 +87,7 @@ struct TokenIndexError;
 struct FloatRegexError;
 
 /// The alphabet of the sequences represented in a P7HMM.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub enum P7Alphabet {
     Amino,
     Dna,

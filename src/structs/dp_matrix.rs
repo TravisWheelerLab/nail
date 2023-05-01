@@ -6,17 +6,14 @@ use anyhow::Result;
 pub trait DpMatrix {
     fn target_length(&self) -> usize;
     fn profile_length(&self) -> usize;
-    // fn resize(&mut self, new_target_length: usize, new_profile_length: usize);
-    // fn reset(&mut self);
-    // fn reuse(&mut self, new_target_length: usize, new_profile_length: usize);
     fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32;
     fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32);
     fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32;
     fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32);
     fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32;
     fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32);
-    fn get_special(&self, target_idx: usize, profile_idx: usize) -> f32;
-    fn set_special(&mut self, target_idx: usize, profile_idx: usize, value: f32);
+    fn get_special(&self, target_idx: usize, special_idx: usize) -> f32;
+    fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32);
     fn dump(&self, out: &mut impl Write) -> Result<()> {
         let target_idx_width = self.target_length().to_string().len();
         let first_column_width = target_idx_width + 3;

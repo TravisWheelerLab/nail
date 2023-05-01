@@ -13,8 +13,5 @@ pub use dp_matrix_sparse::DpMatrixSparse;
 mod row_bounds;
 pub use row_bounds::RowBounds;
 
-mod cloud_debug_annotations;
-pub use cloud_debug_annotations::CloudDebugAnnotations;
-
 mod seed;
 pub use seed::Seed;

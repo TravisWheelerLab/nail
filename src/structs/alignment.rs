@@ -1,7 +1,5 @@
 use crate::alphabet::{UTF8_DASH, UTF8_DOT, UTF8_NUMERIC, UTF8_PLUS, UTF8_SPACE};
-use crate::structs::trace::constants::{
-    TRACE_B, TRACE_D, TRACE_E, TRACE_I, TRACE_M, TRACE_N, TRACE_S,
-};
+use crate::structs::trace::constants::{TRACE_B, TRACE_D, TRACE_E, TRACE_I, TRACE_M};
 use crate::structs::{Profile, Sequence, Trace};
 use std::cmp::{max, min};
 use std::io::Write;
@@ -16,7 +14,7 @@ pub struct Alignment {
     /// The bit score of the alignment
     pub bit_score: f32,
     /// The E-value of the alignment
-    pub evalue: f32,
+    pub evalue: f64,
     /// The length of the alignment
     pub length: usize,
     /// The start coordinate of the profile (query)
@@ -40,7 +38,6 @@ pub struct Alignment {
 enum SearchState {
     Begin,
     Alignment,
-    End,
 }
 
 /// This maps a probability to a UTF8 byte (u8) to the set 0..9 or * (which represents 10)
@@ -75,19 +72,23 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
 }
 
 impl Alignment {
-    pub fn new(trace: &Trace, profile: &Profile, target: &Sequence, target_count: usize) -> Self {
+    pub fn from_trace(
+        trace: &Trace,
+        profile: &Profile,
+        target: &Sequence,
+        target_count: usize,
+    ) -> Vec<Self> {
         let mut profile_bytes: Vec<u8> = vec![];
         let mut target_bytes: Vec<u8> = vec![];
         let mut mid_bytes: Vec<u8> = vec![];
         let mut posterior_probability_bytes: Vec<u8> = vec![];
 
         let mut profile_start: usize = 0;
-        let mut profile_end: usize = 0;
         let mut target_start: usize = 0;
-        let mut target_end: usize = 0;
 
         let mut bit_score: f32 = 0.0;
 
+        let mut alignments: Vec<Alignment> = vec![];
         let mut search_state: SearchState = SearchState::Begin;
         for trace_idx in 0..trace.length {
             let trace_state = trace.states[trace_idx];
@@ -101,11 +102,8 @@ impl Alignment {
             ));
 
             match search_state {
-                SearchState::Begin => match trace_state {
-                    TRACE_S | TRACE_N => {
-                        // no-op on these states for now
-                    }
-                    TRACE_B => {
+                SearchState::Begin => {
+                    if trace_state == TRACE_B {
                         // if we've hit a B state, then the next trace
                         // position should be the start of the alignment
                         profile_start = trace.profile_idx[trace_idx + 1];
@@ -121,10 +119,7 @@ impl Alignment {
 
                         search_state = SearchState::Alignment;
                     }
-                    _ => {
-                        panic!();
-                    }
-                },
+                }
                 SearchState::Alignment => {
                     let transition_score = profile.generic_transition_score(
                         trace_state,
@@ -171,40 +166,48 @@ impl Alignment {
                         TRACE_E => {
                             // if we've hit an E state, then the previous trace
                             // position should be the end of the alignment
-                            profile_end = trace.profile_idx[trace_idx - 1];
-                            target_end = trace.target_idx[trace_idx - 1];
-                            search_state = SearchState::End;
+
+                            // TODO: double check these calculations
+                            let pvalue = (-profile.forward_lambda as f64
+                                * (bit_score as f64 - profile.forward_tau as f64))
+                                .exp();
+                            let evalue = pvalue * target_count as f64;
+
+                            alignments.push(Alignment {
+                                profile_name: profile.name.clone(),
+                                target_name: target.name.clone(),
+                                bit_score,
+                                evalue,
+                                length: profile_bytes.len(),
+                                profile_start,
+                                profile_end: trace.profile_idx[trace_idx - 1],
+                                profile_string: String::from_utf8(profile_bytes).unwrap(),
+                                target_start,
+                                target_end: trace.target_idx[trace_idx - 1],
+                                target_string: String::from_utf8(target_bytes).unwrap(),
+                                middle_string: String::from_utf8(mid_bytes).unwrap(),
+                                posterior_probability_string: String::from_utf8(
+                                    posterior_probability_bytes,
+                                )
+                                .unwrap(),
+                            });
+                            bit_score = 0.0;
+                            profile_bytes = vec![];
+                            target_bytes = vec![];
+                            mid_bytes = vec![];
+                            posterior_probability_bytes = vec![];
+
+                            search_state = SearchState::Begin;
                         }
                         _ => {
                             panic!()
                         }
                     }
                 }
-                SearchState::End => {
-                    // no-op on the final trace positions for now
-                }
             }
         }
 
-        // TODO: double check these calculations
-        let pvalue = (-profile.forward_lambda * (bit_score - profile.forward_tau)).exp();
-        let evalue = pvalue * target_count as f32;
-
-        Alignment {
-            profile_name: profile.name.clone(),
-            target_name: target.name.clone(),
-            bit_score,
-            evalue,
-            length: profile_bytes.len(),
-            profile_start,
-            profile_end,
-            profile_string: String::from_utf8(profile_bytes).unwrap(),
-            target_start,
-            target_end,
-            target_string: String::from_utf8(target_bytes).unwrap(),
-            middle_string: String::from_utf8(mid_bytes).unwrap(),
-            posterior_probability_string: String::from_utf8(posterior_probability_bytes).unwrap(),
-        }
+        alignments
     }
 
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {

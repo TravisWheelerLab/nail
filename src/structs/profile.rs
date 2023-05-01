@@ -16,6 +16,7 @@ use crate::util::{f32_vec_argmax, LogAbuse};
 use std::fmt;
 use std::fmt::Formatter;
 
+#[derive(Clone)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,
@@ -355,12 +356,8 @@ impl Profile {
     ///
     /// This also adjusts the loop and move transition scores for the special states N, J, C.
     pub fn configure_for_target_length(&mut self, length: usize) {
-        // TODO: should we set up some sort of flag to try to make
-        //       sure the model has been initialized for scoring?
         self.target_length = length;
 
-        // a somewhat indecipherable comment from hmmer:
-        //   2/(L+2) for sw; 3/(L+3) for fs
         let move_probability: f32 =
             (2.0 + self.expected_j_uses) / (length as f32 + 2.0 + self.expected_j_uses);
 

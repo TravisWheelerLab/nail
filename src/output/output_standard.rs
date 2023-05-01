@@ -1,1 +1,10 @@
-// TODO: this
+use crate::structs::Alignment;
+use anyhow::Result;
+use std::io::Write;
+
+pub fn write_standard_output(alignments: &Vec<Alignment>, out: &mut impl Write) -> Result<()> {
+    for alignment in alignments {
+        alignment.dump(out)?;
+    }
+    Ok(())
+}
