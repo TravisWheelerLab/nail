@@ -6,7 +6,7 @@ use crate::structs::hmm::constants::{
     HMM_DELETE_TO_DELETE, HMM_DELETE_TO_MATCH, HMM_INSERT_TO_INSERT, HMM_INSERT_TO_MATCH,
     HMM_MATCH_TO_DELETE, HMM_MATCH_TO_INSERT, HMM_MATCH_TO_MATCH,
 };
-use crate::structs::hmm::P7Alphabet;
+use crate::structs::hmm::Alphabet;
 use crate::structs::trace::constants::{
     TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
 };
@@ -41,7 +41,7 @@ pub struct Profile {
     /// The profile's consensus sequence
     pub consensus_sequence: Vec<u8>,
     /// The sequence alphabet
-    pub alphabet: P7Alphabet,
+    pub alphabet: Alphabet,
     pub forward_tau: f32,
     pub forward_lambda: f32,
 }
@@ -103,7 +103,7 @@ impl Profile {
             expected_j_uses: 0.0,
             // buffered with a space so that indexing starts at 1
             consensus_sequence: vec![UTF8_SPACE],
-            alphabet: P7Alphabet::Amino,
+            alphabet: Alphabet::Amino,
             forward_tau: hmm.stats.forward_tau,
             forward_lambda: hmm.stats.forward_lambda,
         };

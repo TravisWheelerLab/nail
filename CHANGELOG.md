@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Profile, CloudMatrixLinear, DpMatrixSparse now derive Clone
 - E-Values are now f64 values instead of f32
 - Alignment::new() was replaced with Alignment::from_trace()
+- Renamed P7Alphabet to Alphabet
 
 ### Removed
 - Removed CloudDebugAnnotations struct
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed parameter names on DpMatrix.get_special() and DpMatrix.set_special()
 - Fixed float parsing regex to capture negative signs
 - Fixed fasta header parsing 
+- Fixed a traceback bug that caused erroneous J state usage
 
 # [0.1.1] - 2023-04-16
 

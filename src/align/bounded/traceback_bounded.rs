@@ -30,6 +30,7 @@ pub fn traceback_bounded(
                     Profile::SPECIAL_LOOP_IDX,
                 ) * (optimal_matrix
                     .get_special(target_idx - 1, Profile::SPECIAL_C_IDX)
+                    // TODO: why does this specific path involve a posterior probability?
                     + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX));
 
                 let c_to_e_path = profile
@@ -47,6 +48,8 @@ pub fn traceback_bounded(
                 let mut state_of_max_score = 0;
                 let mut profile_idx_of_max_score = 0;
 
+                // TODO: why do we do this instead of just taking
+                //       the state that follows the E state?
                 for profile_idx in 1..=profile.length {
                     if optimal_matrix.get_match(target_idx, profile_idx) >= max_score {
                         max_score = optimal_matrix.get_match(target_idx, profile_idx);
@@ -64,6 +67,7 @@ pub fn traceback_bounded(
             }
             TRACE_M => {
                 let possible_states: [usize; 4] = [TRACE_M, TRACE_I, TRACE_D, TRACE_B];
+
                 let possible_paths: [f32; 4] = [
                     profile.transition_score_delta(Profile::MATCH_TO_MATCH_IDX, profile_idx - 1)
                         * optimal_matrix.get_match(target_idx - 1, profile_idx - 1),
@@ -92,6 +96,7 @@ pub fn traceback_bounded(
                 let match_to_insert_path = profile
                     .transition_score_delta(Profile::MATCH_TO_INSERT_IDX, profile_idx)
                     * optimal_matrix.get_match(target_idx - 1, profile_idx);
+
                 let insert_to_insert_path: f32 = profile
                     .transition_score_delta(Profile::INSERT_TO_INSERT_IDX, profile_idx)
                     * optimal_matrix.get_insert(target_idx - 1, profile_idx);
@@ -109,6 +114,7 @@ pub fn traceback_bounded(
                 let match_to_delete_path = profile
                     .transition_score_delta(Profile::MATCH_TO_DELETE_IDX, profile_idx - 1)
                     * optimal_matrix.get_match(target_idx, profile_idx - 1);
+
                 let delete_to_delete_path = profile
                     .transition_score_delta(Profile::DELETE_TO_DELETE_IDX, profile_idx - 1)
                     * optimal_matrix.get_delete(target_idx, profile_idx - 1);
@@ -126,10 +132,14 @@ pub fn traceback_bounded(
                 let n_to_b_path = profile.special_transition_score_delta(
                     Profile::SPECIAL_N_IDX,
                     Profile::SPECIAL_MOVE_IDX,
-                ) * optimal_matrix.get_match(target_idx, Profile::SPECIAL_N_IDX);
-                let j_to_b_path = profile
-                    .transition_score_delta(Profile::SPECIAL_J_IDX, Profile::SPECIAL_MOVE_IDX)
-                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX);
+                ) * optimal_matrix
+                    .get_special(target_idx, Profile::SPECIAL_N_IDX);
+
+                let j_to_b_path = profile.special_transition_score_delta(
+                    Profile::SPECIAL_J_IDX,
+                    Profile::SPECIAL_MOVE_IDX,
+                ) * optimal_matrix
+                    .get_special(target_idx, Profile::SPECIAL_J_IDX);
 
                 if n_to_b_path >= j_to_b_path {
                     TRACE_N
@@ -150,10 +160,14 @@ pub fn traceback_bounded(
                     Profile::SPECIAL_LOOP_IDX,
                 ) * (optimal_matrix
                     .get_special(target_idx - 1, Profile::SPECIAL_J_IDX)
+                    // TODO: why does this specific path involve a posterior probability?
                     + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX));
-                let e_to_j_path = profile
-                    .transition_score_delta(Profile::SPECIAL_E_IDX, Profile::SPECIAL_LOOP_IDX)
-                    * optimal_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX);
+
+                let e_to_j_path = profile.special_transition_score_delta(
+                    Profile::SPECIAL_E_IDX,
+                    Profile::SPECIAL_LOOP_IDX,
+                ) * optimal_matrix
+                    .get_special(target_idx, Profile::SPECIAL_E_IDX);
 
                 if j_to_j_path > e_to_j_path {
                     TRACE_J

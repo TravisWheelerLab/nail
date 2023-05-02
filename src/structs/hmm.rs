@@ -88,7 +88,7 @@ struct FloatRegexError;
 
 /// The alphabet of the sequences represented in a P7HMM.
 #[derive(Default, Clone)]
-pub enum P7Alphabet {
+pub enum Alphabet {
     Amino,
     Dna,
     Rna,
@@ -118,7 +118,7 @@ pub struct Header {
     pub gathering_thresholds: [f32; 2],
     pub trusted_cutoffs: [f32; 2],
     pub noise_cutoffs: [f32; 2],
-    pub alphabet: P7Alphabet,
+    pub alphabet: Alphabet,
 }
 
 /// This defines statistical scoring parameters for different pipeline stages.
@@ -246,9 +246,9 @@ pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<V
                     P7_HEADER_ALPHABET_FLAG => {
                         let value = get_token_as_str(&tokens, 1).with_context(error_context)?;
                         current_hmm.header.alphabet = match value {
-                            "amino" => P7Alphabet::Amino,
-                            "dna" => P7Alphabet::Dna,
-                            "rna" => P7Alphabet::Rna,
+                            "amino" => Alphabet::Amino,
+                            "dna" => Alphabet::Dna,
+                            "rna" => Alphabet::Rna,
                             _ => panic!("unknown alphabet"),
                         }
                     }
