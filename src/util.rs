@@ -57,12 +57,21 @@ impl PrintMe for f32 {
 
 pub trait LogAbuse {
     fn ln_or_inf(self) -> f32;
+    fn ln_or_max(self) -> f32;
 }
 
 impl LogAbuse for f32 {
     fn ln_or_inf(self) -> f32 {
         if self == 0.0 {
             -f32::INFINITY
+        } else {
+            self.ln()
+        }
+    }
+
+    fn ln_or_max(self) -> f32 {
+        if self == 0.0 {
+            -f32::MAX
         } else {
             self.ln()
         }

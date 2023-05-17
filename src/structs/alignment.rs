@@ -13,6 +13,8 @@ pub struct Alignment {
     pub target_name: String,
     /// The bit score of the alignment
     pub bit_score: f32,
+    /// The P-value of the alignment
+    pub pvalue: f64,
     /// The E-value of the alignment
     pub evalue: f64,
     /// The length of the alignment
@@ -71,13 +73,21 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
     }
 }
 
+#[derive(Default)]
+pub struct ScoreParams {
+    pub forward_score_nats: f32,
+    pub null_score_nats: f32,
+    pub bias_correction_score_nats: f32,
+    pub target_count: usize,
+}
+
 impl Alignment {
     pub fn from_trace(
         trace: &Trace,
         profile: &Profile,
         target: &Sequence,
-        target_count: usize,
-    ) -> Vec<Self> {
+        params: &ScoreParams,
+    ) -> Self {
         let mut profile_bytes: Vec<u8> = vec![];
         let mut target_bytes: Vec<u8> = vec![];
         let mut mid_bytes: Vec<u8> = vec![];
@@ -86,9 +96,6 @@ impl Alignment {
         let mut profile_start: usize = 0;
         let mut target_start: usize = 0;
 
-        let mut bit_score: f32 = 0.0;
-
-        let mut alignments: Vec<Alignment> = vec![];
         let mut search_state: SearchState = SearchState::Begin;
         for trace_idx in 0..trace.length {
             let trace_state = trace.states[trace_idx];
@@ -108,35 +115,16 @@ impl Alignment {
                         // position should be the start of the alignment
                         profile_start = trace.profile_idx[trace_idx + 1];
                         target_start = trace.target_idx[trace_idx + 1];
-
-                        let transition_score = profile.generic_transition_score(
-                            trace_state,
-                            trace.profile_idx[trace_idx],
-                            trace.states[trace_idx + 1],
-                            trace.profile_idx[trace_idx + 1],
-                        );
-                        bit_score += transition_score;
-
                         search_state = SearchState::Alignment;
                     }
                 }
                 SearchState::Alignment => {
-                    let transition_score = profile.generic_transition_score(
-                        trace_state,
-                        trace.profile_idx[trace_idx],
-                        trace.states[trace_idx + 1],
-                        trace.profile_idx[trace_idx + 1],
-                    );
-                    bit_score += transition_score;
-
                     match trace_state {
                         TRACE_M => {
                             let match_emission_score = profile.match_score(
                                 target.digital_bytes[target_idx] as usize,
                                 profile_idx,
                             );
-
-                            bit_score += match_emission_score;
 
                             profile_bytes.push(profile_string_byte);
                             mid_bytes.push(select_middle_character(
@@ -147,13 +135,6 @@ impl Alignment {
                             target_bytes.push(target_string_byte);
                         }
                         TRACE_I => {
-                            let insert_emission_score = profile.insert_score(
-                                target.digital_bytes[target_idx] as usize,
-                                profile_idx,
-                            );
-
-                            bit_score += insert_emission_score;
-
                             profile_bytes.push(UTF8_DOT);
                             target_bytes.push(target_string_byte);
                             mid_bytes.push(UTF8_SPACE);
@@ -167,47 +148,65 @@ impl Alignment {
                             // if we've hit an E state, then the previous trace
                             // position should be the end of the alignment
 
+                            // the alignment ends at the trace position before the E node
+                            let target_end = trace.target_idx[trace_idx - 1];
+                            let profile_end = trace.profile_idx[trace_idx - 1];
+
+                            let aligned_target_length = target_end - target_start + 1;
+                            let unaligned_target_length =
+                                (target.length - aligned_target_length) as f32;
+
+                            // sum up the loop transitions to the N and/or C states
+                            // once for every position in the target sequence that
+                            // isn't accounted for by the alignment that we produced
+                            let n_and_c_state_correction_nats = unaligned_target_length
+                                * (target.length as f32 / (target.length as f32 + 3.0)).ln();
+
+                            // everything has been in nats up to here
+                            let nat_score = params.forward_score_nats
+                                + n_and_c_state_correction_nats
+                                - (params.null_score_nats + params.bias_correction_score_nats);
+
+                            // convert to bits by dividing by ln(2)
+                            let bit_score = nat_score / std::f32::consts::LN_2;
+
                             // TODO: double check these calculations
                             let pvalue = (-profile.forward_lambda as f64
                                 * (bit_score as f64 - profile.forward_tau as f64))
                                 .exp();
-                            let evalue = pvalue * target_count as f64;
 
-                            alignments.push(Alignment {
+                            let evalue = pvalue * params.target_count as f64;
+
+                            return Alignment {
                                 profile_name: profile.name.clone(),
                                 target_name: target.name.clone(),
                                 bit_score,
+                                pvalue,
                                 evalue,
                                 length: profile_bytes.len(),
                                 profile_start,
-                                profile_end: trace.profile_idx[trace_idx - 1],
+                                profile_end,
                                 profile_string: String::from_utf8(profile_bytes).unwrap(),
                                 target_start,
-                                target_end: trace.target_idx[trace_idx - 1],
+                                target_end,
                                 target_string: String::from_utf8(target_bytes).unwrap(),
                                 middle_string: String::from_utf8(mid_bytes).unwrap(),
                                 posterior_probability_string: String::from_utf8(
                                     posterior_probability_bytes,
                                 )
                                 .unwrap(),
-                            });
-                            bit_score = 0.0;
-                            profile_bytes = vec![];
-                            target_bytes = vec![];
-                            mid_bytes = vec![];
-                            posterior_probability_bytes = vec![];
-
-                            search_state = SearchState::Begin;
+                            };
                         }
                         _ => {
-                            panic!()
+                            // TODO: Error
+                            panic!("unknown state in Alignment::from_trace()")
                         }
                     }
                 }
             }
         }
-
-        alignments
+        // TODO: Error
+        panic!("failed to produce an Alignment in Alignment::from_trace()");
     }
 
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {
