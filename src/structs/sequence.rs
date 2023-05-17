@@ -7,8 +7,16 @@ use anyhow::{Context, Result};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[error("unknown fasta sequence character")]
-pub struct UnknownSequenceCharacterError;
+#[error("unknown UTF8 sequence byte: {byte}")]
+pub struct UnknownUtf8SequenceByteError {
+    byte: u8,
+}
+
+#[derive(Error, Debug)]
+#[error("unknown digital sequence byte: {byte}")]
+pub struct UnknownDigitalSequenceByteError {
+    byte: u8,
+}
 
 /// This holds the both the "digital" data and string data of a biological sequence.
 pub struct Sequence {
@@ -40,15 +48,13 @@ impl Sequence {
                 for utf8_byte in line {
                     utf8_bytes.push(*utf8_byte);
 
-                    let amino_byte = match UTF8_TO_DIGITAL_AMINO.get(utf8_byte) {
+                    let digital_byte = match UTF8_TO_DIGITAL_AMINO.get(utf8_byte) {
                         Some(b) => b,
                         None => {
-                            return Err(UnknownSequenceCharacterError).with_context(|| {
-                                format!("failed to parse utf8 byte: {}", utf8_byte)
-                            })
+                            return Err(UnknownUtf8SequenceByteError { byte: *utf8_byte }.into())
                         }
                     };
-                    digital_bytes.push(*amino_byte)
+                    digital_bytes.push(*digital_byte)
                 }
             }
 
@@ -70,7 +76,12 @@ impl Sequence {
         for (idx, digital_byte) in digital_bytes[1..].iter().enumerate() {
             let utf8_byte = match AMINO_INVERSE_MAP.get(digital_byte) {
                 Some(b) => *b,
-                None => return Err(UnknownSequenceCharacterError.into()),
+                None => {
+                    return Err(UnknownDigitalSequenceByteError {
+                        byte: *digital_byte,
+                    }
+                    .into())
+                }
             };
             utf8_bytes[idx + 1] = utf8_byte;
         }
@@ -91,7 +102,7 @@ impl Sequence {
         for (idx, utf8_byte) in utf8_bytes[1..].iter().enumerate() {
             let digital_byte = match UTF8_TO_DIGITAL_AMINO.get(utf8_byte) {
                 Some(b) => *b,
-                None => return Err(UnknownSequenceCharacterError.into()),
+                None => return Err(UnknownUtf8SequenceByteError { byte: *utf8_byte }.into()),
             };
             digital_bytes[idx + 1] = digital_byte;
         }

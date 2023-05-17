@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added write_standard_output() 
 
 ### Changed
+- Replaced UnknownSequenceCharacterError with UnknownUtf8SequenceByteError and UnknownDigitalSequenceByteError
 - Alignment::new() now takes a ScoreParams struct
 - forward_bounded() now returns the score in the last C state (target_end)
 - Profile, CloudMatrixLinear, DpMatrixSparse now derive Clone
