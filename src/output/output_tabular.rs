@@ -30,7 +30,7 @@ pub fn write_tabular_output(alignments: &Vec<Alignment>, out: &mut impl Write) -
 
     writeln!(
         out,
-        "{:w0$} {:w1$} {:w2$} {:w3$} {:w4$} {:w5$} {:w6$} {:w7$}",
+        "# {:w0$} {:w1$} {:w2$} {:w3$} {:w4$} {:w5$} {:w6$} {:w7$}",
         COLUMN_HEADERS[0],
         COLUMN_HEADERS[1],
         COLUMN_HEADERS[2],
@@ -39,7 +39,8 @@ pub fn write_tabular_output(alignments: &Vec<Alignment>, out: &mut impl Write) -
         COLUMN_HEADERS[5],
         COLUMN_HEADERS[6],
         COLUMN_HEADERS[7],
-        w0 = column_widths[0],
+        // subtract 2 from the first column width for the "# " prefix
+        w0 = column_widths[0] - 2,
         w1 = column_widths[1],
         w2 = column_widths[2],
         w3 = column_widths[3],
@@ -51,8 +52,9 @@ pub fn write_tabular_output(alignments: &Vec<Alignment>, out: &mut impl Write) -
 
     writeln!(
         out,
-        "{} {} {} {} {} {} {} {}",
-        "-".repeat(column_widths[0]),
+        "#{} {} {} {} {} {} {} {}",
+        // subtract 1 from the first width for the "#" prefix
+        "-".repeat(column_widths[0] - 1),
         "-".repeat(column_widths[1]),
         "-".repeat(column_widths[2]),
         "-".repeat(column_widths[3]),
