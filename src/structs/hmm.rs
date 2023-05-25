@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -174,7 +173,7 @@ impl Hmm {
 }
 
 // TODO: remove the Display trait bound
-pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<Vec<Hmm>> {
+pub fn parse_hmms_from_p7hmm_file<P: AsRef<Path>>(path: P) -> Result<Vec<Hmm>> {
     let phmm_file = File::open(&path)?;
     let mut phmm_lines = BufReader::new(phmm_file).lines();
 
@@ -217,7 +216,7 @@ pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<V
                 let error_context = || {
                     format!(
                         "failed to parse p7hmm file header: {}\n         on line: {}\n         with flag: {}",
-                        &path.to_string(),
+                        &path.as_ref().to_string_lossy(),
                         line_number,
                         flag
                     )
@@ -373,7 +372,7 @@ pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<V
                 let error_context = || {
                     format!(
                         "failed to parse p7hmm file: {}\n         on line: {}\n",
-                        &path.to_string(),
+                        &path.as_ref().to_string_lossy(),
                         line_number
                     )
                 };
@@ -409,7 +408,7 @@ pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<V
                 let error_context = || {
                     format!(
                         "failed to parse p7hmm file body: {}\n         on line: {}\n",
-                        &path.to_string(),
+                        &path.as_ref().to_string_lossy(),
                         line_number,
                     )
                 };
@@ -421,11 +420,11 @@ pub fn parse_hmms_from_p7hmm_file<R: AsRef<Path> + Display>(path: R) -> Result<V
                         // we want it to be model_length + 1 since we are doing 1-indexing
                         assert_eq!(
                             current_hmm.model.match_probabilities.len(),
-                            current_hmm.header.model_length + 1 as usize
+                            current_hmm.header.model_length + 1
                         );
                         assert_eq!(
                             current_hmm.model.insert_probabilities.len(),
-                            current_hmm.header.model_length + 1 as usize
+                            current_hmm.header.model_length + 1
                         );
 
                         hmm_count += 1;
@@ -537,7 +536,7 @@ fn get_token_as_probability(tokens: &Vec<&str>, idx: usize) -> Result<f32> {
 fn get_tokens_as_probability_vec(tokens: &Vec<&str>, start: usize, end: usize) -> Result<Vec<f32>> {
     let mut vec: Vec<f32> = vec![];
     for i in start..end {
-        vec.push(get_token_as_probability(&tokens, i)?)
+        vec.push(get_token_as_probability(tokens, i)?)
     }
     Ok(vec)
 }
