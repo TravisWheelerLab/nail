@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::Path;
 
 use crate::alphabet::{AMINO_INVERSE_MAP, UTF8_TO_DIGITAL_AMINO};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

@@ -1,6 +1,7 @@
 use crate::align::bounded::structs::RowBounds;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
+use std::cell::RefMut;
 
 #[derive(Default, Clone)]
 pub struct DpMatrixSparse {
@@ -160,6 +161,66 @@ impl DpMatrixSparse {
 }
 
 impl DpMatrix for DpMatrixSparse {
+    fn target_length(&self) -> usize {
+        self.target_length
+    }
+
+    fn profile_length(&self) -> usize {
+        self.profile_length
+    }
+
+    #[inline]
+    fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        let idx = self.match_idx(target_idx, profile_idx);
+        self.core_data[idx]
+    }
+
+    #[inline]
+    fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        let idx = self.match_idx(target_idx, profile_idx);
+        self.core_data[idx] = value;
+    }
+
+    #[inline]
+    fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        let idx = self.insert_idx(target_idx, profile_idx);
+        self.core_data[idx]
+    }
+
+    #[inline]
+    fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        let idx = self.insert_idx(target_idx, profile_idx);
+        self.core_data[idx] = value;
+    }
+
+    #[inline]
+    fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        let idx = self.delete_idx(target_idx, profile_idx);
+        self.core_data[idx]
+    }
+
+    #[inline]
+    fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        let idx = self.delete_idx(target_idx, profile_idx);
+        self.core_data[idx] = value;
+    }
+
+    #[inline]
+    fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(special_idx < Profile::NUM_SPECIAL_STATES);
+        self.special_data[target_idx * 5 + special_idx]
+    }
+
+    #[inline]
+    fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
+        debug_assert!(target_idx <= self.target_length);
+        debug_assert!(special_idx < Profile::NUM_SPECIAL_STATES);
+        self.special_data[target_idx * 5 + special_idx] = value;
+    }
+}
+
+impl DpMatrix for RefMut<'_, DpMatrixSparse> {
     fn target_length(&self) -> usize {
         self.target_length
     }

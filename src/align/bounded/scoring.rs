@@ -2,7 +2,7 @@ use crate::align::bounded::structs::RowBounds;
 use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
-use crate::util::{log_add, LogAbuse, PrintMe};
+use crate::util::{log_add, LogAbuse};
 
 pub fn null1_score(target_length: usize) -> f32 {
     let p1 = (target_length as f32) / (target_length as f32 + 1.0);

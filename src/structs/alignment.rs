@@ -73,12 +73,23 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ScoreParams {
     pub forward_score_nats: f32,
     pub null_score_nats: f32,
     pub bias_correction_score_nats: f32,
     pub target_count: usize,
+}
+
+impl ScoreParams {
+    pub fn new(target_count: usize) -> Self {
+        Self {
+            forward_score_nats: 0.0,
+            null_score_nats: 0.0,
+            bias_correction_score_nats: 0.0,
+            target_count,
+        }
+    }
 }
 
 impl Alignment {
@@ -207,6 +218,20 @@ impl Alignment {
         }
         // TODO: Error
         panic!("failed to produce an Alignment in Alignment::from_trace()");
+    }
+
+    pub fn tab_string(&self) -> String {
+        format!(
+            "{} {} {} {} {} {} {:.2} {:.1e}",
+            self.target_name,
+            self.profile_name,
+            self.target_start,
+            self.target_end,
+            self.profile_start,
+            self.profile_end,
+            self.bit_score,
+            self.evalue,
+        )
     }
 
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {

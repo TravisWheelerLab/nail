@@ -1,5 +1,4 @@
 use crate::util::PrintMe;
-use anyhow::Result;
 use std::fmt::{Display, Formatter};
 use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
@@ -96,6 +95,9 @@ impl CloudBoundGroup {
 
         self.min_anti_diagonal_idx = new_size;
         self.max_anti_diagonal_idx = 0;
+
+        self.target_length = target_length;
+        self.profile_length = profile_length;
 
         // TODO: think about this
         for bound in self.bounds.iter_mut() {
@@ -278,10 +280,7 @@ impl CloudBoundGroup {
         &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
     }
 
-    pub fn join_bounds(
-        forward_bounds: &mut CloudBoundGroup,
-        backward_bounds: &CloudBoundGroup,
-    ) -> Result<()> {
+    pub fn join_bounds(forward_bounds: &mut CloudBoundGroup, backward_bounds: &CloudBoundGroup) {
         // first check if the forward & backward bounds happened not to intersect
         if forward_bounds.max_anti_diagonal_idx < backward_bounds.min_anti_diagonal_idx {
             // TODO: **this is going to need to be rewritten**
@@ -452,7 +451,5 @@ impl CloudBoundGroup {
                     .max(backward_bound.right_profile_idx);
             }
         }
-
-        Ok(())
     }
 }

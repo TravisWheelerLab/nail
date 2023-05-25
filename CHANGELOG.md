@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added impl DpMatrix for RefMut<'_, DpMatrixSparse> 
+- Added ScoreParams::new()
+- Added Alignment.tab_string() 
 - Alignment struct now stores P-values
 - Added null score adjustment
 - Added CloudBoundGroup.json(), CloudBoundGroup.valid() and CloudBoundGroup.bounds()
@@ -35,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed CloudDebugAnnotations struct
 
 ### Fixed
+- Fixed a bug in CloudBoundGroup.reuse()
 - Fixed E-Value column width in write_tabular_output()
 - Fixed parameter names on DpMatrix.get_special() and DpMatrix.set_special()
 - Fixed float parsing regex to capture negative signs

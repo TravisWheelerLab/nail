@@ -96,7 +96,7 @@ pub fn cloud_search_forward(
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut CloudBoundGroup,
-) -> anyhow::Result<()> {
+) {
     // the highest score we've seen overall
     let mut overall_max_score = -f32::INFINITY;
 
@@ -235,6 +235,4 @@ pub fn cloud_search_forward(
             }
         }
     }
-
-    Ok(())
 }

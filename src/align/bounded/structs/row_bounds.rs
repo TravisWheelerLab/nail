@@ -38,7 +38,6 @@ impl RowBounds {
         self.target_end = last_bound.left_target_idx;
 
         let num_rows = cloud_bounds.target_length + 1;
-
         if num_rows > self.row_capacity {
             self.left_row_bounds.resize(num_rows, usize::MAX);
             self.right_row_bounds.resize(num_rows, usize::MIN);
