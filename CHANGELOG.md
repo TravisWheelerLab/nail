@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed CloudDebugAnnotations struct
 
 ### Fixed
+- Fixed a bug in cloud search where the initial expansion from seeds went out of bounds
 - Fixed a bug in CloudBoundGroup.reuse()
 - Fixed E-Value column width in write_tabular_output()
 - Fixed parameter names on DpMatrix.get_special() and DpMatrix.set_special()

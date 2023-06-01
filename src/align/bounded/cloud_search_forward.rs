@@ -138,13 +138,33 @@ pub fn cloud_search_forward(
 
         bounds.set(
             anti_diagonal_idx,
-            previous_bound.left_target_idx + 1,
+            previous_bound.left_target_idx,
             previous_bound.left_profile_idx,
             previous_bound.right_target_idx,
-            previous_bound.right_profile_idx + 1,
+            previous_bound.right_profile_idx,
         );
 
-        let current_bound = bounds.get(anti_diagonal_idx);
+        let current_bound = bounds.get_mut(anti_diagonal_idx);
+
+        // edge guards
+        if current_bound.left_target_idx < target.length {
+            // if we haven't hit the end of the target (bottom row),
+            // we'll plan to move the left bound down 1
+            current_bound.left_target_idx += 1;
+        } else {
+            // otherwise we'll move to the right 1
+            current_bound.left_profile_idx += 1;
+        }
+
+        if current_bound.right_profile_idx < profile.length {
+            // if we haven't hit the end of the profile (last column),
+            // we'll plan to move the right bound to the right 1
+            current_bound.right_profile_idx += 1;
+        } else {
+            // otherwise we'll move down 1
+            current_bound.right_target_idx += 1;
+        }
+
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
         for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {

@@ -140,12 +140,31 @@ pub fn cloud_search_backward(
         bounds.set(
             anti_diagonal_idx,
             previous_bound.left_target_idx,
-            previous_bound.left_profile_idx - 1,
-            previous_bound.right_target_idx - 1,
+            previous_bound.left_profile_idx,
+            previous_bound.right_target_idx,
             previous_bound.right_profile_idx,
         );
 
-        let current_bound = bounds.get(anti_diagonal_idx);
+        let current_bound = bounds.get_mut(anti_diagonal_idx);
+        // edge guards
+        if current_bound.left_profile_idx > 1 {
+            // if we haven't hit the start of the target (top row),
+            // we'll plan to move the left bound up
+            current_bound.left_profile_idx -= 1;
+        } else {
+            // otherwise we'll move to the left
+            current_bound.left_target_idx -= 1;
+        }
+
+        if current_bound.right_target_idx > 1 {
+            // if we haven't hit the start of the profile (first column),
+            // we'll plan to move the right bound to the left
+            current_bound.right_target_idx -= 1;
+        } else {
+            // otherwise we'll move up
+            current_bound.right_profile_idx -= 1;
+        }
+
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
         for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {
