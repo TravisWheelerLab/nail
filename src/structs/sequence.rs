@@ -118,7 +118,7 @@ impl Sequence {
 
 impl Debug for Sequence {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", std::str::from_utf8(&self.utf8_bytes).unwrap())?;
+        write!(f, "{}", std::str::from_utf8(&self.utf8_bytes[1..]).unwrap())?;
         Ok(())
     }
 }

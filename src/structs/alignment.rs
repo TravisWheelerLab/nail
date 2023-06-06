@@ -2,9 +2,6 @@ use crate::alphabet::{UTF8_DASH, UTF8_DOT, UTF8_NUMERIC, UTF8_PLUS, UTF8_SPACE};
 use crate::structs::trace::constants::{TRACE_B, TRACE_D, TRACE_E, TRACE_I, TRACE_M};
 use crate::structs::{Profile, Sequence, Trace};
 use std::cmp::{max, min};
-use std::io::Write;
-
-use anyhow::Result;
 
 pub struct Alignment {
     /// The name of the profile/model
@@ -234,73 +231,65 @@ impl Alignment {
         )
     }
 
-    pub fn dump(&self, out: &mut impl Write) -> Result<()> {
+    pub fn ali_string(&self) -> String {
+        let mut ali_string = String::new();
         let mut start_offset: usize = 0;
         let mut end_offset: usize = 80;
 
         let name_width = max(self.profile_name.len(), self.target_name.len());
 
-        // write the score line
-        writeln!(
-            out,
-            "==  score: {:3.1} bits;  E-value: {:1.1e}",
+        // score line
+        ali_string.push_str(&format!(
+            "==  score: {:3.1} bits;  E-value: {:1.1e}\n",
             self.bit_score, self.evalue
-        )?;
+        ));
 
         while start_offset <= self.length {
             start_offset = min(start_offset, self.length);
             end_offset = min(end_offset, self.length);
 
-            // TODO: consensus structure line?
-
-            // write the profile sequence
-            writeln!(
-                out,
-                "{:>W$} {:5} {} {:<5}",
+            // profile sequence
+            ali_string.push_str(&format!(
+                "{:>W$} {:5} {} {:<5}\n",
                 self.profile_name,
                 self.profile_start + start_offset,
                 &self.profile_string[start_offset..end_offset],
                 self.profile_start + end_offset - 1,
                 W = name_width
-            )?;
+            ));
 
-            // write the middle line
-            writeln!(
-                out,
-                "{:W$} {:5} {}",
+            // middle line
+            ali_string.push_str(&format!(
+                "{:W$} {:5} {}\n",
                 "",
                 "",
                 &self.middle_string[start_offset..end_offset],
                 W = name_width
-            )?;
+            ));
 
-            // write the target sequence
-            writeln!(
-                out,
-                "{:>W$} {:5} {} {:<5}",
+            // target sequence
+            ali_string.push_str(&format!(
+                "{:>W$} {:5} {} {:<5}\n",
                 self.target_name,
                 self.target_start + start_offset,
                 &self.target_string[start_offset..end_offset],
                 self.target_start + end_offset - 1,
                 W = name_width
-            )?;
+            ));
 
-            // write the position-specific posterior probabilities
-            writeln!(
-                out,
-                "{:W$} {:5} {}",
+            // position-specific posterior probabilities
+            ali_string.push_str(&format!(
+                "{:W$} {:5} {}\n\n",
                 "",
                 "",
                 &self.posterior_probability_string[start_offset..end_offset],
                 W = name_width
-            )?;
-
-            writeln!(out)?;
+            ));
 
             start_offset += 80;
             end_offset += 80;
         }
 
-        Ok(())
+        ali_string
     }
 }

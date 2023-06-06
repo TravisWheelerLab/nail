@@ -4,7 +4,7 @@ use std::io::Write;
 
 pub fn write_standard_output(alignments: &Vec<Alignment>, out: &mut impl Write) -> Result<()> {
     for alignment in alignments {
-        alignment.dump(out)?;
+        writeln!(out, "{}", &alignment.ali_string())?
     }
     Ok(())
 }

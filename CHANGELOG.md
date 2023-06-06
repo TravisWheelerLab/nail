@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Alignment.ali_string()
 - Added impl DpMatrix for RefMut<'_, DpMatrixSparse> 
 - Added ScoreParams::new()
 - Added Alignment.tab_string() 
@@ -35,9 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed P7Alphabet to Alphabet
 
 ### Removed
+- Removed Alignment.dump()
 - Removed CloudDebugAnnotations struct
 
 ### Fixed
+- Fixed Debug impl for Sequence
 - Fixed a bug in cloud search where the initial expansion from seeds went out of bounds
 - Fixed a bug in CloudBoundGroup.reuse()
 - Fixed E-Value column width in write_tabular_output()
