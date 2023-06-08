@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added null2_score() to naive implementation
 - Added Alignment.ali_string()
 - Added impl DpMatrix for RefMut<'_, DpMatrixSparse> 
 - Added ScoreParams::new()
@@ -27,9 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added write_standard_output() 
 
 ### Changed
+- null2_score renamed to null2_score_bounded()
 - Tabular output header lines now start with "#"
 - Replaced UnknownSequenceCharacterError with UnknownUtf8SequenceByteError and UnknownDigitalSequenceByteError
 - Alignment::new() now takes a ScoreParams struct
+- forward() now returns the score in the last C state (target.length)
 - forward_bounded() now returns the score in the last C state (target_end)
 - Profile, CloudMatrixLinear, DpMatrixSparse now derive Clone
 - E-Values are now f64 values instead of f32

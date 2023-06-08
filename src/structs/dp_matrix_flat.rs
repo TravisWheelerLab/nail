@@ -1,7 +1,7 @@
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DpMatrixFlat {
     pub target_length: usize,
     pub profile_length: usize,

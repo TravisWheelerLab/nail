@@ -22,7 +22,7 @@ mod cloud_search_forward;
 pub use cloud_search_forward::cloud_search_forward;
 
 mod scoring;
-pub use scoring::{null1_score, null2_score};
+pub use scoring::{null1_score, null2_score_bounded};
 
 mod traceback_bounded;
 pub use traceback_bounded::traceback_bounded;

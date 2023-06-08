@@ -220,6 +220,7 @@ impl DpMatrix for DpMatrixSparse {
     }
 }
 
+// TODO: I think we can get rid of this impl now
 impl DpMatrix for RefMut<'_, DpMatrixSparse> {
     fn target_length(&self) -> usize {
         self.target_length

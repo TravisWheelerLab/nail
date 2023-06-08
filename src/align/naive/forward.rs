@@ -2,9 +2,8 @@ use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
-use anyhow::Result;
 
-pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> Result<()> {
+pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> f32 {
     let end_score: f32 = 0.0;
 
     // initialize the zero row
@@ -192,5 +191,5 @@ pub fn forward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatr
         );
     }
 
-    Ok(())
+    dp_matrix.get_special(target.length, Profile::SPECIAL_C_IDX)
 }

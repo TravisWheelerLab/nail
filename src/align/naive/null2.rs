@@ -1,25 +1,11 @@
-use crate::align::bounded::structs::RowBounds;
 use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
-pub fn null1_score(target_length: usize) -> f32 {
-    let p1 = (target_length as f32) / (target_length as f32 + 1.0);
-    target_length as f32 * p1.ln() + (1.0 - p1).ln()
-}
+pub fn null2_score(posterior_matrix: &impl DpMatrix, profile: &Profile, target: &Sequence) -> f32 {
+    let target_length = target.length as f32;
 
-pub fn null2_score_bounded(
-    posterior_matrix: &impl DpMatrix,
-    profile: &Profile,
-    target: &Sequence,
-    row_bounds: &RowBounds,
-) -> f32 {
-    let sub_target_length = (row_bounds.target_end - row_bounds.target_start + 1) as f32;
-
-    // TODO: need to prevent these allocations
-    //       the strategy used in hmmer (using the first row in the PP-DP matrix)
-    //       won't work here, since we have a sparse matrix
     let mut match_values: Vec<f32> = vec![0.0; profile.length + 1];
     let mut insert_values: Vec<f32> = vec![0.0; profile.length + 1];
 
@@ -29,12 +15,8 @@ pub fn null2_score_bounded(
 
     // calculate the expected number of times that each emitting
     // state was used in generating the residues in this domain
-    for target_idx in row_bounds.target_start..=row_bounds.target_end {
-        let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];
-        let profile_end_in_current_row = row_bounds.right_row_bounds[target_idx];
-
-        for profile_idx in profile_start_in_current_row..profile_end_in_current_row {
-            // for profile_idx in 1..=profile.length {
+    for target_idx in 1..=target.length {
+        for profile_idx in 1..=profile.length {
             match_values[profile_idx] += posterior_matrix.get_match(target_idx, profile_idx);
             insert_values[profile_idx] += posterior_matrix.get_insert(target_idx, profile_idx);
         }
@@ -49,15 +31,15 @@ pub fn null2_score_bounded(
     //    the denominator is the length of the part of the target that was aligned
     match_values
         .iter_mut()
-        .for_each(|v| *v = v.ln_or_max() - sub_target_length.ln());
+        .for_each(|v| *v = v.ln_or_max() - target_length.ln());
 
     insert_values
         .iter_mut()
-        .for_each(|v| *v = v.ln_or_max() - sub_target_length.ln());
+        .for_each(|v| *v = v.ln_or_max() - target_length.ln());
 
-    n_value = n_value.ln_or_max() - sub_target_length.ln();
-    j_value = j_value.ln_or_max() - sub_target_length.ln();
-    c_value = c_value.ln_or_max() - sub_target_length.ln();
+    n_value = n_value.ln_or_max() - target_length.ln();
+    j_value = j_value.ln_or_max() - target_length.ln();
+    c_value = c_value.ln_or_max() - target_length.ln();
 
     // from hmmer:
     //   Calculate null2's log odds emission probabilities, by taking
@@ -118,7 +100,7 @@ pub fn null2_score_bounded(
     null2[Profile::MISSING_DATA_IDX] = 1.0;
 
     let mut null2_score = 0.0;
-    for residue in &target.digital_bytes[row_bounds.target_start..=row_bounds.target_end] {
+    for residue in &target.digital_bytes[1..] {
         null2_score += null2[*residue as usize].ln();
     }
 

@@ -2,9 +2,8 @@ use crate::log_sum;
 use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
-use anyhow::Result;
 
-pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) -> Result<()> {
+pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMatrix) {
     let end_score: f32 = 0.0;
 
     // initialize the L row
@@ -248,6 +247,4 @@ pub fn backward(profile: &Profile, target: &Sequence, dp_matrix: &mut impl DpMat
         dp_matrix.set_insert(0, profile_idx, -f32::INFINITY);
         dp_matrix.set_delete(0, profile_idx, -f32::INFINITY);
     }
-
-    Ok(())
 }
