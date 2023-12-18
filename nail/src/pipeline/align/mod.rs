@@ -1,7 +1,3 @@
-mod serial_bounded;
-pub use serial_bounded::*;
-mod serial_full;
-pub use serial_full::*;
 mod threaded_bounded;
 pub use threaded_bounded::*;
 mod threaded_full;
@@ -177,7 +173,6 @@ pub fn align(
     } else {
         align_threaded_bounded(args, profiles, targets, seed_map)?;
     }
-    // }
 
     Ok(())
 }
