@@ -1,8 +1,11 @@
-# nail workspace
+# nail
 
 ## About
 
-This is a cargo workspace for nail, which a biological sequence alignment tool.
+nail is a biological sequence alignment tool. Currently, only protein sequence alignment is supported.
+
+nail uses [MMseqs2](https://github.com/soedinglab/MMseqs2) to find rough alignment seeds to use as a starting point
+for a highly sensitive, bounded sequence alignment algorithm.
 
 ## Installation
 
