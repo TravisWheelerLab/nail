@@ -2,7 +2,7 @@
 
 ## About
 
-This is a cargo workspace for nail, which a biological sequence alignment tool.
+This is a cargo workspace for nail, which is a biological sequence alignment tool.
 
 ## Installation
 
