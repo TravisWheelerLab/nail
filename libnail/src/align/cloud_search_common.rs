@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::{CloudBound, CloudMatrixLinear};
+use crate::align::structs::{CloudBound, CloudMatrixLinear};
 use crate::max_f32;
 
 pub enum PruneStatus {

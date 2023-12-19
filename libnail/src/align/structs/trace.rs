@@ -1,25 +1,5 @@
-pub mod constants {
-    pub const TRACE_BOGUS: usize = 0;
-    pub const TRACE_M: usize = 1;
-    pub const TRACE_D: usize = 2;
-    pub const TRACE_I: usize = 3;
-    pub const TRACE_S: usize = 4;
-    pub const TRACE_N: usize = 5;
-    pub const TRACE_B: usize = 6;
-    pub const TRACE_E: usize = 7;
-    pub const TRACE_C: usize = 8;
-    pub const TRACE_T: usize = 9;
-    pub const TRACE_J: usize = 10;
-    pub const TRACE_X: usize = 11;
-
-    pub const TRACE_IDX_TO_NAME: [&str; 12] = [
-        "BOGUS", "M", "D", "I", "S", "N", "B", "E", "C", "T", "J", "X",
-    ];
-}
-
 use crate::alphabet::AMINO_INVERSE_MAP;
 use crate::structs::{Profile, Sequence};
-use constants::*;
 use std::io::Write;
 
 #[derive(Default)]
@@ -36,6 +16,23 @@ pub struct Trace {
 }
 
 impl Trace {
+    pub const TRACE_IDX_TO_NAME: [&str; 12] = [
+        "INVALID", "M", "D", "I", "S", "N", "B", "E", "C", "T", "J", "X",
+    ];
+
+    pub const INVALID_STATE: usize = 0;
+    pub const M_STATE: usize = 1;
+    pub const D_STATE: usize = 2;
+    pub const I_STATE: usize = 3;
+    pub const S_STATE: usize = 4;
+    pub const N_STATE: usize = 5;
+    pub const B_STATE: usize = 6;
+    pub const E_STATE: usize = 7;
+    pub const C_STATE: usize = 8;
+    pub const T_STATE: usize = 9;
+    pub const J_STATE: usize = 10;
+    pub const X_STATE: usize = 11;
+
     pub fn new(target_length: usize, profile_length: usize) -> Self {
         Trace {
             length: 0,
@@ -61,7 +58,7 @@ impl Trace {
         posterior_probability: f32,
     ) {
         match state {
-            TRACE_N | TRACE_C | TRACE_J => {
+            Trace::N_STATE | Trace::C_STATE | Trace::J_STATE => {
                 if self.states[self.length - 1] == state {
                     self.target_idx.push(target_idx);
                     self.posterior_probabilities.push(posterior_probability);
@@ -71,17 +68,17 @@ impl Trace {
                 }
                 self.profile_idx.push(0);
             }
-            TRACE_X | TRACE_S | TRACE_B | TRACE_E | TRACE_T => {
+            Trace::X_STATE | Trace::S_STATE | Trace::B_STATE | Trace::E_STATE | Trace::T_STATE => {
                 self.target_idx.push(0);
                 self.posterior_probabilities.push(0.0);
                 self.profile_idx.push(0);
             }
-            TRACE_D => {
+            Trace::D_STATE => {
                 self.target_idx.push(0);
                 self.posterior_probabilities.push(0.0);
                 self.profile_idx.push(profile_idx);
             }
-            TRACE_M | TRACE_I => {
+            Trace::M_STATE | Trace::I_STATE => {
                 self.target_idx.push(target_idx);
                 self.posterior_probabilities.push(posterior_probability);
                 self.profile_idx.push(profile_idx);
@@ -96,9 +93,9 @@ impl Trace {
 
     pub fn reverse(&mut self) {
         for z in 0..self.length {
-            if (self.states[z] == TRACE_N && self.states[z + 1] == TRACE_N)
-                || (self.states[z] == TRACE_C && self.states[z + 1] == TRACE_C)
-                || (self.states[z] == TRACE_J && self.states[z + 1] == TRACE_J)
+            if (self.states[z] == Trace::N_STATE && self.states[z + 1] == Trace::N_STATE)
+                || (self.states[z] == Trace::C_STATE && self.states[z + 1] == Trace::C_STATE)
+                || (self.states[z] == Trace::J_STATE && self.states[z + 1] == Trace::J_STATE)
             {
                 if self.target_idx[z] == 0 && self.target_idx[z + 1] > 0 {
                     self.target_idx[z] = self.target_idx[z + 1];
@@ -149,13 +146,13 @@ impl Trace {
             write!(
                 out,
                 "{:1}  {:4} {:6}   {:8.4}",
-                TRACE_IDX_TO_NAME[current_state],
+                Trace::TRACE_IDX_TO_NAME[current_state],
                 self.profile_idx[trace_idx],
                 self.target_idx[trace_idx],
                 transition_score
             )?;
 
-            if current_state == TRACE_M {
+            if current_state == Trace::M_STATE {
                 write!(
                     out,
                     " {:8.4}",
@@ -166,7 +163,7 @@ impl Trace {
                     profile.match_score(current_residue as usize, self.profile_idx[trace_idx]);
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;
                 accuracy += self.posterior_probabilities[trace_idx];
-            } else if current_state == TRACE_I {
+            } else if current_state == Trace::I_STATE {
                 write!(
                     out,
                     " {:8.4}",
@@ -179,9 +176,10 @@ impl Trace {
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;
 
                 accuracy += self.posterior_probabilities[trace_idx];
-            } else if (current_state == TRACE_N && self.states[trace_idx - 1] == TRACE_N)
-                || (current_state == TRACE_C && self.states[trace_idx - 1] == TRACE_C)
-                || (current_state == TRACE_J && self.states[trace_idx - 1] == TRACE_J)
+            } else if (current_state == Trace::N_STATE
+                && self.states[trace_idx - 1] == Trace::N_STATE)
+                || (current_state == Trace::C_STATE && self.states[trace_idx - 1] == Trace::C_STATE)
+                || (current_state == Trace::J_STATE && self.states[trace_idx - 1] == Trace::J_STATE)
             {
                 write!(out, " {:8}", 0)?;
                 write!(out, " {:8.4}", self.posterior_probabilities[trace_idx])?;

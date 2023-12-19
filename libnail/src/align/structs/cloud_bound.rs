@@ -175,7 +175,6 @@ impl CloudBoundGroup {
 
     /// This removes all of the protruding regions in the cloud that are unreachable from a traceback
     /// that traverses the entire cloud.
-    ///
     pub fn trim_wings(&mut self) {
         for anti_diagonal_idx in self.min_anti_diagonal_idx + 1..=self.max_anti_diagonal_idx {
             let previous_bound = self.get(anti_diagonal_idx - 1);
@@ -326,7 +325,7 @@ impl CloudBoundGroup {
             let avg_anti_diagonal_length = cloud_size_sum / num_anti_diagonals;
 
             // I have elected to make this a closure since it's convenient
-            // to have it capture the kine_equation closure, and I don't think
+            // to have it capture the line_equation closure, and I don't think
             // we'll ever call this from outside of this function
             let bound_fn = |center_profile_idx: usize| {
                 let center_target_idx = line_equation(center_profile_idx as f32).round() as usize;

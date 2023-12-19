@@ -1,6 +1,5 @@
-use crate::align::bounded::structs::RowBounds;
+use crate::align::structs::{DpMatrix, RowBounds};
 use crate::log_sum;
-use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 

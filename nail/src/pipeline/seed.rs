@@ -1,8 +1,8 @@
 use crate::args::{read_query_format_from_mmseqs_query_db, FileFormat};
 use crate::extension_traits::{CommandExt, PathBufExt};
 
-use libnail::align::bounded::structs::Seed;
-use libnail::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
+use libnail::align::structs::Seed;
+use libnail::align::{needleman_wunsch, SimpleTraceStep};
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
 use std::collections::HashMap;

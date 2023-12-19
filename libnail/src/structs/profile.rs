@@ -1,3 +1,4 @@
+use crate::align::structs::Trace;
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
     AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
@@ -7,9 +8,6 @@ use crate::structs::hmm::constants::{
     HMM_MATCH_TO_DELETE, HMM_MATCH_TO_INSERT, HMM_MATCH_TO_MATCH,
 };
 use crate::structs::hmm::Alphabet;
-use crate::structs::trace::constants::{
-    TRACE_B, TRACE_C, TRACE_D, TRACE_E, TRACE_I, TRACE_J, TRACE_M, TRACE_N, TRACE_S, TRACE_T,
-};
 use crate::structs::Hmm;
 use crate::util::{f32_vec_argmax, LogAbuse};
 
@@ -47,7 +45,8 @@ pub struct Profile {
 }
 
 impl Profile {
-    pub const LN_2: f32 = 0.69314718055994529;
+    // pub const LN_2: f32 = 0.69314718055994529;
+    pub const LN_2: f32 = std::f32::consts::LN_2;
     pub const LN_2_R: f32 = 1.44269504088896341;
 
     pub const MAX_ALPHABET_SIZE: usize = 20;
@@ -289,61 +288,61 @@ impl Profile {
         idx_to: usize,
     ) -> f32 {
         match state_from {
-            TRACE_S | TRACE_T => 0.0,
-            TRACE_N => match state_to {
-                TRACE_B => {
+            Trace::S_STATE | Trace::T_STATE => 0.0,
+            Trace::N_STATE => match state_to {
+                Trace::B_STATE => {
                     self.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
-                TRACE_N => {
+                Trace::N_STATE => {
                     self.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
-            TRACE_B => match state_to {
-                TRACE_M => self.transition_score(Profile::BEGIN_TO_MATCH_IDX, idx_to - 1),
+            Trace::B_STATE => match state_to {
+                Trace::M_STATE => self.transition_score(Profile::BEGIN_TO_MATCH_IDX, idx_to - 1),
                 _ => panic!(),
             },
-            TRACE_M => match state_to {
-                TRACE_M => self.transition_score(Profile::MATCH_TO_MATCH_IDX, idx_from),
-                TRACE_I => self.transition_score(Profile::MATCH_TO_INSERT_IDX, idx_from),
-                TRACE_D => self.transition_score(Profile::MATCH_TO_DELETE_IDX, idx_from),
-                TRACE_E => 0.0,
+            Trace::M_STATE => match state_to {
+                Trace::M_STATE => self.transition_score(Profile::MATCH_TO_MATCH_IDX, idx_from),
+                Trace::I_STATE => self.transition_score(Profile::MATCH_TO_INSERT_IDX, idx_from),
+                Trace::D_STATE => self.transition_score(Profile::MATCH_TO_DELETE_IDX, idx_from),
+                Trace::E_STATE => 0.0,
                 _ => panic!(),
             },
-            TRACE_D => match state_to {
-                TRACE_M => self.transition_score(Profile::DELETE_TO_MATCH_IDX, idx_from),
-                TRACE_D => self.transition_score(Profile::DELETE_TO_DELETE_IDX, idx_from),
-                TRACE_E => 0.0,
+            Trace::D_STATE => match state_to {
+                Trace::M_STATE => self.transition_score(Profile::DELETE_TO_MATCH_IDX, idx_from),
+                Trace::D_STATE => self.transition_score(Profile::DELETE_TO_DELETE_IDX, idx_from),
+                Trace::E_STATE => 0.0,
                 _ => panic!(),
             },
-            TRACE_I => match state_to {
-                TRACE_M => self.transition_score(Profile::INSERT_TO_MATCH_IDX, idx_from),
-                TRACE_I => self.transition_score(Profile::INSERT_TO_INSERT_IDX, idx_from),
+            Trace::I_STATE => match state_to {
+                Trace::M_STATE => self.transition_score(Profile::INSERT_TO_MATCH_IDX, idx_from),
+                Trace::I_STATE => self.transition_score(Profile::INSERT_TO_INSERT_IDX, idx_from),
                 _ => panic!(),
             },
-            TRACE_E => match state_to {
-                TRACE_C => {
+            Trace::E_STATE => match state_to {
+                Trace::C_STATE => {
                     self.special_transition_score(Profile::SPECIAL_E_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
-                TRACE_J => {
+                Trace::J_STATE => {
                     self.special_transition_score(Profile::SPECIAL_E_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
-            TRACE_J => match state_to {
-                TRACE_B => {
+            Trace::J_STATE => match state_to {
+                Trace::B_STATE => {
                     self.special_transition_score(Profile::SPECIAL_J_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
-                TRACE_J => {
+                Trace::J_STATE => {
                     self.special_transition_score(Profile::SPECIAL_J_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
-            TRACE_C => match state_to {
-                TRACE_T => {
+            Trace::C_STATE => match state_to {
+                Trace::T_STATE => {
                     self.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
-                TRACE_C => {
+                Trace::C_STATE => {
                     self.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),

@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::{CloudBoundGroup, RowBounds};
+use crate::align::structs::{CloudBoundGroup, RowBounds};
 use serde_json::json;
 
 pub type JsonVec = Vec<serde_json::Value>;

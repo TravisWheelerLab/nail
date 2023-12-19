@@ -1,5 +1,6 @@
-use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
+
+use super::DpMatrix;
 
 #[derive(Default, Clone)]
 pub struct DpMatrixFlat {

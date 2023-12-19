@@ -1,7 +1,8 @@
-use crate::align::bounded::structs::RowBounds;
-use crate::structs::dp_matrix::DpMatrix;
+use crate::align::structs::RowBounds;
 use crate::structs::Profile;
 use std::cell::RefMut;
+
+use super::DpMatrix;
 
 #[derive(Default, Clone)]
 pub struct DpMatrixSparse {

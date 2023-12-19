@@ -1,5 +1,4 @@
-use crate::align::bounded::structs::RowBounds;
-use crate::structs::dp_matrix::DpMatrix;
+use crate::align::structs::{DpMatrix, RowBounds};
 use crate::structs::Profile;
 
 pub fn posterior_bounded(

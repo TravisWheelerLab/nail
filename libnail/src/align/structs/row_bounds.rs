@@ -1,4 +1,4 @@
-use crate::align::bounded::structs::bound::CloudBoundGroup;
+use crate::align::structs::cloud_bound::CloudBoundGroup;
 use anyhow::Result;
 use std::fmt::{Debug, Formatter};
 use std::io::Write;

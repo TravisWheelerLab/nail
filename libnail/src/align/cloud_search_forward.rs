@@ -1,5 +1,5 @@
-use crate::align::bounded::cloud_search_common::{prune_and_scrub, scrub_co_located, PruneStatus};
-use crate::align::bounded::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, Seed};
+use crate::align::cloud_search_common::{prune_and_scrub, scrub_co_located, PruneStatus};
+use crate::align::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, Seed};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;

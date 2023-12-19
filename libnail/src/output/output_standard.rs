@@ -1,4 +1,5 @@
-use crate::structs::Alignment;
+use crate::align::structs::Alignment;
+
 use anyhow::Result;
 use std::io::Write;
 

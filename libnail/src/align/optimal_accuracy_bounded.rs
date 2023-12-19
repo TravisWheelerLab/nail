@@ -1,6 +1,5 @@
-use crate::align::bounded::structs::RowBounds;
+use crate::align::structs::{DpMatrix, RowBounds};
 use crate::max_f32;
-use crate::structs::dp_matrix::DpMatrix;
 use crate::structs::Profile;
 
 pub fn optimal_accuracy_bounded(

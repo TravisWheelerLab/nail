@@ -1,7 +1,8 @@
 use crate::alphabet::{UTF8_DASH, UTF8_DOT, UTF8_NUMERIC, UTF8_PLUS, UTF8_SPACE};
-use crate::structs::trace::constants::{TRACE_B, TRACE_D, TRACE_E, TRACE_I, TRACE_M};
-use crate::structs::{Profile, Sequence, Trace};
+use crate::structs::{Profile, Sequence};
 use std::cmp::{max, min};
+
+use super::Trace;
 
 pub struct Alignment {
     /// The name of the profile/model
@@ -118,7 +119,7 @@ impl Alignment {
 
             match search_state {
                 SearchState::Begin => {
-                    if trace_state == TRACE_B {
+                    if trace_state == Trace::B_STATE {
                         // if we've hit a B state, then the next trace
                         // position should be the start of the alignment
                         profile_start = trace.profile_idx[trace_idx + 1];
@@ -128,7 +129,7 @@ impl Alignment {
                 }
                 SearchState::Alignment => {
                     match trace_state {
-                        TRACE_M => {
+                        Trace::M_STATE => {
                             let match_emission_score = profile.match_score(
                                 target.digital_bytes[target_idx] as usize,
                                 profile_idx,
@@ -142,17 +143,17 @@ impl Alignment {
                             ));
                             target_bytes.push(target_string_byte);
                         }
-                        TRACE_I => {
+                        Trace::I_STATE => {
                             profile_bytes.push(UTF8_DOT);
                             target_bytes.push(target_string_byte);
                             mid_bytes.push(UTF8_SPACE);
                         }
-                        TRACE_D => {
+                        Trace::D_STATE => {
                             profile_bytes.push(profile.consensus_sequence[profile_idx]);
                             target_bytes.push(UTF8_DASH);
                             mid_bytes.push(UTF8_SPACE);
                         }
-                        TRACE_E => {
+                        Trace::E_STATE => {
                             // if we've hit an E state, then the previous trace
                             // position should be the end of the alignment
 
