@@ -29,7 +29,7 @@ pub struct SearchArgs {
 
     /// Arguments that are passed to libnail functions
     #[command(flatten)]
-    pub libnail_args: NailArgs,
+    pub nail_args: NailArgs,
 
     /// Arguments that are passed to MMseqs2
     #[command(flatten)]
@@ -68,7 +68,7 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
         query_path: args.query_path.clone(),
         target_path: args.target_path.clone(),
         seeds_path,
-        libnail_args: args.libnail_args.clone(),
+        nail_args: args.nail_args.clone(),
         output_args: args.output_args.clone(),
         common_args: args.common_args.clone(),
     };

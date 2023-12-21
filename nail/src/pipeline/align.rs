@@ -90,7 +90,7 @@ pub struct AlignArgs {
 
     /// Arguments that are passed to nail functions
     #[command(flatten)]
-    pub libnail_args: NailArgs,
+    pub nail_args: NailArgs,
 
     /// Arguments that control output options
     #[command(flatten)]
@@ -196,12 +196,17 @@ pub fn align_threaded_bounded(
 
     let dp = AlignmentStructs::default();
 
-    let score_params = ScoreParams::new(targets.len());
+    let num_targets = match args.nail_args.target_database_size {
+        Some(size) => size,
+        None => targets.len(),
+    };
+
+    let score_params = ScoreParams::new(num_targets);
 
     let cloud_search_params = CloudSearchParams {
-        gamma: args.libnail_args.gamma,
-        alpha: args.libnail_args.alpha,
-        beta: args.libnail_args.beta,
+        gamma: args.nail_args.gamma,
+        alpha: args.nail_args.alpha,
+        beta: args.nail_args.beta,
     };
 
     let mut target_map: HashMap<String, Sequence> = HashMap::new();
