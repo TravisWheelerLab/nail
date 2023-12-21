@@ -2,6 +2,7 @@ mod args;
 mod cli;
 mod extension_traits;
 mod pipeline;
+mod viz;
 
 use cli::Cli;
 use extension_traits::CommandExt;
