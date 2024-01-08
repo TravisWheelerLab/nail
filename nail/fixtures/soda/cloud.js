@@ -123,13 +123,29 @@ function run() {
     return { leftBounds, rightBounds, antiDiagonals };
   }
 
+  let forward =  prepareBounds(data.forwardBounds, "f");
+  let backward = prepareBounds(data.backwardBounds, "b");
+  let end = 0;
+  let rowCount = 0;
+  
+  for (const f of forward.rightBounds.concat(forward.leftBounds)) {
+    end = Math.max(end, f.end + 1);
+    rowCount = Math.max(rowCount, f.row + 1)
+  }
+
+  for (const b of backward.leftBounds.concat(backward.rightBounds)) {
+    end = Math.max(end, b.end + 1);
+    rowCount = Math.max(rowCount, b.row + 1)
+  }
+  
   let params = {
     start: 0,
-    end: 10000,
-    rowCount: 10000,
-    forward: prepareBounds(data.forwardBounds, "f"),
-    backward: prepareBounds(data.backwardBounds, "b"),
+    end,
+    rowCount,
+    forward,
+    backward,
   };
-  
+  console.log(params); 
+
   chart.render(params);
 }

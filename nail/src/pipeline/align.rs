@@ -15,6 +15,7 @@ use crate::cli::CommonArgs;
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
 use crate::pipeline::seed::SeedMap;
+use crate::viz::{write_soda_html, AntiDiagonalBoundSodaData};
 
 use libnail::align::structs::{
     Alignment, CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds,
@@ -265,20 +266,40 @@ pub fn align_threaded_bounded(
                     &mut dp.backward_bounds,
                 );
 
-                CloudBoundGroup::join_bounds(&mut dp.forward_bounds, &dp.backward_bounds);
+                if dp.forward_bounds.max_anti_diagonal_idx
+                    < dp.backward_bounds.min_anti_diagonal_idx
+                {
+                    dp.forward_bounds.fill_rectangle(
+                        seed.target_start,
+                        seed.profile_start,
+                        seed.target_end,
+                        seed.profile_end,
+                    );
+                } else {
+                    CloudBoundGroup::join_merge(&mut dp.forward_bounds, &dp.backward_bounds);
+                }
 
                 if !dp.forward_bounds.valid() {
-                    println!("cloud bound fail");
-                    continue;
+                    dp.forward_bounds.fill_rectangle(
+                        seed.target_start,
+                        seed.profile_start,
+                        seed.target_end,
+                        seed.profile_end,
+                    );
                 }
 
                 dp.forward_bounds.trim_wings();
 
-                let row_bounds = RowBounds::new(&dp.forward_bounds);
+                let mut row_bounds = RowBounds::new(&dp.forward_bounds);
 
                 if !row_bounds.valid() {
-                    println!("row bound fail");
-                    continue;
+                    dp.forward_bounds.fill_rectangle(
+                        seed.target_start,
+                        seed.profile_start,
+                        seed.target_end,
+                        seed.profile_end,
+                    );
+                    row_bounds = RowBounds::new(&dp.forward_bounds);
                 }
 
                 dp.forward_matrix
