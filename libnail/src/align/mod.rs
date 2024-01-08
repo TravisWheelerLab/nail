@@ -3,17 +3,17 @@ pub mod structs;
 mod cloud_search_common;
 pub use cloud_search_common::{prune_and_scrub, scrub_co_located};
 
-mod forward_bounded;
-pub use forward_bounded::forward_bounded;
+mod forward;
+pub use forward::forward;
 
-mod backward_bounded;
-pub use backward_bounded::backward_bounded;
+mod backward;
+pub use backward::backward;
 
-mod posterior_bounded;
-pub use posterior_bounded::posterior_bounded;
+mod posterior;
+pub use posterior::posterior;
 
-mod optimal_accuracy_bounded;
-pub use optimal_accuracy_bounded::optimal_accuracy_bounded;
+mod optimal_accuracy;
+pub use optimal_accuracy::optimal_accuracy;
 
 mod cloud_search_backward;
 pub use cloud_search_backward::cloud_search_backward;
@@ -24,8 +24,8 @@ pub use cloud_search_forward::cloud_search_forward;
 mod scoring;
 pub use scoring::{null1_score, null2_score_bounded};
 
-mod traceback_bounded;
-pub use traceback_bounded::traceback_bounded;
+mod traceback;
+pub use traceback::traceback;
 
 mod needleman_wunsch;
 pub use needleman_wunsch::{needleman_wunsch, SimpleTraceStep};

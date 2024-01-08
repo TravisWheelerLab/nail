@@ -21,8 +21,8 @@ use libnail::align::structs::{
     ScoreParams, Seed, Trace,
 };
 use libnail::align::{
-    backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded, null1_score,
-    null2_score_bounded, optimal_accuracy_bounded, posterior_bounded, traceback_bounded,
+    backward, cloud_search_backward, cloud_search_forward, forward, null1_score,
+    null2_score_bounded, optimal_accuracy, posterior, traceback,
 };
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
@@ -312,11 +312,11 @@ pub fn align_loop(
 
                 // we use the forward score to compute the final bit score (later)
                 score_params.forward_score_nats =
-                    forward_bounded(profile, target, &mut dp.forward_matrix, &row_bounds);
+                    forward(profile, target, &mut dp.forward_matrix, &row_bounds);
 
-                backward_bounded(profile, target, &mut dp.backward_matrix, &row_bounds);
+                backward(profile, target, &mut dp.backward_matrix, &row_bounds);
 
-                posterior_bounded(
+                posterior(
                     profile,
                     &dp.forward_matrix,
                     &dp.backward_matrix,
@@ -328,7 +328,7 @@ pub fn align_loop(
                 score_params.bias_correction_score_nats =
                     null2_score_bounded(&dp.posterior_matrix, profile, target, &row_bounds);
 
-                optimal_accuracy_bounded(
+                optimal_accuracy(
                     profile,
                     &dp.posterior_matrix,
                     &mut dp.optimal_matrix,
@@ -336,7 +336,7 @@ pub fn align_loop(
                 );
 
                 let mut trace = Trace::new(target.length, profile.length);
-                traceback_bounded(
+                traceback(
                     profile,
                     &dp.posterior_matrix,
                     &dp.optimal_matrix,
