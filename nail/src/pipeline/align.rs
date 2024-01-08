@@ -15,7 +15,6 @@ use crate::cli::CommonArgs;
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
 use crate::pipeline::seed::SeedMap;
-use crate::viz::{write_soda_html, AntiDiagonalBoundSodaData};
 
 use libnail::align::structs::{
     Alignment, CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds,
@@ -177,12 +176,12 @@ pub fn align(
         .build_global()
         .unwrap();
 
-    align_threaded_bounded(args, profiles, targets, seed_map)?;
+    align_loop(args, profiles, targets, seed_map)?;
 
     Ok(())
 }
 
-pub fn align_threaded_bounded(
+pub fn align_loop(
     args: &AlignArgs,
     mut profiles: Vec<Profile>,
     targets: Vec<Sequence>,
