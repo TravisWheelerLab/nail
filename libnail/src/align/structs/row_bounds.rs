@@ -1,8 +1,9 @@
-use crate::align::structs::cloud_bound::CloudBoundGroup;
+use crate::align::structs::anti_diagonal_bounds::AntiDiagonalBounds;
 use anyhow::Result;
 use std::fmt::{Debug, Formatter};
 use std::io::Write;
 
+#[derive(Clone)]
 pub struct RowBounds {
     pub target_start: usize,
     pub target_end: usize,
@@ -14,42 +15,48 @@ pub struct RowBounds {
 impl Default for RowBounds {
     fn default() -> Self {
         Self {
-            target_start: 1,
-            target_end: 1,
-            row_capacity: 1,
-            left_row_bounds: vec![1, 1],
-            right_row_bounds: vec![1, 1],
+            target_start: 0,
+            target_end: 0,
+            row_capacity: 0,
+            left_row_bounds: vec![usize::MAX],
+            right_row_bounds: vec![0],
         }
     }
 }
 
 impl RowBounds {
-    pub fn new(cloud_bounds: &CloudBoundGroup) -> Self {
-        let mut params = Self::default();
-        params.reuse(cloud_bounds);
-        params
+    pub fn new(target_length: usize) -> Self {
+        let mut bounds = Self::default();
+        bounds.reuse(target_length);
+        bounds
     }
 
-    pub fn reuse(&mut self, cloud_bounds: &CloudBoundGroup) {
-        let first_bound = cloud_bounds.get_first();
-        let last_bound = cloud_bounds.get_last();
+    pub fn reuse(&mut self, target_length: usize) {
+        debug_assert_eq!(self.row_capacity, self.left_row_bounds.capacity());
+        debug_assert_eq!(self.row_capacity, self.right_row_bounds.capacity());
+
+        for row_idx in self.target_start..=self.target_end {
+            self.left_row_bounds[row_idx] = usize::MAX;
+            self.right_row_bounds[row_idx] = 0;
+        }
+
+        let num_rows = target_length + 1;
+
+        if num_rows > self.row_capacity {
+            self.left_row_bounds.resize(num_rows, usize::MAX);
+            self.right_row_bounds.resize(num_rows, 0);
+            self.row_capacity = num_rows;
+        }
+    }
+
+    pub fn fill_from_anti_diagonal_bounds(&mut self, anti_diagonal_bounds: &AntiDiagonalBounds) {
+        let first_bound = anti_diagonal_bounds.get_first();
+        let last_bound = anti_diagonal_bounds.get_last();
 
         self.target_start = first_bound.right_target_idx;
         self.target_end = last_bound.left_target_idx;
 
-        let num_rows = cloud_bounds.target_length + 1;
-        if num_rows > self.row_capacity {
-            self.left_row_bounds.resize(num_rows, usize::MAX);
-            self.right_row_bounds.resize(num_rows, usize::MIN);
-            self.row_capacity = num_rows;
-        }
-
-        for bound in &cloud_bounds.bounds {
-            // TODO: this is a band-aid fix!
-            if bound.was_pruned() {
-                continue;
-            }
-
+        for bound in anti_diagonal_bounds.bounds() {
             self.left_row_bounds[bound.left_target_idx] =
                 self.left_row_bounds[bound.left_target_idx].min(bound.left_profile_idx);
 
@@ -61,6 +68,28 @@ impl RowBounds {
 
             self.right_row_bounds[bound.right_target_idx] =
                 self.right_row_bounds[bound.right_target_idx].max(bound.right_profile_idx);
+        }
+
+        // if the cloud bounds were set up properly, we should have no 0's
+        (self.target_start..=self.target_end).for_each(|row_idx| {
+            debug_assert_ne!(self.left_row_bounds[row_idx], usize::MAX);
+            debug_assert_ne!(self.right_row_bounds[row_idx], 0);
+        })
+    }
+
+    pub fn fill_rectangle(
+        &mut self,
+        target_start: usize,
+        profile_start: usize,
+        target_end: usize,
+        profile_end: usize,
+    ) {
+        self.target_start = target_start;
+        self.target_end = target_end;
+
+        for row_idx in self.target_start..=self.target_end {
+            self.left_row_bounds[row_idx] = profile_start;
+            self.right_row_bounds[row_idx] = profile_end;
         }
     }
 

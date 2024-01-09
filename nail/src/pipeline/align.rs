@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::io::{stdout, BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use clap::Args;
@@ -17,7 +17,7 @@ use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
 use crate::pipeline::seed::SeedMap;
 
 use libnail::align::structs::{
-    Alignment, CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds,
+    Alignment, AntiDiagonalBounds, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds,
     ScoreParams, Seed, Trace,
 };
 use libnail::align::{
@@ -101,12 +101,101 @@ pub struct AlignArgs {
     pub common_args: CommonArgs,
 }
 
+#[derive(Clone)]
+struct OutputData {
+    tab_results_writer: Arc<Mutex<BufWriter<File>>>,
+    ali_results_writer: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+#[derive(Default, Clone)]
+struct CloudSearchData {
+    cloud_search_params: CloudSearchParams,
+    cloud_matrix: CloudMatrixLinear,
+    forward_bounds: AntiDiagonalBounds,
+    backward_bounds: AntiDiagonalBounds,
+    row_bounds: RowBounds,
+}
+
+#[derive(Default, Clone)]
+struct AlignmentData {
+    forward_matrix: DpMatrixSparse,
+    backward_matrix: DpMatrixSparse,
+    posterior_matrix: DpMatrixSparse,
+    optimal_matrix: DpMatrixSparse,
+}
+
+#[derive(Clone)]
+struct ThreadData {
+    output: OutputData,
+    cloud_search: CloudSearchData,
+    alignment: AlignmentData,
+    target_map: Arc<HashMap<String, Sequence>>,
+    score_params: ScoreParams,
+    evalue_threshold: f64,
+    full_dp: bool,
+}
+
+impl ThreadData {
+    pub fn new(args: &AlignArgs, targets: Vec<Sequence>) -> anyhow::Result<Self> {
+        let tab_writer = Mutex::new(args.output_args.tsv_results_path.open(true)?);
+
+        // TODO: is there a better way to do this without a trait object?
+        // note: I think the type is required here to tell
+        //       the compiler that this is a trait object
+        let ali_writer: Mutex<Box<dyn Write + Send>> = match args.output_args.ali_results_path {
+            Some(ref path) => Mutex::new(Box::new(path.open(true)?)),
+            None => Mutex::new(Box::new(stdout())),
+        };
+
+        let output = OutputData {
+            tab_results_writer: Arc::new(tab_writer),
+            ali_results_writer: Arc::new(ali_writer),
+        };
+
+        let num_targets = match args.nail_args.target_database_size {
+            Some(size) => size,
+            None => targets.len(),
+        };
+
+        let score_params = ScoreParams::new(num_targets);
+
+        let mut target_map: HashMap<String, Sequence> = HashMap::new();
+        for target in targets {
+            target_map.insert(target.name.clone(), target);
+        }
+
+        let target_map = Arc::new(target_map);
+
+        Ok(Self {
+            output,
+            cloud_search: CloudSearchData {
+                cloud_search_params: CloudSearchParams {
+                    gamma: args.nail_args.gamma,
+                    alpha: args.nail_args.alpha,
+                    beta: args.nail_args.beta,
+                },
+                ..Default::default()
+            },
+            alignment: AlignmentData::default(),
+            target_map,
+            score_params,
+            evalue_threshold: args.output_args.evalue_threshold,
+            full_dp: args.nail_args.full_dp,
+        })
+    }
+}
+
+struct ProfileSeedsPair<'a> {
+    profile: &'a mut Profile,
+    seeds: &'a Vec<Seed>,
+}
+
 pub fn align(
     args: &AlignArgs,
     profiles: Option<Vec<Profile>>,
     seed_map: Option<SeedMap>,
 ) -> anyhow::Result<()> {
-    let profiles = match profiles {
+    let mut profiles = match profiles {
         // if we happened to run the seed step before
         // this, the profiles will be passed in
         Some(profiles) => profiles,
@@ -170,200 +259,196 @@ pub fn align(
 
     let targets = Sequence::amino_from_fasta(&args.target_path)?;
 
-    // this is how we tell rayon how many threads to use
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(args.common_args.num_threads)
-        .build_global()
-        .unwrap();
+    // the thread data is everything that is cloned per thread
+    let thread_data = ThreadData::new(args, targets)?;
 
-    align_loop(args, profiles, targets, seed_map)?;
-
-    Ok(())
-}
-
-pub fn align_loop(
-    args: &AlignArgs,
-    mut profiles: Vec<Profile>,
-    targets: Vec<Sequence>,
-    seed_map: SeedMap,
-) -> anyhow::Result<()> {
-    let tab_results_writer: Mutex<BufWriter<File>> =
-        Mutex::new(args.output_args.tsv_results_path.open(true)?);
-    let ali_results_writer: Mutex<Box<dyn Write + Send>> = match args.output_args.ali_results_path {
-        Some(ref path) => Mutex::new(Box::new(path.open(true)?)),
-        None => Mutex::new(Box::new(stdout())),
-    };
-
-    let dp = AlignmentStructs::default();
-
-    let num_targets = match args.nail_args.target_database_size {
-        Some(size) => size,
-        None => targets.len(),
-    };
-
-    let score_params = ScoreParams::new(num_targets);
-
-    let cloud_search_params = CloudSearchParams {
-        gamma: args.nail_args.gamma,
-        alpha: args.nail_args.alpha,
-        beta: args.nail_args.beta,
-    };
-
-    let mut target_map: HashMap<String, Sequence> = HashMap::new();
-    for target in targets {
-        target_map.insert(target.name.clone(), target);
-    }
-
-    let mut profile_seeds_pairs: Vec<(&mut Profile, &Vec<Seed>)> = vec![];
+    let mut profile_seeds_pairs: Vec<ProfileSeedsPair> = vec![];
 
     for profile in profiles.iter_mut() {
         match seed_map.get(&profile.name) {
-            Some(seeds) => profile_seeds_pairs.push((profile, seeds)),
+            Some(seeds) => profile_seeds_pairs.push(ProfileSeedsPair { profile, seeds }),
             None => {
                 continue;
             }
         }
     }
 
-    #[derive(Default, Clone)]
-    struct AlignmentStructs {
-        cloud_matrix: CloudMatrixLinear,
-        forward_bounds: CloudBoundGroup,
-        backward_bounds: CloudBoundGroup,
-        forward_matrix: DpMatrixSparse,
-        backward_matrix: DpMatrixSparse,
-        posterior_matrix: DpMatrixSparse,
-        optimal_matrix: DpMatrixSparse,
-    }
+    // this is how we tell rayon how many threads to use
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(args.common_args.num_threads)
+        .build_global()
+        .unwrap();
 
-    profile_seeds_pairs.into_par_iter().for_each_with(
-        (dp, score_params),
-        |(dp, score_params), (profile, seeds)| {
-            for seed in seeds {
-                let target = target_map.get(&seed.target_name).unwrap();
-                profile.configure_for_target_length(target.length);
-
-                dp.cloud_matrix.reuse(profile.length);
-                dp.forward_bounds.reuse(target.length, profile.length);
-                dp.backward_bounds.reuse(target.length, profile.length);
-
-                cloud_search_forward(
-                    profile,
-                    target,
-                    seed,
-                    &mut dp.cloud_matrix,
-                    &cloud_search_params,
-                    &mut dp.forward_bounds,
-                );
-
-                cloud_search_backward(
-                    profile,
-                    target,
-                    seed,
-                    &mut dp.cloud_matrix,
-                    &cloud_search_params,
-                    &mut dp.backward_bounds,
-                );
-
-                if dp.forward_bounds.max_anti_diagonal_idx
-                    < dp.backward_bounds.min_anti_diagonal_idx
-                {
-                    dp.forward_bounds.fill_rectangle(
-                        seed.target_start,
-                        seed.profile_start,
-                        seed.target_end,
-                        seed.profile_end,
-                    );
-                } else {
-                    CloudBoundGroup::join_merge(&mut dp.forward_bounds, &dp.backward_bounds);
-                }
-
-                if !dp.forward_bounds.valid() {
-                    dp.forward_bounds.fill_rectangle(
-                        seed.target_start,
-                        seed.profile_start,
-                        seed.target_end,
-                        seed.profile_end,
-                    );
-                }
-
-                dp.forward_bounds.trim_wings();
-
-                let mut row_bounds = RowBounds::new(&dp.forward_bounds);
-
-                if !row_bounds.valid() {
-                    dp.forward_bounds.fill_rectangle(
-                        seed.target_start,
-                        seed.profile_start,
-                        seed.target_end,
-                        seed.profile_end,
-                    );
-                    row_bounds = RowBounds::new(&dp.forward_bounds);
-                }
-
-                dp.forward_matrix
-                    .reuse(target.length, profile.length, &row_bounds);
-                dp.backward_matrix
-                    .reuse(target.length, profile.length, &row_bounds);
-                dp.posterior_matrix
-                    .reuse(target.length, profile.length, &row_bounds);
-                dp.optimal_matrix
-                    .reuse(target.length, profile.length, &row_bounds);
-
-                // we use the forward score to compute the final bit score (later)
-                score_params.forward_score_nats =
-                    forward(profile, target, &mut dp.forward_matrix, &row_bounds);
-
-                backward(profile, target, &mut dp.backward_matrix, &row_bounds);
-
-                posterior(
-                    profile,
-                    &dp.forward_matrix,
-                    &dp.backward_matrix,
-                    &mut dp.posterior_matrix,
-                    &row_bounds,
-                );
-
-                score_params.null_score_nats = null1_score(target.length);
-                score_params.bias_correction_score_nats =
-                    null2_score_bounded(&dp.posterior_matrix, profile, target, &row_bounds);
-
-                optimal_accuracy(
-                    profile,
-                    &dp.posterior_matrix,
-                    &mut dp.optimal_matrix,
-                    &row_bounds,
-                );
-
-                let mut trace = Trace::new(target.length, profile.length);
-                traceback(
-                    profile,
-                    &dp.posterior_matrix,
-                    &dp.optimal_matrix,
-                    &mut trace,
-                    row_bounds.target_end,
-                );
-
-                let alignment = Alignment::from_trace(&trace, profile, target, score_params);
-
-                if alignment.evalue <= args.output_args.evalue_threshold {
-                    match tab_results_writer.lock() {
-                        Ok(mut writer) => writeln!(writer, "{}", alignment.tab_string())
-                            .expect("failed to write tabular output"),
-                        Err(_) => panic!("tabular results writer mutex was poisoned"),
-                    };
-
-                    match ali_results_writer.lock() {
-                        Ok(mut writer) => {
-                            writeln!(writer, "{}", alignment.ali_string())
-                                .expect("failed to write alignment output");
-                        }
-                        Err(_) => panic!("alignment results writer mutex was poisoned"),
-                    }
-                }
-            }
-        },
-    );
+    profile_seeds_pairs
+        .into_par_iter()
+        .for_each_with(thread_data, align_seeds);
 
     Ok(())
+}
+
+fn cloud_search(profile: &Profile, target: &Sequence, seed: &Seed, dp: &mut CloudSearchData) {
+    dp.cloud_matrix.reuse(profile.length);
+    dp.forward_bounds.reuse(target.length, profile.length);
+    dp.backward_bounds.reuse(target.length, profile.length);
+    dp.row_bounds.reuse(target.length);
+
+    cloud_search_forward(
+        profile,
+        target,
+        seed,
+        &mut dp.cloud_matrix,
+        &dp.cloud_search_params,
+        &mut dp.forward_bounds,
+    );
+
+    cloud_search_backward(
+        profile,
+        target,
+        seed,
+        &mut dp.cloud_matrix,
+        &dp.cloud_search_params,
+        &mut dp.backward_bounds,
+    );
+
+    let bounds_intersect =
+        dp.forward_bounds.max_anti_diagonal_idx >= dp.backward_bounds.min_anti_diagonal_idx;
+
+    if bounds_intersect {
+        AntiDiagonalBounds::join_merge(&mut dp.forward_bounds, &dp.backward_bounds);
+        if !dp.forward_bounds.valid() {
+            dp.forward_bounds.fill_rectangle(
+                seed.target_start,
+                seed.profile_start,
+                seed.target_end,
+                seed.profile_end,
+            );
+        }
+
+        dp.forward_bounds.trim_wings();
+
+        dp.row_bounds
+            .fill_from_anti_diagonal_bounds(&dp.forward_bounds);
+
+        if !dp.row_bounds.valid() {
+            dp.row_bounds.fill_rectangle(
+                seed.target_start,
+                seed.profile_start,
+                seed.target_end,
+                seed.profile_end,
+            );
+        }
+    } else {
+        dp.row_bounds.fill_rectangle(
+            seed.target_start,
+            seed.profile_start,
+            seed.target_end,
+            seed.profile_end,
+        );
+    }
+}
+
+fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
+    let alignment_data = &mut data.alignment;
+    let cloud_search_data = &mut data.cloud_search;
+
+    let profile_length = pair.profile.length;
+
+    for seed in pair.seeds {
+        let target = data.target_map.get(&seed.target_name).unwrap();
+        pair.profile.configure_for_target_length(target.length);
+
+        if data.full_dp {
+            cloud_search_data
+                .row_bounds
+                .fill_rectangle(1, 1, target.length, profile_length)
+        } else {
+            cloud_search(pair.profile, target, seed, cloud_search_data);
+        }
+
+        alignment_data.forward_matrix.reuse(
+            target.length,
+            profile_length,
+            &cloud_search_data.row_bounds,
+        );
+        alignment_data.backward_matrix.reuse(
+            target.length,
+            profile_length,
+            &cloud_search_data.row_bounds,
+        );
+        alignment_data.posterior_matrix.reuse(
+            target.length,
+            profile_length,
+            &cloud_search_data.row_bounds,
+        );
+        alignment_data.optimal_matrix.reuse(
+            target.length,
+            profile_length,
+            &cloud_search_data.row_bounds,
+        );
+
+        // we use the forward score to compute the final bit score (later)
+        data.score_params.forward_score_nats = forward(
+            pair.profile,
+            target,
+            &mut alignment_data.forward_matrix,
+            &cloud_search_data.row_bounds,
+        );
+
+        backward(
+            pair.profile,
+            target,
+            &mut alignment_data.backward_matrix,
+            &cloud_search_data.row_bounds,
+        );
+
+        posterior(
+            pair.profile,
+            &alignment_data.forward_matrix,
+            &alignment_data.backward_matrix,
+            &mut alignment_data.posterior_matrix,
+            &cloud_search_data.row_bounds,
+        );
+
+        data.score_params.null_score_nats = null1_score(target.length);
+        data.score_params.bias_correction_score_nats = null2_score_bounded(
+            &alignment_data.posterior_matrix,
+            pair.profile,
+            target,
+            &cloud_search_data.row_bounds,
+        );
+
+        optimal_accuracy(
+            pair.profile,
+            &alignment_data.posterior_matrix,
+            &mut alignment_data.optimal_matrix,
+            &cloud_search_data.row_bounds,
+        );
+
+        let mut trace = Trace::new(target.length, profile_length);
+        traceback(
+            pair.profile,
+            &alignment_data.posterior_matrix,
+            &alignment_data.optimal_matrix,
+            &mut trace,
+            cloud_search_data.row_bounds.target_end,
+        );
+
+        let alignment = Alignment::from_trace(&trace, pair.profile, target, &data.score_params);
+
+        if alignment.evalue <= data.evalue_threshold {
+            match data.output.tab_results_writer.lock() {
+                Ok(mut writer) => writeln!(writer, "{}", alignment.tab_string())
+                    .expect("failed to write tabular output"),
+                Err(_) => panic!("tabular results writer mutex was poisoned"),
+            };
+
+            match data.output.ali_results_writer.lock() {
+                Ok(mut writer) => {
+                    writeln!(writer, "{}", alignment.ali_string())
+                        .expect("failed to write alignment output");
+                }
+                Err(_) => panic!("alignment results writer mutex was poisoned"),
+            }
+        }
+    }
 }

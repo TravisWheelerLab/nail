@@ -1,5 +1,5 @@
 use crate::align::cloud_search_common::PruneStatus;
-use crate::align::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, Seed};
+use crate::align::structs::{AntiDiagonalBounds, CloudMatrixLinear, CloudSearchParams, Seed};
 use crate::align::{prune_and_scrub, scrub_co_located};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
@@ -105,7 +105,7 @@ pub fn cloud_search_backward(
     seed: &Seed,
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
-    bounds: &mut CloudBoundGroup,
+    bounds: &mut AntiDiagonalBounds,
 ) {
     // the highest score we've seen overall
     let mut overall_max_score = -f32::INFINITY;

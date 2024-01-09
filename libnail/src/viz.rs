@@ -1,9 +1,9 @@
-use crate::align::structs::{CloudBoundGroup, RowBounds};
+use crate::align::structs::{AntiDiagonalBounds, RowBounds};
 use serde_json::json;
 
 pub type JsonVec = Vec<serde_json::Value>;
 
-impl CloudBoundGroup {
+impl AntiDiagonalBounds {
     pub fn json(&self, id: &str) -> (JsonVec, JsonVec) {
         let mut bounds: JsonVec = vec![];
         let mut diagonal: JsonVec = vec![];

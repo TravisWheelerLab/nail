@@ -60,7 +60,7 @@ impl CloudBound {
 }
 
 #[derive(Default, Clone)]
-pub struct CloudBoundGroup {
+pub struct AntiDiagonalBounds {
     pub bounds: Vec<CloudBound>,
     pub target_length: usize,
     pub profile_length: usize,
@@ -69,7 +69,7 @@ pub struct CloudBoundGroup {
     pub max_anti_diagonal_idx: usize,
 }
 
-impl CloudBoundGroup {
+impl AntiDiagonalBounds {
     pub fn new(target_length: usize, profile_length: usize) -> Self {
         let size = target_length + profile_length + 1;
         Self {
@@ -154,8 +154,7 @@ impl CloudBoundGroup {
     }
 
     pub fn valid(&self) -> bool {
-        for idx in self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx {
-            let bound = &self.bounds[idx];
+        for bound in self.bounds() {
             if bound.was_pruned() {
                 return false;
             }
@@ -318,7 +317,10 @@ impl CloudBoundGroup {
         self.max_anti_diagonal_idx = anti_diagonal_end;
     }
 
-    pub fn join_merge(forward_bounds: &mut CloudBoundGroup, backward_bounds: &CloudBoundGroup) {
+    pub fn join_merge(
+        forward_bounds: &mut AntiDiagonalBounds,
+        backward_bounds: &AntiDiagonalBounds,
+    ) {
         let start_idx = forward_bounds
             .min_anti_diagonal_idx
             .min(backward_bounds.min_anti_diagonal_idx);

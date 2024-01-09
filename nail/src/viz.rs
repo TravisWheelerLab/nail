@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use libnail::align::structs::{CloudBoundGroup, RowBounds};
+use libnail::align::structs::{AntiDiagonalBounds, RowBounds};
 use serde::Serialize;
 
 #[allow(dead_code)]
@@ -39,7 +39,7 @@ pub struct AntiDiagonalBoundSodaData {
 
 #[allow(dead_code)]
 impl AntiDiagonalBoundSodaData {
-    pub fn new(forward: &CloudBoundGroup, backward: &CloudBoundGroup) -> Self {
+    pub fn new(forward: &AntiDiagonalBounds, backward: &AntiDiagonalBounds) -> Self {
         let row_start = forward
             .get_first()
             .right_target_idx

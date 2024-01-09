@@ -1,8 +1,8 @@
 mod alignment;
 pub use alignment::{Alignment, ScoreParams};
 
-mod cloud_bound;
-pub use cloud_bound::{CloudBound, CloudBoundGroup};
+mod anti_diagonal_bounds;
+pub use anti_diagonal_bounds::{AntiDiagonalBounds, CloudBound};
 
 mod cloud_matrix;
 pub use cloud_matrix::CloudMatrixLinear;
