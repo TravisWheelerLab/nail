@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use libnail::align::structs::{AntiDiagonalBounds, RowBounds};
+use libnail::align::structs::AntiDiagonalBounds;
 use serde::Serialize;
 
 #[allow(dead_code)]
@@ -94,29 +94,6 @@ impl AntiDiagonalBoundSodaData {
             col_end,
             forward_bounds,
             backward_bounds,
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RowBoundSodaData {
-    row_start: usize,
-    row_end: usize,
-    col_start: usize,
-    col_end: usize,
-    row_bounds: String,
-}
-
-#[allow(dead_code)]
-impl RowBoundSodaData {
-    pub fn new(bounds: &RowBounds) -> Self {
-        Self {
-            row_start: todo!(),
-            row_end: todo!(),
-            col_start: todo!(),
-            col_end: todo!(),
-            row_bounds: todo!(),
         }
     }
 }

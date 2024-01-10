@@ -3,12 +3,12 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
-pub fn null1_score(target_length: usize) -> f32 {
+pub fn length_bias_score(target_length: usize) -> f32 {
     let p1 = (target_length as f32) / (target_length as f32 + 1.0);
     target_length as f32 * p1.ln() + (1.0 - p1).ln()
 }
 
-pub fn null2_score_bounded(
+pub fn composition_bias_score(
     posterior_matrix: &impl DpMatrix,
     profile: &Profile,
     target: &Sequence,

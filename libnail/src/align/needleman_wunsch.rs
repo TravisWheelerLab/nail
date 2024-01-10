@@ -8,6 +8,7 @@ pub enum SimpleTraceStep {
 
 pub type SimpleTrace = Vec<SimpleTraceStep>;
 
+#[allow(dead_code)]
 pub fn print_trace(trace: &SimpleTrace) {
     for step in trace {
         match step {
@@ -19,6 +20,7 @@ pub fn print_trace(trace: &SimpleTrace) {
     println!();
 }
 
+#[allow(dead_code)]
 pub fn print_alignment(trace: &SimpleTrace, seq_1: &Sequence, seq_2: &Sequence) {
     let mut top = String::from("");
     let mut middle = String::from("");

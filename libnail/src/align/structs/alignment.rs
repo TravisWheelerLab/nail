@@ -74,8 +74,8 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
 #[derive(Default, Clone)]
 pub struct ScoreParams {
     pub forward_score_nats: f32,
-    pub null_score_nats: f32,
-    pub bias_correction_score_nats: f32,
+    pub length_bias_score_nats: f32,
+    pub composition_bias_score_nats: f32,
     pub target_count: usize,
 }
 
@@ -83,8 +83,8 @@ impl ScoreParams {
     pub fn new(target_count: usize) -> Self {
         Self {
             forward_score_nats: 0.0,
-            null_score_nats: 0.0,
-            bias_correction_score_nats: 0.0,
+            length_bias_score_nats: 0.0,
+            composition_bias_score_nats: 0.0,
             target_count,
         }
     }
@@ -174,7 +174,8 @@ impl Alignment {
                             // everything has been in nats up to here
                             let nat_score = params.forward_score_nats
                                 + n_and_c_state_correction_nats
-                                - (params.null_score_nats + params.bias_correction_score_nats);
+                                - (params.length_bias_score_nats
+                                    + params.composition_bias_score_nats);
 
                             // convert to bits by dividing by ln(2)
                             let bit_score = nat_score / std::f32::consts::LN_2;

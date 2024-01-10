@@ -21,8 +21,8 @@ use libnail::align::structs::{
     ScoreParams, Seed, Trace,
 };
 use libnail::align::{
-    backward, cloud_search_backward, cloud_search_forward, forward, null1_score,
-    null2_score_bounded, optimal_accuracy, posterior, traceback,
+    backward, cloud_search_backward, cloud_search_forward, composition_bias_score, forward,
+    length_bias_score, optimal_accuracy, posterior, traceback,
 };
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
@@ -409,8 +409,8 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
             &cloud_search_data.row_bounds,
         );
 
-        data.score_params.null_score_nats = null1_score(target.length);
-        data.score_params.bias_correction_score_nats = null2_score_bounded(
+        data.score_params.length_bias_score_nats = length_bias_score(target.length);
+        data.score_params.composition_bias_score_nats = composition_bias_score(
             &alignment_data.posterior_matrix,
             pair.profile,
             target,
