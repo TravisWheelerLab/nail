@@ -84,6 +84,8 @@ impl RowBounds {
         target_end: usize,
         profile_end: usize,
     ) {
+        self.reuse(target_end - target_start + 1);
+
         self.target_start = target_start;
         self.target_end = target_end;
 
