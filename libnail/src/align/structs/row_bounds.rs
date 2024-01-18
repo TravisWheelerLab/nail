@@ -121,6 +121,14 @@ impl RowBounds {
         true
     }
 
+    pub fn num_cells(&self) -> usize {
+        let mut cells = 0;
+        for target_idx in self.target_start..=self.target_end {
+            cells += self.right_row_bounds[target_idx] - self.left_row_bounds[target_idx] + 1;
+        }
+        cells
+    }
+
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {
         for row_idx in self.target_start..=self.target_end {
             writeln!(

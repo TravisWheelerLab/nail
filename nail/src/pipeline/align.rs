@@ -410,6 +410,7 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
         );
 
         data.score_params.length_bias_score_nats = length_bias_score(target.length);
+
         data.score_params.composition_bias_score_nats = composition_bias_score(
             &alignment_data.posterior_matrix,
             pair.profile,
@@ -433,7 +434,12 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
             cloud_search_data.row_bounds.target_end,
         );
 
-        let alignment = Alignment::from_trace(&trace, pair.profile, target, &data.score_params);
+        let mut alignment = Alignment::from_trace(&trace, pair.profile, target, &data.score_params);
+
+        alignment.cell_fraction = Some(
+            cloud_search_data.row_bounds.num_cells() as f32
+                / (target.length * profile_length) as f32,
+        );
 
         if alignment.evalue <= data.evalue_threshold {
             match data.output.tab_results_writer.lock() {
