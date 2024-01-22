@@ -240,7 +240,7 @@ impl Alignment {
 
     pub fn tab_string(&self) -> String {
         format!(
-            "{} {} {} {} {} {} {:.2} {:.1e} {}",
+            "{} {} {} {} {} {} {:.2} {:.2} {:.1e} {}",
             self.target_name,
             self.profile_name,
             self.target_start,
@@ -248,6 +248,7 @@ impl Alignment {
             self.profile_start,
             self.profile_end,
             self.score_bits,
+            self.composition_bias_bits,
             self.evalue,
             match self.cell_fraction {
                 Some(frac) => format!("{:.1e}", frac),

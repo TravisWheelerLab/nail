@@ -350,7 +350,6 @@ fn cloud_search(profile: &Profile, target: &Sequence, seed: &Seed, dp: &mut Clou
 fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
     let alignment_data = &mut data.alignment;
     let cloud_search_data = &mut data.cloud_search;
-
     let profile_length = pair.profile.length;
 
     for seed in pair.seeds {

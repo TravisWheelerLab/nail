@@ -119,7 +119,7 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .args(["--threads", &args.common_args.num_threads.to_string()])
         .args([
             "--format-output",
-            "query,target,qstart,qend,tstart,tend,evalue",
+            "qheader,theader,qstart,qend,tstart,tend,evalue",
         ])
         .run()?;
 
@@ -130,7 +130,7 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
     let p7_profiles: Vec<Profile> = hmms.iter().map(Profile::new).collect();
 
-    let profile_seeds_by_accession =
+    let profile_seeds_by_name =
         build_alignment_seeds(&p7_profiles, args).context("failed to build alignment seeds")?;
 
     let mut seeds_out = args
@@ -141,11 +141,11 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
     write!(
         seeds_out,
         "{}",
-        serde_json::to_string(&profile_seeds_by_accession)?
+        serde_json::to_string(&profile_seeds_by_name)?
     )
     .context("failed to write alignment seeds")?;
 
-    Ok((p7_profiles, profile_seeds_by_accession))
+    Ok((p7_profiles, profile_seeds_by_name))
 }
 
 pub fn map_p7_to_mmseqs_profiles(
@@ -154,11 +154,11 @@ pub fn map_p7_to_mmseqs_profiles(
 ) -> anyhow::Result<HashMap<String, Vec<usize>>> {
     let mmseqs_consensus_map = extract_mmseqs_profile_consensus_sequences(args)?;
 
-    let mut mmseqs_to_p7_idx_by_accession: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut mmseqs_to_p7_idx_by_name: HashMap<String, Vec<usize>> = HashMap::new();
 
     for p7_profile in p7_profiles {
-        let accession = &p7_profile.accession;
-        let mmseqs_consensus = mmseqs_consensus_map.get(accession).unwrap();
+        let name = &p7_profile.name;
+        let mmseqs_consensus = mmseqs_consensus_map.get(name).unwrap();
         let p7_consensus = Sequence::from_utf8(&p7_profile.consensus_sequence[1..])?;
         let trace = needleman_wunsch(mmseqs_consensus, &p7_consensus);
 
@@ -187,20 +187,20 @@ pub fn map_p7_to_mmseqs_profiles(
         debug_assert_eq!(mmseqs_idx, mmseqs_consensus.length);
         debug_assert_eq!(p7_idx, p7_consensus.length);
 
-        mmseqs_to_p7_idx_by_accession.insert(accession.clone(), mmseqs_to_p7);
+        mmseqs_to_p7_idx_by_name.insert(name.clone(), mmseqs_to_p7);
     }
 
-    Ok(mmseqs_to_p7_idx_by_accession)
+    Ok(mmseqs_to_p7_idx_by_name)
 }
 
 pub fn extract_mmseqs_profile_consensus_sequences(
     args: &SeedArgs,
 ) -> anyhow::Result<HashMap<String, Sequence>> {
     let mut offsets_and_lengths: Vec<(usize, usize)> = vec![];
-    let mut accession_numbers: Vec<String> = vec![];
+    let mut names: Vec<String> = vec![];
 
-    // query_db_h_index -> offsets & lengths of query names
-    // query_db_h       -> query names
+    // query_db_h_index -> offsets & lengths of query headers
+    // query_db_h       -> query headers
     // query_db_index   -> offsets & lengths of binary profiles
     // query_db         -> binary profiles (lines of 23 or 25, depending on mmseqs version)
 
@@ -231,20 +231,20 @@ pub fn extract_mmseqs_profile_consensus_sequences(
         query_db_h_file.seek(SeekFrom::Start(*offset as u64))?;
         query_db_h_file.read_exact(&mut buffer)?;
 
-        let mut accession_string: Option<String> = None;
+        let mut name: Option<String> = None;
         for (buf_idx, byte) in buffer.iter().enumerate() {
             if byte.is_ascii_whitespace() {
-                accession_string = Some(
+                name = Some(
                     std::str::from_utf8(&buffer[0..buf_idx])
-                        .context("failed to create accession string")?
+                        .context("failed to create profile name string")?
                         .to_string(),
                 );
                 break;
             }
         }
 
-        match accession_string {
-            Some(accession) => accession_numbers.push(accession),
+        match name {
+            Some(name) => names.push(name),
             None => {
                 panic!()
             }
@@ -290,7 +290,7 @@ pub fn extract_mmseqs_profile_consensus_sequences(
         }
 
         sequence_map.insert(
-            accession_numbers[seq_idx].clone(),
+            names[seq_idx].clone(),
             Sequence::from_digital(&consensus_digital_bytes)?,
         );
     }
@@ -304,12 +304,6 @@ pub struct ProfilesNotMappedError {
     pub profile_name: String,
 }
 
-#[derive(Error, Debug)]
-#[error("no profile name for accession: {accession}")]
-pub struct AccessionNotMappedError {
-    pub accession: String,
-}
-
 // TODO: move this elsewhere
 #[derive(Error, Debug)]
 #[error("invalid file format: {format}")]
@@ -317,16 +311,7 @@ pub struct InvalidFileFormatError {
     pub format: FileFormat,
 }
 
-pub fn build_alignment_seeds(
-    p7_profiles: &Vec<Profile>,
-    args: &SeedArgs,
-) -> anyhow::Result<SeedMap> {
-    let mut accession_to_name: HashMap<&str, &str> = HashMap::new();
-
-    for profile in p7_profiles {
-        accession_to_name.insert(&profile.accession, &profile.name);
-    }
-
+pub fn build_alignment_seeds(p7_profiles: &[Profile], args: &SeedArgs) -> anyhow::Result<SeedMap> {
     let mut seed_map: SeedMap = HashMap::new();
 
     let mmseqs_align_file = File::open(&args.prep_dir.mmseqs_align_tsv_path()).context(format!(
@@ -339,7 +324,7 @@ pub fn build_alignment_seeds(
     let query_format =
         read_query_format_from_mmseqs_query_db(&args.prep_dir.mmseqs_query_dbtype_path())?;
 
-    let profile_to_profile_idx_maps_by_accession = match query_format {
+    let profile_to_profile_idx_maps_by_name = match query_format {
         // if the query was a fasta, we don't need to map between
         // profiles (because we don't actually have profiles)
         FileFormat::Fasta => None,
@@ -358,38 +343,29 @@ pub fn build_alignment_seeds(
     };
 
     for line in align_reader.lines().flatten() {
-        let line_tokens: Vec<&str> = line.split_whitespace().collect();
-        let target_name = line_tokens[1].to_string();
+        let line_tokens: Vec<&str> = line.split('\t').collect();
+
+        let target_header = line_tokens[1];
+        let target_header_tokens: Vec<&str> = target_header.split_whitespace().collect();
+        let target_name = target_header_tokens[0].to_string();
         let target_start = line_tokens[4].parse::<usize>()?;
         let target_end = line_tokens[5].parse::<usize>()?;
+
+        let query_header = line_tokens[0];
+        let query_header_tokens: Vec<&str> = query_header.split_whitespace().collect();
+        let profile_name = query_header_tokens[0].to_string();
         let mut profile_start = line_tokens[2].parse::<usize>()?;
         let mut profile_end = line_tokens[3].parse::<usize>()?;
 
-        let profile_name = match query_format {
-            FileFormat::Fasta => line_tokens[0].to_string(),
-            FileFormat::Stockholm => {
-                let accession = line_tokens[0];
-
-                let profile_name =
-                    (*accession_to_name
-                        .get(accession)
-                        .ok_or(AccessionNotMappedError {
-                            accession: accession.to_string(),
-                        })?)
-                    .to_string();
-
-                if let Some(ref map) = profile_to_profile_idx_maps_by_accession {
-                    let profile_idx_map = map.get(accession).ok_or(ProfilesNotMappedError {
-                        profile_name: profile_name.clone(),
-                    })?;
-                    // if the profile index map happens to map the start to 0, we want to push it to 1
-                    profile_start = profile_idx_map[profile_start].max(1);
-                    profile_end = profile_idx_map[profile_end];
-                }
-                profile_name
-            }
-            _ => {
-                panic!()
+        if let FileFormat::Stockholm = query_format {
+            if let Some(ref map) = profile_to_profile_idx_maps_by_name {
+                let profile_idx_map = map.get(&profile_name).ok_or(ProfilesNotMappedError {
+                    profile_name: profile_name.clone(),
+                })?;
+                // if the profile index map happens to map
+                // the start to 0, we want to push it to 1
+                profile_start = profile_idx_map[profile_start].max(1);
+                profile_end = profile_idx_map[profile_end];
             }
         };
 

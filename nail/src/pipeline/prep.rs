@@ -130,6 +130,9 @@ pub fn prep(args: &PrepArgs) -> Result<()> {
         FileFormat::Stockholm => {
             Command::new("mmseqs")
                 .arg("convertmsa")
+                // this flag should force the profile to be labeled
+                // using the actual name rather than the accession number
+                .args(["--identifier-field", "0"])
                 .arg(&args.query_path)
                 .arg(&args.prep_dir.mmseqs_msa_db_path())
                 .run()?;

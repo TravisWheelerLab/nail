@@ -17,7 +17,7 @@ impl Default for RowBounds {
         Self {
             target_start: 0,
             target_end: 0,
-            row_capacity: 0,
+            row_capacity: 1,
             left_row_bounds: vec![usize::MAX],
             right_row_bounds: vec![0],
         }
