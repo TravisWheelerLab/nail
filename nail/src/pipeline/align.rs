@@ -53,6 +53,12 @@ pub struct NailArgs {
     /// Pruning parameter gamma
     #[arg(short = 'G', default_value_t = 5, value_name = "N")]
     pub gamma: usize,
+    /// The P-value threshold for promoting hits past cloud search
+    #[arg(long = "cloud-thresh", default_value_t = 1e-3, value_name = "F")]
+    pub cloud_pvalue_threshold: f64,
+    /// The P-value threshold for promoting hits past forward
+    #[arg(long = "forward-thresh", default_value_t = 1e-4, value_name = "F")]
+    pub forward_pvalue_threshold: f64,
     /// Compute the full dynamic programming matrices during alignment
     #[arg(long, action)]
     pub full_dp: bool,
@@ -132,6 +138,8 @@ struct ThreadData {
     target_map: Arc<HashMap<String, Sequence>>,
     score_params: ScoreParams,
     evalue_threshold: f64,
+    cloud_pvalue_threshold: f64,
+    forward_pvalue_threshold: f64,
     full_dp: bool,
 }
 
@@ -180,6 +188,8 @@ impl ThreadData {
             target_map,
             score_params,
             evalue_threshold: args.output_args.evalue_threshold,
+            cloud_pvalue_threshold: args.nail_args.cloud_pvalue_threshold,
+            forward_pvalue_threshold: args.nail_args.forward_pvalue_threshold,
             full_dp: args.nail_args.full_dp,
         })
     }
@@ -286,13 +296,18 @@ pub fn align(
     Ok(())
 }
 
-fn cloud_search(profile: &Profile, target: &Sequence, seed: &Seed, dp: &mut CloudSearchData) {
+fn cloud_search(
+    profile: &Profile,
+    target: &Sequence,
+    seed: &Seed,
+    dp: &mut CloudSearchData,
+) -> f32 {
     dp.cloud_matrix.reuse(profile.length);
     dp.forward_bounds.reuse(target.length, profile.length);
     dp.backward_bounds.reuse(target.length, profile.length);
     dp.row_bounds.reuse(target.length);
 
-    cloud_search_forward(
+    let forward_scores = cloud_search_forward(
         profile,
         target,
         seed,
@@ -301,7 +316,7 @@ fn cloud_search(profile: &Profile, target: &Sequence, seed: &Seed, dp: &mut Clou
         &mut dp.forward_bounds,
     );
 
-    cloud_search_backward(
+    let backward_scores = cloud_search_backward(
         profile,
         target,
         seed,
@@ -309,6 +324,23 @@ fn cloud_search(profile: &Profile, target: &Sequence, seed: &Seed, dp: &mut Clou
         &dp.cloud_search_params,
         &mut dp.backward_bounds,
     );
+
+    // this approximates the score for the forward
+    // cloud that extends past the seed end point
+    let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;
+
+    // this approximates the score for the backward
+    // cloud that extends past the seed start point
+    let disjoint_backward_score = backward_scores.max_score - backward_scores.max_score_within;
+
+    // this approximates the score of the intersection
+    // of the forward and backward clouds
+    let intersection_score = forward_scores
+        .max_score_within
+        .max(backward_scores.max_score_within);
+
+    let cloud_score_nats = intersection_score + disjoint_forward_score + disjoint_backward_score;
+    let cloud_score_bits = cloud_score_nats / std::f32::consts::LN_2;
 
     let bounds_intersect =
         dp.forward_bounds.max_anti_diagonal_idx >= dp.backward_bounds.min_anti_diagonal_idx;
@@ -345,6 +377,8 @@ fn cloud_search(profile: &Profile, target: &Sequence, seed: &Seed, dp: &mut Clou
             seed.profile_end,
         );
     }
+
+    cloud_score_bits
 }
 
 fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
@@ -356,12 +390,21 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
         let target = data.target_map.get(&seed.target_name).unwrap();
         pair.profile.configure_for_target_length(target.length);
 
-        if data.full_dp {
+        let cloud_score_bits = if data.full_dp {
             cloud_search_data
                 .row_bounds
-                .fill_rectangle(1, 1, target.length, profile_length)
+                .fill_rectangle(1, 1, target.length, profile_length);
+            f32::MAX
         } else {
-            cloud_search(pair.profile, target, seed, cloud_search_data);
+            cloud_search(pair.profile, target, seed, cloud_search_data)
+        };
+
+        let cloud_pvalue = (-pair.profile.forward_lambda as f64
+            * (cloud_score_bits as f64 - pair.profile.forward_tau as f64))
+            .exp();
+
+        if cloud_pvalue >= data.cloud_pvalue_threshold {
+            continue;
         }
 
         alignment_data.forward_matrix.reuse(
@@ -392,6 +435,15 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
             &mut alignment_data.forward_matrix,
             &cloud_search_data.row_bounds,
         );
+
+        let forward_pvalue = (-pair.profile.forward_lambda as f64
+            * ((data.score_params.forward_score_nats / std::f32::consts::LN_2) as f64
+                - pair.profile.forward_tau as f64))
+            .exp();
+
+        if forward_pvalue >= data.forward_pvalue_threshold {
+            continue;
+        }
 
         backward(
             pair.profile,

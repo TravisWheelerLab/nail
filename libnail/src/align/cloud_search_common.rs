@@ -6,6 +6,11 @@ pub enum PruneStatus {
     PartiallyPruned,
 }
 
+pub struct CloudSearchScores {
+    pub max_score: f32,
+    pub max_score_within: f32,
+}
+
 #[inline]
 pub fn prune_and_scrub(
     bound: &mut CloudBound,

@@ -4,6 +4,8 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
+use super::cloud_search_common::CloudSearchScores;
+
 #[inline]
 pub fn compute_forward_cell(
     target: &Sequence,
@@ -96,9 +98,11 @@ pub fn cloud_search_forward(
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut AntiDiagonalBounds,
-) {
+) -> CloudSearchScores {
     // the highest score we've seen overall
-    let mut overall_max_score = -f32::INFINITY;
+    let mut max_score = -f32::INFINITY;
+    // the highest score we see before we pass the end seed point
+    let mut max_score_within = -f32::INFINITY;
 
     // the first valid anti_diagonal_idx is 2
     //
@@ -114,6 +118,7 @@ pub fn cloud_search_forward(
     //                   profile_start = 3
 
     let first_anti_diagonal_idx = seed.target_start + seed.profile_start;
+    let seed_end_anti_diagonal_idx = seed.target_end + seed.profile_end;
     let gamma_anti_diagonal_idx = first_anti_diagonal_idx + params.gamma;
     let max_anti_diagonal_idx = target.length + profile.length;
 
@@ -242,8 +247,12 @@ pub fn cloud_search_forward(
             cloud_matrix_row_idx,
             params.alpha,
             params.beta,
-            &mut overall_max_score,
+            &mut max_score,
         );
+
+        if anti_diagonal_idx <= seed_end_anti_diagonal_idx {
+            max_score_within = max_score_within.max(max_score);
+        }
 
         match prune_status {
             PruneStatus::FullyPruned => {
@@ -254,5 +263,10 @@ pub fn cloud_search_forward(
                 continue;
             }
         }
+    }
+
+    CloudSearchScores {
+        max_score,
+        max_score_within,
     }
 }
