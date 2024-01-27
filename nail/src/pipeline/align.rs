@@ -272,6 +272,13 @@ pub fn align(
     // the thread data is everything that is cloned per thread
     let thread_data = ThreadData::new(args, targets)?;
 
+    match thread_data.output.tab_results_writer.lock() {
+        Ok(mut writer) => {
+            writeln!(writer, "{}", Alignment::TAB_HEADER)
+        }
+        Err(_) => panic!("tabular results writer mutex was poisoned"),
+    }?;
+
     let mut profile_seeds_pairs: Vec<ProfileSeedsPair> = vec![];
 
     for profile in profiles.iter_mut() {

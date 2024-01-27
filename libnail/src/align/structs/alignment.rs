@@ -238,6 +238,8 @@ impl Alignment {
         panic!("failed to produce an Alignment in Alignment::from_trace()");
     }
 
+    pub const TAB_HEADER: &str = "#target\tquery\ttarget start\ttarget end\tprofile start\tprofile end\tscore\tcomposition bias\tE-value\tcell fraction";
+
     pub fn tab_string(&self) -> String {
         format!(
             "{} {} {} {} {} {} {:.2} {:.2} {:.1e} {}",

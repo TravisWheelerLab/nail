@@ -23,23 +23,23 @@ pub type SeedMap = HashMap<String, Vec<Seed>>;
 #[derive(Args, Debug, Clone)]
 pub struct MmseqsArgs {
     /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
-    #[arg(long = "mmseqs_k", default_value_t = 0usize)]
+    #[arg(long = "mmseqs-k", default_value_t = 0usize)]
     pub k: usize,
     /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
-    #[arg(long = "mmseqs_k_score", default_value_t = 80usize)]
+    #[arg(long = "mmseqs-k-score", default_value_t = 80usize)]
     pub k_score: usize,
     /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
-    #[arg(long = "mmseqs_min_ungapped_score", default_value_t = 15usize)]
+    #[arg(long = "mmseqs-min-ungapped_score", default_value_t = 15usize)]
     pub min_ungapped_score: usize,
     /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
-    #[arg(long = "mmseqs_max_seqs", default_value_t = 1000usize)]
+    #[arg(long = "mmseqs-max-seqs", default_value_t = 1000usize)]
     pub max_seqs: usize,
     /// MMseqs2 align: Include matches below this P-value as seeds.
     ///
     /// Note: the MMseqs2 align tool only allows thresholding by E-value, so the P-value supplied
     /// here is multiplied by the size of the target database (i.e. number of sequences) to achieve
     /// an E-value threshold that is effectively the same as the chosen P-value threshold.
-    #[arg(long = "mmseqs_pvalue_threshold", default_value_t = 0.01f64)]
+    #[arg(long = "mmseqs-pvalue-threshold", default_value_t = 0.01f64)]
     pub pvalue_threshold: f64,
 }
 
