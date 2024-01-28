@@ -13,6 +13,8 @@ pub struct Trace {
     /// position emitted in seq
     pub target_idx: Vec<usize>,
     pub posterior_probabilities: Vec<f32>,
+    ///
+    pub cell_fraction: f32,
 }
 
 impl Trace {
@@ -42,6 +44,7 @@ impl Trace {
             profile_idx: vec![],
             target_idx: vec![],
             posterior_probabilities: vec![],
+            cell_fraction: 0.0,
         }
     }
 

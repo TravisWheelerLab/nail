@@ -2,7 +2,7 @@ use crate::align::structs::{DpMatrix, RowBounds};
 use crate::max_f32;
 use crate::structs::Profile;
 
-pub fn optimal_accuracy_bounded(
+pub fn optimal_accuracy(
     profile: &Profile,
     posterior_matrix: &impl DpMatrix,
     optimal_matrix: &mut impl DpMatrix,

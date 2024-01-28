@@ -25,7 +25,7 @@ pub fn write_tabular_output(alignments: &Vec<Alignment>, out: &mut impl Write) -
         column_widths[3] = column_widths[3].max(alignment.target_end.to_string().len());
         column_widths[4] = column_widths[4].max(alignment.profile_start.to_string().len());
         column_widths[5] = column_widths[5].max(alignment.profile_end.to_string().len());
-        column_widths[6] = column_widths[6].max(alignment.bit_score.to_string().len());
+        column_widths[6] = column_widths[6].max(alignment.score_bits.to_string().len());
         column_widths[7] = column_widths[6].max(format!("{:1.1e}", alignment.evalue).len());
     }
 
@@ -75,7 +75,7 @@ pub fn write_tabular_output(alignments: &Vec<Alignment>, out: &mut impl Write) -
             alignment.target_end,
             alignment.profile_start,
             alignment.profile_end,
-            alignment.bit_score,
+            alignment.score_bits,
             alignment.evalue,
             w0 = column_widths[0],
             w1 = column_widths[1],

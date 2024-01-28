@@ -1,9 +1,11 @@
 use crate::align::cloud_search_common::PruneStatus;
-use crate::align::structs::{CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, Seed};
+use crate::align::structs::{AntiDiagonalBounds, CloudMatrixLinear, CloudSearchParams, Seed};
 use crate::align::{prune_and_scrub, scrub_co_located};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
+
+use super::cloud_search_common::CloudSearchScores;
 
 #[inline]
 pub fn compute_backward_cell(
@@ -105,15 +107,18 @@ pub fn cloud_search_backward(
     seed: &Seed,
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
-    bounds: &mut CloudBoundGroup,
-) {
+    bounds: &mut AntiDiagonalBounds,
+) -> CloudSearchScores {
     // the highest score we've seen overall
-    let mut overall_max_score = -f32::INFINITY;
+    let mut max_score = -f32::INFINITY;
+    // the highest score we see before we pass the end seed point
+    let mut max_score_within = -f32::INFINITY;
 
     let target_end = seed.target_end.min(target.length - 1);
     let profile_end = seed.profile_end.min(profile.length - 1);
 
     let first_anti_diagonal_idx = target_end + profile_end;
+    let seed_start_anti_diagonal_idx = seed.target_start + seed.profile_start;
     let gamma_anti_diagonal_idx = first_anti_diagonal_idx - params.gamma;
     let min_anti_diagonal_idx = 0usize;
 
@@ -242,8 +247,12 @@ pub fn cloud_search_backward(
             cloud_matrix_row_idx,
             params.alpha,
             params.beta,
-            &mut overall_max_score,
+            &mut max_score,
         );
+
+        if anti_diagonal_idx >= seed_start_anti_diagonal_idx {
+            max_score_within = max_score_within.max(max_score);
+        }
 
         match prune_status {
             PruneStatus::FullyPruned => {
@@ -254,5 +263,10 @@ pub fn cloud_search_backward(
                 continue;
             }
         }
+    }
+
+    CloudSearchScores {
+        max_score,
+        max_score_within,
     }
 }

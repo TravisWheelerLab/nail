@@ -130,6 +130,9 @@ pub fn prep(args: &PrepArgs) -> Result<()> {
         FileFormat::Stockholm => {
             Command::new("mmseqs")
                 .arg("convertmsa")
+                // this flag should force the profile to be labeled
+                // using the actual name rather than the accession number
+                .args(["--identifier-field", "0"])
                 .arg(&args.query_path)
                 .arg(&args.prep_dir.mmseqs_msa_db_path())
                 .run()?;
@@ -192,20 +195,20 @@ pub fn build_hmm_from_fasta(
     let fasta_path = fasta_path.as_ref();
     let hmm_path = hmm_path.as_ref();
 
-    let query_seq = Sequence::amino_from_fasta(fasta_path).with_context(|| {
+    let query_seqs = Sequence::amino_from_fasta(fasta_path).with_context(|| {
         format!(
             "failed to parse query fasta: {}",
             fasta_path.to_string_lossy()
         )
     })?;
 
-    if query_seq.len() != 1 {
+    if query_seqs.len() != 1 {
         panic!("multiple fasta queries are not supported at this time");
     }
 
     Command::new("hmmbuild")
         .args(["--cpu", &num_threads.to_string()])
-        .args(["-n", &query_seq[0].name])
+        .args(["-n", &query_seqs[0].name])
         .arg(hmm_path)
         .arg(fasta_path)
         .run()?;

@@ -60,7 +60,7 @@ impl CloudBound {
 }
 
 #[derive(Default, Clone)]
-pub struct CloudBoundGroup {
+pub struct AntiDiagonalBounds {
     pub bounds: Vec<CloudBound>,
     pub target_length: usize,
     pub profile_length: usize,
@@ -69,7 +69,7 @@ pub struct CloudBoundGroup {
     pub max_anti_diagonal_idx: usize,
 }
 
-impl CloudBoundGroup {
+impl AntiDiagonalBounds {
     pub fn new(target_length: usize, profile_length: usize) -> Self {
         let size = target_length + profile_length + 1;
         Self {
@@ -106,6 +106,10 @@ impl CloudBoundGroup {
             bound.right_target_idx = 1;
             bound.right_profile_idx = 0;
         }
+    }
+
+    pub fn fill(&mut self) {
+        todo!()
     }
 
     pub fn set(
@@ -150,8 +154,7 @@ impl CloudBoundGroup {
     }
 
     pub fn valid(&self) -> bool {
-        for idx in self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx {
-            let bound = &self.bounds[idx];
+        for bound in self.bounds() {
             if bound.was_pruned() {
                 return false;
             }
@@ -279,176 +282,92 @@ impl CloudBoundGroup {
         &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
     }
 
-    pub fn join_bounds(forward_bounds: &mut CloudBoundGroup, backward_bounds: &CloudBoundGroup) {
-        // first check if the forward & backward bounds happened not to intersect
-        if forward_bounds.max_anti_diagonal_idx < backward_bounds.min_anti_diagonal_idx {
-            // TODO: **this is going to need to be rewritten**
-            //       I think a better idea is going to be to interpolate two lines:
-            //         1. one between the highest point on the forward & backward bounds
-            //         2. one between the lowest point on the forward & backward bounds
-            //
-            // if they do not intersect, we need to interpolate
-            //
-            // we are going to do that by:
-            //   1. selecting a "central point" on both the last
-            //      forward bound and the first backward bound
-            //   2. solving for the linear equation that defines
-            //      the line between those two points
-            //   3. computing the average anti-diagonal length
-            //      across the anti-diagonals in both bound groups
-            //   4. fill in between the bound groups with anti-diagonals
-            //      of that average length that are roughly centered
-            //      on the line
-            //
-            let last_forward = forward_bounds.get_last();
-            let forward_x = ((last_forward.right_profile_idx as f32
-                + last_forward.left_profile_idx as f32)
-                / 2.0)
-                .floor();
-            let forward_y = last_forward.anti_diagonal_idx() as f32 - forward_x;
+    pub fn fill_rectangle(
+        &mut self,
+        target_start: usize,
+        profile_start: usize,
+        target_end: usize,
+        profile_end: usize,
+    ) {
+        let target_distance = target_end - target_start;
+        let profile_distance = profile_end - profile_start;
 
-            let first_backward = backward_bounds.get_first();
-            let backward_x = ((first_backward.right_profile_idx as f32
-                + first_backward.left_profile_idx as f32)
-                / 2.0)
-                .ceil();
-            let backward_y = first_backward.anti_diagonal_idx() as f32 - backward_x;
+        let anti_diagonal_start = target_start + profile_start;
+        let anti_diagonal_end = target_end + profile_end;
 
-            let slope = (backward_y - forward_y) / (backward_x - forward_x);
-            let intercept = forward_y - slope * forward_x;
-            let line_equation = |x: f32| slope * x + intercept;
+        for idx in anti_diagonal_start..=anti_diagonal_end {
+            // relative_idx is the number of antidiagonals we have moved
+            // forward relative to the starting antidiagonal index
+            let relative_idx = idx - anti_diagonal_start;
+            let bound = self.get_mut(idx);
 
-            let cloud_size_sum = forward_bounds.cloud_size() + backward_bounds.cloud_size();
-            let num_anti_diagonals =
-                forward_bounds.num_anti_diagonals() + backward_bounds.num_anti_diagonals();
-            // integer division is truncated, which is probably what we want
-            let avg_anti_diagonal_length = cloud_size_sum / num_anti_diagonals;
+            bound.left_target_idx = target_end.min(target_start + relative_idx);
+            bound.left_profile_idx = profile_start + relative_idx.saturating_sub(target_distance);
 
-            // I have elected to make this a closure since it's convenient
-            // to have it capture the line_equation closure, and I don't think
-            // we'll ever call this from outside of this function
-            let bound_fn = |center_profile_idx: usize| {
-                let center_target_idx = line_equation(center_profile_idx as f32).round() as usize;
-                let anti_diagonal_idx = center_profile_idx + center_target_idx;
+            bound.right_target_idx = target_start + relative_idx.saturating_sub(profile_distance);
+            bound.right_profile_idx = profile_end.min(profile_start + relative_idx);
 
-                // note: if the avg_anti_diagonal_length is even, this
-                //       will cause us to fill with +1 of that length
-                let left_profile_idx = center_profile_idx - avg_anti_diagonal_length / 2;
-                let right_profile_idx = center_profile_idx + avg_anti_diagonal_length / 2;
-                let left_target_idx = anti_diagonal_idx - left_profile_idx;
-                let right_target_idx = anti_diagonal_idx - right_profile_idx;
-                CloudBound {
-                    left_target_idx,
-                    left_profile_idx,
-                    right_target_idx,
-                    right_profile_idx,
-                }
-            };
+            debug_assert_eq!(
+                bound.left_target_idx + bound.left_profile_idx,
+                bound.right_target_idx + bound.right_profile_idx
+            );
+        }
 
-            let first_bound = bound_fn(forward_x as usize);
-            forward_bounds.set(
-                first_bound.anti_diagonal_idx() + 1,
-                first_bound.left_target_idx,
-                first_bound.left_profile_idx + 1,
-                first_bound.right_target_idx + 1,
-                first_bound.right_profile_idx,
+        self.min_anti_diagonal_idx = anti_diagonal_start;
+        self.max_anti_diagonal_idx = anti_diagonal_end;
+    }
+
+    pub fn join_merge(
+        forward_bounds: &mut AntiDiagonalBounds,
+        backward_bounds: &AntiDiagonalBounds,
+    ) {
+        let start_idx = forward_bounds
+            .min_anti_diagonal_idx
+            .min(backward_bounds.min_anti_diagonal_idx);
+
+        let end_idx = forward_bounds
+            .max_anti_diagonal_idx
+            .max(backward_bounds.max_anti_diagonal_idx);
+
+        forward_bounds.min_anti_diagonal_idx = start_idx;
+        forward_bounds.max_anti_diagonal_idx = end_idx;
+        let forward_slice = &mut forward_bounds.bounds[start_idx..=end_idx];
+        let backward_slice = &backward_bounds.bounds[start_idx..=end_idx];
+
+        for (forward_bound, backward_bound) in forward_slice.iter_mut().zip(backward_slice) {
+            if forward_bound.was_pruned() {
+                // if there's no valid forward bound, just take the backward bound
+                forward_bound.left_target_idx = backward_bound.left_target_idx;
+                forward_bound.left_profile_idx = backward_bound.left_profile_idx;
+                forward_bound.right_target_idx = backward_bound.right_target_idx;
+                forward_bound.right_profile_idx = backward_bound.right_profile_idx;
+            } else if backward_bound.was_pruned() {
+                // if there's no valid backward bound, we can do nothing since we
+                // are consuming the forward bounds
+                continue;
+            }
+
+            debug_assert_eq!(
+                forward_bound.anti_diagonal_idx(),
+                backward_bound.anti_diagonal_idx()
             );
 
-            // fill in the missing bounds using the line equation:
-            //   - iterate across the profile indices that span the missing bounds
-            //   - we'll think of the profile index as the x value in the line equation
-            //   - using the profile index as the input to the line equation, we can get
-            //     a corresponding target index (y value)
-            //   - those coordinates (profile index, target index) will be the center cell
-            //     along the current anti-diagonal that we are filling
-            //   - then we can just extend that bound out from the center to produce an
-            //     anti-diagonal equal to the average anti-diagonal length
-            let profile_start = forward_x as usize + 1;
-            let profile_end = backward_x as usize - 1;
-            for center_profile_idx in profile_start..=profile_end {
-                let bound = bound_fn(center_profile_idx);
+            // otherwise we have two valid bounds and we can compare them
+            forward_bound.left_target_idx = forward_bound
+                .left_target_idx
+                .max(backward_bound.left_target_idx);
 
-                forward_bounds.set(
-                    bound.anti_diagonal_idx(),
-                    bound.left_target_idx,
-                    bound.left_profile_idx,
-                    bound.right_target_idx,
-                    bound.right_profile_idx,
-                );
+            forward_bound.left_profile_idx = forward_bound
+                .left_profile_idx
+                .min(backward_bound.left_profile_idx);
 
-                forward_bounds.set(
-                    bound.anti_diagonal_idx() + 1,
-                    bound.left_target_idx,
-                    bound.left_profile_idx + 1,
-                    bound.right_target_idx + 1,
-                    bound.right_profile_idx,
-                );
-            }
+            forward_bound.right_target_idx = forward_bound
+                .right_target_idx
+                .min(backward_bound.right_target_idx);
 
-            // finally just tack on the backward bounds
-            for anti_diagonal_idx in
-                backward_bounds.min_anti_diagonal_idx..=backward_bounds.max_anti_diagonal_idx
-            {
-                let bound = backward_bounds.get(anti_diagonal_idx);
-                forward_bounds.set(
-                    anti_diagonal_idx,
-                    bound.left_target_idx,
-                    bound.left_profile_idx,
-                    bound.right_target_idx,
-                    bound.right_profile_idx,
-                )
-            }
-        } else {
-            // if they do intersect, we can join them by taking
-            // the longest anti-diagonal at each index
-            let start_idx = forward_bounds
-                .min_anti_diagonal_idx
-                .min(backward_bounds.min_anti_diagonal_idx);
-
-            let end_idx = forward_bounds
-                .max_anti_diagonal_idx
-                .max(backward_bounds.max_anti_diagonal_idx);
-
-            forward_bounds.min_anti_diagonal_idx = start_idx;
-            forward_bounds.max_anti_diagonal_idx = end_idx;
-            let forward_slice = &mut forward_bounds.bounds[start_idx..=end_idx];
-            let backward_slice = &backward_bounds.bounds[start_idx..=end_idx];
-
-            for (forward_bound, backward_bound) in forward_slice.iter_mut().zip(backward_slice) {
-                if forward_bound.was_pruned() {
-                    // if there's no valid forward bound, just take the backward bound
-                    forward_bound.left_target_idx = backward_bound.left_target_idx;
-                    forward_bound.left_profile_idx = backward_bound.left_profile_idx;
-                    forward_bound.right_target_idx = backward_bound.right_target_idx;
-                    forward_bound.right_profile_idx = backward_bound.right_profile_idx;
-                } else if backward_bound.was_pruned() {
-                    // if there's no valid backward bound, we can do nothing since we
-                    // are consuming the forward bounds
-                    continue;
-                }
-
-                debug_assert_eq!(
-                    forward_bound.anti_diagonal_idx(),
-                    backward_bound.anti_diagonal_idx()
-                );
-
-                // otherwise we have two valid bounds and we can compare them
-                forward_bound.left_target_idx = forward_bound
-                    .left_target_idx
-                    .max(backward_bound.left_target_idx);
-
-                forward_bound.left_profile_idx = forward_bound
-                    .left_profile_idx
-                    .min(backward_bound.left_profile_idx);
-
-                forward_bound.right_target_idx = forward_bound
-                    .right_target_idx
-                    .min(backward_bound.right_target_idx);
-
-                forward_bound.right_profile_idx = forward_bound
-                    .right_profile_idx
-                    .max(backward_bound.right_profile_idx);
-            }
+            forward_bound.right_profile_idx = forward_bound
+                .right_profile_idx
+                .max(backward_bound.right_profile_idx);
         }
     }
 }

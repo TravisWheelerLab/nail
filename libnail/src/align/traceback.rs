@@ -1,7 +1,7 @@
 use crate::align::structs::{DpMatrix, Trace};
 use crate::structs::Profile;
 
-pub fn traceback_bounded(
+pub fn traceback(
     profile: &Profile,
     posterior_matrix: &impl DpMatrix,
     optimal_matrix: &impl DpMatrix,

@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct CloudSearchParams {
     pub gamma: usize,
     pub alpha: f32,

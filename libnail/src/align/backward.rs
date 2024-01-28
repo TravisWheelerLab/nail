@@ -3,7 +3,7 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-pub fn backward_bounded(
+pub fn backward(
     profile: &Profile,
     target: &Sequence,
     dp_matrix: &mut impl DpMatrix,

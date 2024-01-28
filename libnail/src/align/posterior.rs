@@ -1,7 +1,7 @@
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::structs::Profile;
 
-pub fn posterior_bounded(
+pub fn posterior(
     profile: &Profile,
     forward_matrix: &impl DpMatrix,
     backward_matrix: &impl DpMatrix,

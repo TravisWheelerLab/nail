@@ -9,24 +9,35 @@ pub struct Alignment {
     pub profile_name: String,
     /// The name of the target sequence
     pub target_name: String,
-    /// The bit score of the alignment
-    pub bit_score: f32,
+    /// The final bit score of the alignment (after all bias adjustments)
+    pub score_bits: f32,
+    /// The raw bit score of the alignment (before any bias adjustments)
+    pub raw_score_bits: f32,
+    /// The bit score of the length bias adjustment
+    pub length_bias_bits: f32,
+    /// The bit score of the composition bias adjustment
+    pub composition_bias_bits: f32,
     /// The P-value of the alignment
     pub pvalue: f64,
     /// The E-value of the alignment
     pub evalue: f64,
     /// The length of the alignment
     pub length: usize,
+    /// The fraction of dynamic programming cells filled in during alignment.
+    pub cell_fraction: Option<f32>,
     /// The start coordinate of the profile (query)
     pub profile_start: usize,
     /// The end coordinate of the profile (query)
     pub profile_end: usize,
-    /// The display for the profile portion of the alignment
-    pub profile_string: String,
     /// The start coordinate of the target sequence
     pub target_start: usize,
     /// The end coordinate of the target sequence
     pub target_end: usize,
+
+    // display strings
+    // ---------------
+    /// The display for the profile portion of the alignment
+    pub profile_string: String,
     /// The display for the target portion of the alignment
     pub target_string: String,
     /// The display in between the profile and target
@@ -74,8 +85,8 @@ fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_sco
 #[derive(Default, Clone)]
 pub struct ScoreParams {
     pub forward_score_nats: f32,
-    pub null_score_nats: f32,
-    pub bias_correction_score_nats: f32,
+    pub length_bias_score_nats: f32,
+    pub composition_bias_score_nats: f32,
     pub target_count: usize,
 }
 
@@ -83,8 +94,8 @@ impl ScoreParams {
     pub fn new(target_count: usize) -> Self {
         Self {
             forward_score_nats: 0.0,
-            null_score_nats: 0.0,
-            bias_correction_score_nats: 0.0,
+            length_bias_score_nats: 0.0,
+            composition_bias_score_nats: 0.0,
             target_count,
         }
     }
@@ -171,17 +182,22 @@ impl Alignment {
                             let n_and_c_state_correction_nats = unaligned_target_length
                                 * (target.length as f32 / (target.length as f32 + 3.0)).ln();
 
-                            // everything has been in nats up to here
-                            let nat_score = params.forward_score_nats
-                                + n_and_c_state_correction_nats
-                                - (params.null_score_nats + params.bias_correction_score_nats);
+                            let raw_score_bits = (params.forward_score_nats
+                                + n_and_c_state_correction_nats)
+                                / std::f32::consts::LN_2;
 
-                            // convert to bits by dividing by ln(2)
-                            let bit_score = nat_score / std::f32::consts::LN_2;
+                            let length_bias_bits =
+                                params.length_bias_score_nats / std::f32::consts::LN_2;
+
+                            let composition_bias_bits =
+                                params.composition_bias_score_nats / std::f32::consts::LN_2;
+
+                            let score_bits =
+                                raw_score_bits - length_bias_bits - composition_bias_bits;
 
                             // TODO: double check these calculations
                             let pvalue = (-profile.forward_lambda as f64
-                                * (bit_score as f64 - profile.forward_tau as f64))
+                                * (score_bits as f64 - profile.forward_tau as f64))
                                 .exp();
 
                             let evalue = pvalue * params.target_count as f64;
@@ -189,15 +205,19 @@ impl Alignment {
                             return Alignment {
                                 profile_name: profile.name.clone(),
                                 target_name: target.name.clone(),
-                                bit_score,
+                                score_bits,
+                                raw_score_bits,
+                                length_bias_bits,
+                                composition_bias_bits,
                                 pvalue,
                                 evalue,
                                 length: profile_bytes.len(),
                                 profile_start,
                                 profile_end,
-                                profile_string: String::from_utf8(profile_bytes).unwrap(),
                                 target_start,
                                 target_end,
+                                cell_fraction: None,
+                                profile_string: String::from_utf8(profile_bytes).unwrap(),
                                 target_string: String::from_utf8(target_bytes).unwrap(),
                                 middle_string: String::from_utf8(mid_bytes).unwrap(),
                                 posterior_probability_string: String::from_utf8(
@@ -218,17 +238,24 @@ impl Alignment {
         panic!("failed to produce an Alignment in Alignment::from_trace()");
     }
 
+    pub const TAB_HEADER: &str = "#target\tquery\ttarget start\ttarget end\tprofile start\tprofile end\tscore\tcomposition bias\tE-value\tcell fraction";
+
     pub fn tab_string(&self) -> String {
         format!(
-            "{} {} {} {} {} {} {:.2} {:.1e}",
+            "{} {} {} {} {} {} {:.2} {:.2} {:.1e} {}",
             self.target_name,
             self.profile_name,
             self.target_start,
             self.target_end,
             self.profile_start,
             self.profile_end,
-            self.bit_score,
+            self.score_bits,
+            self.composition_bias_bits,
             self.evalue,
+            match self.cell_fraction {
+                Some(frac) => format!("{:.1e}", frac),
+                None => "-".to_string(),
+            },
         )
     }
 
@@ -242,7 +269,7 @@ impl Alignment {
         // score line
         ali_string.push_str(&format!(
             "==  score: {:3.1} bits;  E-value: {:1.1e}\n",
-            self.bit_score, self.evalue
+            self.score_bits, self.evalue
         ));
 
         while start_offset <= self.length {
