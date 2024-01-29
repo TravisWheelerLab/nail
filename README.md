@@ -3,11 +3,11 @@
 ## About
 
 This is a cargo workspace for nail, which is a profile Hidden Markov Model (pHMM) biological sequence alignment tool.
-Using the fast [MMseqs2](https://github.com/soedinglab/MMseqs2) search pipeline to produce candidate alignment seeds, nail computes a fast approximation of the [HMMER3](http://hmmer.org/) Forward/Backward sequence alignment algorithm.
+Using the fast [MMseqs2](https://github.com/soedinglab/MMseqs2) search pipeline to produce candidate alignment seeds, nail computes a fast approximation of the [HMMER3](http://hmmer.org/) Forward/Backward (F/B) sequence alignment algorithm.
 Currently, nail only supports amino acid search, with nucleotide search coming in a future update. 
 
 ### What's here
-There are two sub-projects in the `nail` workspace:
+There are two sub-projects in the nail workspace:
 1. `nail`: this is the command line tool
 2. `libnail`: this is a Rust library that contains the implementation of nail's sparse alignment algorithms
 
@@ -141,21 +141,26 @@ will run nail's sparse Forward/Backward alignment algorithm, producing optimal-s
 By default, alignment output will be written to stdout, e.g:
 
 ```
-=  score: 255.1 bits;  E-value: 7.5e-77
-                 7tm_1     1 gNllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltais 80
+==  score: 255.1 bits;  E-value: 7.5e-77
+                 7tm_1     1 gNllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltais 80   
                              gN+lVi++i r+++l+t tn+f+++La+aDl+++llv+pf ++  + +g+w +g++lC+++t+ldv+++tasi +l++i+
-P07700|reviewed|Beta-1    58 GNVLVIAAIGRTQRLQTLTNLFITSLACADLVMGLLVVPFGATLVV-RGTWLWGSFLCECWTSLDVLCVTASIETLCVIA 137
+P07700|reviewed|Beta-1    58 GNVLVIAAIGRTQRLQTLTNLFITSLACADLVMGLLVVPFGATLVV-RGTWLWGSFLCECWTSLDVLCVTASIETLCVIA 137  
                              0000000000000000000000000000000000*************************08*******************
 
-                 7tm_1    81 iDRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesae.....keetvClidfpeeestwevsytl 160
+                 7tm_1    81 iDRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesae.....keetvClidfpeeestwevsytl 160  
                              iDRYlaI+ p++y++++t+ ra+v+i+ vW++++l+s++p+++ ++++e+++     ++   C++ ++       + y++
-P07700|reviewed|Beta-1   138 IDRYLAITSPFRYQSLMTRARAKVIICTVWAISALVSFLPIMMHWWRDEDPQALKCYQDPGCCDFVTN-------RAYAI 217
+P07700|reviewed|Beta-1   138 IDRYLAITSPFRYQSLMTRARAKVIICTVWAISALVSFLPIMMHWWRDEDPQALKCYQDPGCCDFVTN-------RAYAI 217  
                              **********************776608****************************************************
 
-                 7tm_1   161 llsvlgfllpllvilvcyvrilrtlrksakkeks.................................rkkksarkerkal 240
+                 7tm_1   161 llsvlgfllpllvilvcyvrilrtlrksakkeks.................................rkkksarkerkal 240  
                               +s+++f++pll+++++y r++r+++++ +k ++                                 +++ +a +e+kal
-P07700|reviewed|Beta-1   218 ASSIISFYIPLLIMIFVYLRVYREAKEQIRKIDRCEGRFYGSQEQPQPPPLPQHQPILGNGRASKRKTSRVMAMREHKAL 297
-                             **
+P07700|reviewed|Beta-1   218 ASSIISFYIPLLIMIFVYLRVYREAKEQIRKIDRCEGRFYGSQEQPQPPPLPQHQPILGNGRASKRKTSRVMAMREHKAL 297  
+                             ***************************99866666655555555555500000005************************
+
+                 7tm_1   241 ktllvvvvvfvlcwlPyfilllldsllkeceseklvetallitlllayvnsclNPii 297  
+                             ktl+++++vf+lcwlP+f++++++++    +++ ++++++ ++++l+y+ns++NPii
+P07700|reviewed|Beta-1   298 KTLGIIMGVFTLCWLPFFLVNIVNVF----NRDLVPDWLFVFFNWLGYANSAFNPII 354  
+                             *************9*************************999998777777788888
 ```
 
 By default, tabular results will be placed in `results.tsv`.
