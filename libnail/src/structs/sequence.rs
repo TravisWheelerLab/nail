@@ -1,5 +1,5 @@
 use seq_io::fasta::{Reader, Record};
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::Path;
 
 use crate::alphabet::{AMINO_INVERSE_MAP, UTF8_SPACE, UTF8_TO_DIGITAL_AMINO};
@@ -140,6 +140,36 @@ impl Sequence {
             digital_bytes,
             utf8_bytes,
         })
+    }
+}
+
+impl Display for Sequence {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+
+        if let Some(ref details) = self.details {
+            write!(f, " {details}")?
+        };
+
+        writeln!(f)?;
+
+        // note: the utf8 bytes start with a padding byte of 255
+        let mut iter = self.utf8_bytes.chunks(80).peekable();
+
+        while let Some(byte_chunk) = iter.next() {
+            match std::str::from_utf8(byte_chunk) {
+                Ok(seq_line) => {
+                    write!(f, "{}", seq_line)?;
+                    if iter.peek().is_some() {
+                        // if we're not on the last
+                        // line, add a linebreak
+                        writeln!(f)?;
+                    }
+                }
+                Err(_) => return Err(std::fmt::Error),
+            }
+        }
+        Ok(())
     }
 }
 
