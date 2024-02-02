@@ -2,8 +2,8 @@ use seq_io::fasta::{Reader, Record};
 use std::fmt::{Debug, Formatter};
 use std::path::Path;
 
-use crate::alphabet::{AMINO_INVERSE_MAP, UTF8_TO_DIGITAL_AMINO};
-use anyhow::Result;
+use crate::alphabet::{AMINO_INVERSE_MAP, UTF8_SPACE, UTF8_TO_DIGITAL_AMINO};
+use anyhow::{Context, Result};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -22,11 +22,16 @@ pub struct UnknownDigitalSequenceByteError {
 pub struct Sequence {
     /// The name of the sequence
     pub name: String,
+    /// The sequence details. If the sequence comes from a fasta, this
+    /// is the information following the sequence name in the header
+    pub details: Option<String>,
     /// The length of the sequence
     pub length: usize,
-    /// The "digital" data of the sequence. These are the string bytes, but mapped to [0u8..25u8]
+    /// The "digital" data of the sequence. These are
+    /// the string bytes, but mapped to [0u8..25u8]
     pub digital_bytes: Vec<u8>,
-    /// The string data of the sequence. These are the UTF8 bytes that make up the sequence in the "normal" alphabet
+    /// The string data of the sequence. These are the UTF8 bytes
+    /// that make up the sequence in the "normal" alphabet
     pub utf8_bytes: Vec<u8>,
 }
 
@@ -37,9 +42,28 @@ impl Sequence {
         let mut reader = Reader::from_path(path).unwrap();
 
         while let Some(record) = reader.next() {
-            let record = record.expect("Error reading record");
-            let record_header = String::from_utf8(record.head().to_vec())?;
-            let record_name = record_header.split_whitespace().next().unwrap().to_string();
+            let record = record.with_context(|| "failed to read fasta record")?;
+            let mut header_bytes = record.head().to_vec();
+            let first_space_idx = header_bytes.iter().position(|&b| b == UTF8_SPACE);
+
+            let error_context: fn() -> &'static str =
+                || "failed to create String from fasta header bytes";
+
+            let (name, details) = match first_space_idx {
+                Some(idx) => {
+                    let details_bytes = header_bytes.split_off(idx + 1);
+                    header_bytes.pop();
+                    (
+                        String::from_utf8(header_bytes).with_context(error_context)?,
+                        Some(String::from_utf8(details_bytes).with_context(error_context)?),
+                    )
+                }
+                None => (
+                    String::from_utf8(header_bytes).with_context(error_context)?,
+                    None,
+                ),
+            };
+
             // We want position 1 of the sequence to be at index 1, so we'll buffer with 255
             let mut utf8_bytes: Vec<u8> = vec![255];
             let mut digital_bytes: Vec<u8> = vec![255];
@@ -59,7 +83,8 @@ impl Sequence {
             }
 
             seqs.push(Sequence {
-                name: record_name,
+                name,
+                details,
                 length: digital_bytes.len() - 1,
                 digital_bytes,
                 utf8_bytes,
@@ -88,6 +113,7 @@ impl Sequence {
 
         Ok(Sequence {
             name: "".to_string(),
+            details: None,
             length: utf8_bytes.len() - 1,
             digital_bytes,
             utf8_bytes,
@@ -109,6 +135,7 @@ impl Sequence {
 
         Ok(Sequence {
             name: "".to_string(),
+            details: None,
             length: digital_bytes.len() - 1,
             digital_bytes,
             utf8_bytes,
