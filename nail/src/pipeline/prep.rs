@@ -1,12 +1,13 @@
 use crate::args::{guess_query_format_from_query_file, FileFormat};
+use crate::cli::CommonArgs;
 use crate::extension_traits::CommandExt;
-use std::fs::create_dir_all;
+use crate::pipeline::InvalidFileFormatError;
 
+use std::fs::create_dir_all;
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::cli::CommonArgs;
-use crate::pipeline::InvalidFileFormatError;
 use anyhow::{Context, Result};
 use clap::Args;
 use libnail::structs::Sequence;
@@ -122,7 +123,9 @@ pub fn prep(args: &PrepArgs) -> Result<()> {
             if !args.skip_hmmbuild {
                 build_hmm_from_fasta(
                     &args.query_path,
+                    &args.prep_dir.path.join("tmp.fasta"),
                     &args.prep_dir.prep_query_hmm_path(),
+                    &args.prep_dir.path.join("tmp.hmm"),
                     args.common_args.num_threads,
                 )?;
             }
@@ -188,30 +191,60 @@ pub fn build_hmm_from_stockholm(
 }
 
 pub fn build_hmm_from_fasta(
-    fasta_path: &impl AsRef<Path>,
-    hmm_path: &impl AsRef<Path>,
+    query_fasta_path: &impl AsRef<Path>,
+    temp_fasta_path: &impl AsRef<Path>,
+    query_hmm_path: &impl AsRef<Path>,
+    temp_hmm_path: &impl AsRef<Path>,
     num_threads: usize,
-) -> Result<()> {
-    let fasta_path = fasta_path.as_ref();
-    let hmm_path = hmm_path.as_ref();
+) -> anyhow::Result<()> {
+    let query_fasta_path = query_fasta_path.as_ref();
+    let temp_fasta_path = temp_fasta_path.as_ref();
+    let query_hmm_path = query_hmm_path.as_ref();
+    let temp_hmm_path = temp_hmm_path.as_ref();
 
-    let query_seqs = Sequence::amino_from_fasta(fasta_path).with_context(|| {
+    let query_seqs = Sequence::amino_from_fasta(query_fasta_path).with_context(|| {
         format!(
             "failed to parse query fasta: {}",
-            fasta_path.to_string_lossy()
+            query_fasta_path.to_string_lossy()
         )
     })?;
 
-    if query_seqs.len() != 1 {
-        panic!("multiple fasta queries are not supported at this time");
-    }
+    // this is the query hmm file we are going to build
+    let query_hmm_file = std::fs::File::create(query_hmm_path)?;
+    let mut hmm_buf_writer = BufWriter::new(query_hmm_file);
+    // this is the buffer we will read
+    // into as we create individual hmms
+    let mut temp_hmm_buf = vec![];
 
-    Command::new("hmmbuild")
-        .args(["--cpu", &num_threads.to_string()])
-        .args(["-n", &query_seqs[0].name])
-        .arg(hmm_path)
-        .arg(fasta_path)
-        .run()?;
+    query_seqs
+        .iter()
+        .try_for_each(|s| {
+            temp_hmm_buf.clear();
+            let mut temp_fasta_file = std::fs::File::create(temp_fasta_path)
+                .context("failed to open temporary fasta file")?;
+            writeln!(temp_fasta_file, "{}", s)
+                .context("failed to write to temporary fasta file")?;
+
+            Command::new("hmmbuild")
+                .args(["--cpu", &num_threads.to_string()])
+                .args(["-n", &s.name])
+                .arg(temp_hmm_path)
+                .arg(temp_fasta_path)
+                .run()
+                .context("failed to run hmmbuild")?;
+
+            let mut temp_hmm_file =
+                std::fs::File::open(temp_hmm_path).context("failed to open temporary hmm file")?;
+
+            temp_hmm_file
+                .read_to_end(&mut temp_hmm_buf)
+                .context("failed to read temporary hmm file")?;
+
+            hmm_buf_writer
+                .write_all(&temp_hmm_buf)
+                .context("failed to write to query hmm file")
+        })
+        .context("failed to build hmm from fasta")?;
 
     Ok(())
 }

@@ -214,9 +214,20 @@ pub fn align(
             let hmm_path = match query_format {
                 FileFormat::Fasta => {
                     let hmm_path = args.query_path.with_extension("hmm");
+                    let query_dir = args.query_path.parent().with_context(|| {
+                        format!(
+                            "failed to resolve query directory from path: {}",
+                            args.query_path.to_string_lossy()
+                        )
+                    })?;
+                    let temp_hmm_path = query_dir.join("tmp.hmm");
+                    let temp_fasta_path = query_dir.join("tmp.fa");
+
                     build_hmm_from_fasta(
                         &args.query_path,
+                        &temp_fasta_path,
                         &hmm_path,
+                        &temp_hmm_path,
                         args.common_args.num_threads,
                     )?;
                     hmm_path
