@@ -27,17 +27,20 @@ fn check_mmseqs_installed() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    check_hmmer_installed()?;
-    check_mmseqs_installed()?;
-
     match Cli::parse().command {
         SubCommands::Search(args) => {
+            check_hmmer_installed()?;
+            check_mmseqs_installed()?;
             search(&args)?;
         }
         SubCommands::Prep(args) => {
+            check_hmmer_installed()?;
+            check_mmseqs_installed()?;
             prep(&args)?;
         }
         SubCommands::Seed(mut args) => {
+            check_hmmer_installed()?;
+            check_mmseqs_installed()?;
             // TODO: I'd like to think of a way to remove this nonsense
             args.prep_dir.path = args.prep_dir_path.clone();
 
