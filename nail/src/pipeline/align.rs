@@ -368,6 +368,7 @@ fn cloud_search(
             );
         }
 
+        dp.forward_bounds.square_corners();
         dp.forward_bounds.trim_wings();
 
         dp.row_bounds

@@ -282,6 +282,73 @@ impl AntiDiagonalBounds {
         &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
     }
 
+    pub fn square_corners(&mut self) {
+        // TODO: refactor this nastiness once I've
+        //       refactored the AD bounds struct
+        // this is a bit of jumping through hoops
+        // to appease the borrow checker
+        let (
+            left_distance,
+            first_anti_diagonal_idx,
+            first_left_target_idx,
+            first_left_profile_idx,
+            first_right_target_idx,
+            first_right_profile_idx,
+        ) = {
+            let first_bound = self.get_first();
+            (
+                first_bound.left_target_idx - first_bound.right_target_idx,
+                first_bound.anti_diagonal_idx(),
+                first_bound.left_target_idx,
+                first_bound.left_profile_idx,
+                first_bound.right_target_idx,
+                first_bound.right_profile_idx,
+            )
+        };
+
+        (1..=left_distance)
+            .map(|offset| (offset, first_anti_diagonal_idx - offset))
+            .for_each(|(offset, anti_diagonal_idx)| {
+                self.set(
+                    anti_diagonal_idx,
+                    first_left_target_idx - offset,
+                    first_left_profile_idx,
+                    first_right_target_idx,
+                    first_right_profile_idx - offset,
+                );
+            });
+        let (
+            right_distance,
+            last_anti_diagonal_idx,
+            last_left_target_idx,
+            last_left_profile_idx,
+            last_right_target_idx,
+            last_right_profile_idx,
+        ) = {
+            let last_bound = self.get_last();
+            (
+                last_bound.left_target_idx - last_bound.right_target_idx,
+                last_bound.anti_diagonal_idx(),
+                last_bound.left_target_idx,
+                last_bound.left_profile_idx,
+                last_bound.right_target_idx,
+                last_bound.right_profile_idx,
+            )
+        };
+
+        (1..=right_distance)
+            .map(|offset| (offset, last_anti_diagonal_idx + offset))
+            .for_each(|(offset, anti_diagonal_idx)| {
+                self.set(
+                    anti_diagonal_idx,
+                    last_left_target_idx,
+                    last_left_profile_idx + offset,
+                    last_right_target_idx + offset,
+                    last_right_profile_idx,
+                );
+            });
+    }
+
     pub fn fill_rectangle(
         &mut self,
         target_start: usize,
