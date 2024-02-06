@@ -145,7 +145,7 @@ impl Sequence {
 
 impl Display for Sequence {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)?;
+        write!(f, ">{}", self.name)?;
 
         if let Some(ref details) = self.details {
             write!(f, " {details}")?
@@ -154,7 +154,7 @@ impl Display for Sequence {
         writeln!(f)?;
 
         // note: the utf8 bytes start with a padding byte of 255
-        let mut iter = self.utf8_bytes.chunks(80).peekable();
+        let mut iter = self.utf8_bytes[1..].chunks(80).peekable();
 
         while let Some(byte_chunk) = iter.next() {
             match std::str::from_utf8(byte_chunk) {
