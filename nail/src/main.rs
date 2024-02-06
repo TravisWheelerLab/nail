@@ -26,11 +26,19 @@ fn check_mmseqs_installed() -> Result<()> {
         .context("mmseqs2 does not appear to be in the system path")
 }
 
+fn set_threads(num_threads: usize) -> Result<()> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()
+        .context("failed to build rayon global threadpool")
+}
+
 fn main() -> Result<()> {
     match Cli::parse().command {
         SubCommands::Search(args) => {
             check_hmmer_installed()?;
             check_mmseqs_installed()?;
+            set_threads(args.common_args.num_threads)?;
             search(&args)?;
         }
         SubCommands::Prep(args) => {
@@ -47,6 +55,7 @@ fn main() -> Result<()> {
             seed(&args)?;
         }
         SubCommands::Align(args) => {
+            set_threads(args.common_args.num_threads)?;
             align(&args, None, None)?;
         }
     }

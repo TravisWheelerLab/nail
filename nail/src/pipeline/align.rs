@@ -301,12 +301,6 @@ pub fn align(
         }
     }
 
-    // this is how we tell rayon how many threads to use
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(args.common_args.num_threads)
-        .build_global()
-        .unwrap();
-
     profile_seeds_pairs
         .into_par_iter()
         .for_each_with(thread_data, align_seeds);
