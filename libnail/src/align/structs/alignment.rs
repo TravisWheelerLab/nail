@@ -1,4 +1,5 @@
 use crate::alphabet::{UTF8_DASH, UTF8_DOT, UTF8_NUMERIC, UTF8_PLUS, UTF8_SPACE};
+use crate::output::output_tabular::{Field, TableFormat};
 use crate::structs::{Profile, Sequence};
 use std::cmp::{max, min};
 
@@ -257,6 +258,38 @@ impl Alignment {
                 None => "-".to_string(),
             },
         )
+    }
+
+    pub fn tab_string_formatted(&self, format: &TableFormat) -> String {
+        let mut tab_string = String::new();
+
+        format
+            .fields
+            .iter()
+            .zip(format.widths.iter())
+            .for_each(|(field, width)| {
+                let val = match field {
+                    Field::Target => self.target_name.clone(),
+                    Field::Query => self.profile_name.clone(),
+                    Field::TargetStart => self.target_start.to_string(),
+                    Field::TargetEnd => self.target_end.to_string(),
+                    Field::QueryStart => self.profile_start.to_string(),
+                    Field::QueryEnd => self.profile_end.to_string(),
+                    Field::Score => format!("{:.2}", self.score_bits),
+                    Field::CompBias => format!("{:.2}", self.composition_bias_bits),
+                    Field::Evalue => format!("{:.1e}", self.evalue),
+                    Field::CellFrac => match self.cell_fraction {
+                        Some(frac) => format!("{:.1e}", frac),
+                        None => "-".to_string(),
+                    },
+                };
+                tab_string = format!("{tab_string}{val:width$} ", width = width)
+            });
+
+        // remove the last space
+        tab_string.pop();
+
+        tab_string
     }
 
     pub fn ali_string(&self) -> String {

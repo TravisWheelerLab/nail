@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
 use std::io::{stdout, BufWriter, Write};
+use std::io::{Read, Seek};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use clap::Args;
+use libnail::output::output_tabular::{Field, TableFormat};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use thiserror::Error;
 
@@ -107,8 +108,22 @@ pub struct AlignArgs {
     pub common_args: CommonArgs,
 }
 
+const DEFAULT_COLUMNS: [Field; 10] = [
+    Field::Target,
+    Field::Query,
+    Field::TargetStart,
+    Field::TargetEnd,
+    Field::QueryStart,
+    Field::QueryEnd,
+    Field::Score,
+    Field::CompBias,
+    Field::Evalue,
+    Field::CellFrac,
+];
+
 #[derive(Clone)]
 struct OutputData {
+    table_format: TableFormat,
     tab_results_writer: Arc<Mutex<BufWriter<File>>>,
     ali_results_writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
@@ -145,6 +160,9 @@ struct ThreadData {
 
 impl ThreadData {
     pub fn new(args: &AlignArgs, targets: Vec<Sequence>) -> anyhow::Result<Self> {
+        let table_format =
+            TableFormat::new(&DEFAULT_COLUMNS).context("failed to produce TableFormat")?;
+
         let tab_writer = Mutex::new(args.output_args.tsv_results_path.open(true)?);
 
         // TODO: is there a better way to do this without a trait object?
@@ -156,6 +174,7 @@ impl ThreadData {
         };
 
         let output = OutputData {
+            table_format,
             tab_results_writer: Arc::new(tab_writer),
             ali_results_writer: Arc::new(ali_writer),
         };
@@ -283,13 +302,6 @@ pub fn align(
     // the thread data is everything that is cloned per thread
     let thread_data = ThreadData::new(args, targets)?;
 
-    match thread_data.output.tab_results_writer.lock() {
-        Ok(mut writer) => {
-            writeln!(writer, "{}", Alignment::TAB_HEADER)
-        }
-        Err(_) => panic!("tabular results writer mutex was poisoned"),
-    }?;
-
     let mut profile_seeds_pairs: Vec<ProfileSeedsPair> = vec![];
 
     for profile in profiles.iter_mut() {
@@ -399,6 +411,10 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
     let cloud_search_data = &mut data.cloud_search;
     let profile_length = pair.profile.length;
 
+    data.output.table_format.reset_widths();
+
+    let mut alignments: Vec<Alignment> = vec![];
+
     for seed in pair.seeds {
         let target = data.target_map.get(&seed.target_name).unwrap();
         pair.profile.configure_for_target_length(target.length);
@@ -500,25 +516,46 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
 
         let mut alignment = Alignment::from_trace(&trace, pair.profile, target, &data.score_params);
 
-        alignment.cell_fraction = Some(
-            cloud_search_data.row_bounds.num_cells() as f32
-                / (target.length * profile_length) as f32,
-        );
-
         if alignment.evalue <= data.evalue_threshold {
-            match data.output.tab_results_writer.lock() {
-                Ok(mut writer) => writeln!(writer, "{}", alignment.tab_string())
-                    .expect("failed to write tabular output"),
-                Err(_) => panic!("tabular results writer mutex was poisoned"),
-            };
+            alignment.cell_fraction = Some(
+                cloud_search_data.row_bounds.num_cells() as f32
+                    / (target.length * profile_length) as f32,
+            );
 
-            match data.output.ali_results_writer.lock() {
-                Ok(mut writer) => {
-                    writeln!(writer, "{}", alignment.ali_string())
-                        .expect("failed to write alignment output");
-                }
-                Err(_) => panic!("alignment results writer mutex was poisoned"),
-            }
+            data.output.table_format.update_widths(&alignment);
+            alignments.push(alignment);
         }
     }
+
+    alignments.sort_by(|a, b| a.evalue.partial_cmp(&b.evalue).unwrap());
+
+    alignments.iter().for_each(|a| {
+        match data.output.tab_results_writer.lock() {
+            Ok(mut writer) => {
+                if writer
+                    .stream_position()
+                    .expect("failed to retrieve stream position of tabular results writer")
+                    == 0
+                {
+                    let header = TableFormat::header(&data.output.table_format).unwrap();
+                    writeln!(writer, "{header}").unwrap();
+                }
+
+                writeln!(
+                    writer,
+                    "{}",
+                    a.tab_string_formatted(&data.output.table_format)
+                )
+                .expect("failed to write tabular output")
+            }
+            Err(_) => panic!("tabular results writer mutex was poisoned"),
+        };
+
+        match data.output.ali_results_writer.lock() {
+            Ok(mut writer) => {
+                writeln!(writer, "{}", a.ali_string()).expect("failed to write alignment output");
+            }
+            Err(_) => panic!("alignment results writer mutex was poisoned"),
+        }
+    });
 }
