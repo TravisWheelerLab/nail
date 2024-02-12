@@ -4,18 +4,18 @@ use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
 
 #[derive(Clone)]
-pub struct CloudBound {
+pub struct AntiDiagonal {
     pub left_target_idx: usize,
     pub left_profile_idx: usize,
     pub right_target_idx: usize,
     pub right_profile_idx: usize,
 }
 
-impl Default for CloudBound {
+impl Default for AntiDiagonal {
     fn default() -> Self {
         // set the default to a simple invalid bound
         // (the left bound is on the right, and vice versa)
-        CloudBound {
+        AntiDiagonal {
             left_target_idx: 0,
             left_profile_idx: 1,
             right_target_idx: 1,
@@ -24,7 +24,7 @@ impl Default for CloudBound {
     }
 }
 
-impl Display for CloudBound {
+impl Display for AntiDiagonal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -37,22 +37,22 @@ impl Display for CloudBound {
     }
 }
 
-impl PrintMe for CloudBound {
+impl PrintMe for AntiDiagonal {
     fn print(&self) {
         println!("{}", self);
     }
 }
 
-impl CloudBound {
+impl AntiDiagonal {
     pub fn was_pruned(&self) -> bool {
         self.left_target_idx < self.right_target_idx
     }
 
-    pub fn anti_diagonal_idx(&self) -> usize {
+    pub fn idx(&self) -> usize {
         self.left_target_idx + self.left_profile_idx
     }
 
-    pub fn anti_diagonal_cell_zip(&self) -> Zip<Rev<RangeInclusive<usize>>, RangeInclusive<usize>> {
+    pub fn cell_zip(&self) -> Zip<Rev<RangeInclusive<usize>>, RangeInclusive<usize>> {
         let target_range = (self.right_target_idx..=self.left_target_idx).rev();
         let profile_range = self.left_profile_idx..=self.right_profile_idx;
         target_range.zip(profile_range)
@@ -61,7 +61,7 @@ impl CloudBound {
 
 #[derive(Default, Clone)]
 pub struct AntiDiagonalBounds {
-    pub bounds: Vec<CloudBound>,
+    pub bounds: Vec<AntiDiagonal>,
     pub target_length: usize,
     pub profile_length: usize,
     pub size: usize,
@@ -73,7 +73,7 @@ impl AntiDiagonalBounds {
     pub fn new(target_length: usize, profile_length: usize) -> Self {
         let size = target_length + profile_length + 1;
         Self {
-            bounds: vec![CloudBound::default(); size],
+            bounds: vec![AntiDiagonal::default(); size],
             target_length,
             profile_length,
             size,
@@ -83,7 +83,7 @@ impl AntiDiagonalBounds {
     }
 
     pub fn resize(&mut self, new_size: usize) {
-        self.bounds.resize(new_size, CloudBound::default());
+        self.bounds.resize(new_size, AntiDiagonal::default());
         self.size = new_size;
     }
 
@@ -93,42 +93,39 @@ impl AntiDiagonalBounds {
             self.resize(new_size);
         }
 
-        self.min_anti_diagonal_idx = new_size;
-        self.max_anti_diagonal_idx = 0;
-
-        self.target_length = target_length;
-        self.profile_length = profile_length;
-
-        // TODO: think about this
-        for bound in self.bounds.iter_mut() {
+        for bound in self.bounds_mut() {
             bound.left_target_idx = 0;
             bound.left_profile_idx = 1;
             bound.right_target_idx = 1;
             bound.right_profile_idx = 0;
         }
-    }
 
-    pub fn fill(&mut self) {
-        todo!()
+        self.min_anti_diagonal_idx = new_size;
+        self.max_anti_diagonal_idx = 0;
+
+        self.target_length = target_length;
+        self.profile_length = profile_length;
     }
 
     pub fn set(
         &mut self,
-        // TODO: remove this
         anti_diagonal_idx: usize,
         left_target_idx: usize,
         left_profile_idx: usize,
         right_target_idx: usize,
         right_profile_idx: usize,
     ) {
-        // TODO: I don't think there's much point to setting these here
-        self.min_anti_diagonal_idx = self.min_anti_diagonal_idx.min(anti_diagonal_idx);
-        self.max_anti_diagonal_idx = self.max_anti_diagonal_idx.max(anti_diagonal_idx);
-
+        // make sure the two cells are on the same anti-diagonal
         debug_assert_eq!(
             left_target_idx + left_profile_idx,
             right_target_idx + right_profile_idx
         );
+
+        // make sure we are setting the anti-diagonal that we think we are
+        debug_assert_eq!(anti_diagonal_idx, left_target_idx + left_profile_idx);
+
+        self.min_anti_diagonal_idx = self.min_anti_diagonal_idx.min(anti_diagonal_idx);
+        self.max_anti_diagonal_idx = self.max_anti_diagonal_idx.max(anti_diagonal_idx);
 
         let bound = &mut self.bounds[anti_diagonal_idx];
         bound.left_target_idx = left_target_idx;
@@ -137,19 +134,19 @@ impl AntiDiagonalBounds {
         bound.right_profile_idx = right_profile_idx;
     }
 
-    pub fn get(&self, idx: usize) -> &CloudBound {
+    pub fn get(&self, idx: usize) -> &AntiDiagonal {
         &self.bounds[idx]
     }
 
-    pub fn get_mut(&mut self, idx: usize) -> &mut CloudBound {
+    pub fn get_mut(&mut self, idx: usize) -> &mut AntiDiagonal {
         &mut self.bounds[idx]
     }
 
-    pub fn get_first(&self) -> &CloudBound {
+    pub fn get_first(&self) -> &AntiDiagonal {
         self.get(self.min_anti_diagonal_idx)
     }
 
-    pub fn get_last(&self) -> &CloudBound {
+    pub fn get_last(&self) -> &AntiDiagonal {
         self.get(self.max_anti_diagonal_idx)
     }
 
@@ -176,8 +173,16 @@ impl AntiDiagonalBounds {
         self.max_anti_diagonal_idx - self.min_anti_diagonal_idx + 1
     }
 
-    /// This removes all of the protruding regions in the cloud that are unreachable from a traceback
-    /// that traverses the entire cloud.
+    pub fn bounds(&self) -> &[AntiDiagonal] {
+        &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
+    }
+
+    pub fn bounds_mut(&mut self) -> &mut [AntiDiagonal] {
+        &mut self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
+    }
+
+    /// This removes all of the protruding regions in the cloud that are
+    /// unreachable from a traceback that traverses the entire cloud.
     pub fn trim_wings(&mut self) {
         for anti_diagonal_idx in self.min_anti_diagonal_idx + 1..=self.max_anti_diagonal_idx {
             let previous_bound = self.get(anti_diagonal_idx - 1);
@@ -251,40 +256,7 @@ impl AntiDiagonalBounds {
             )
         }
     }
-
-    /// Add a square block of bounds to the group with side length of `size`.
-    ///
-    /// This is currently intended for debugging.
-    pub fn bound_block(&mut self, target_start: usize, profile_start: usize, size: usize) {
-        let idx = target_start + profile_start;
-        for i in 0..size {
-            self.set(
-                idx + i,
-                target_start + i,
-                profile_start,
-                target_start,
-                profile_start + i,
-            );
-        }
-        let idx = target_start + profile_start + size;
-        for i in 0..=size {
-            self.set(
-                idx + i,
-                target_start + size,
-                profile_start + i,
-                target_start + i,
-                profile_start + size,
-            );
-        }
-    }
-
-    pub fn bounds(&self) -> &[CloudBound] {
-        &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
-    }
-
     pub fn square_corners(&mut self) {
-        // TODO: refactor this nastiness once I've
-        //       refactored the AD bounds struct
         // this is a bit of jumping through hoops
         // to appease the borrow checker
         let (
@@ -298,7 +270,7 @@ impl AntiDiagonalBounds {
             let first_bound = self.get_first();
             (
                 first_bound.left_target_idx - first_bound.right_target_idx,
-                first_bound.anti_diagonal_idx(),
+                first_bound.idx(),
                 first_bound.left_target_idx,
                 first_bound.left_profile_idx,
                 first_bound.right_target_idx,
@@ -317,6 +289,7 @@ impl AntiDiagonalBounds {
                     first_right_profile_idx - offset,
                 );
             });
+
         let (
             right_distance,
             last_anti_diagonal_idx,
@@ -328,7 +301,7 @@ impl AntiDiagonalBounds {
             let last_bound = self.get_last();
             (
                 last_bound.left_target_idx - last_bound.right_target_idx,
-                last_bound.anti_diagonal_idx(),
+                last_bound.idx(),
                 last_bound.left_target_idx,
                 last_bound.left_profile_idx,
                 last_bound.right_target_idx,
@@ -414,10 +387,7 @@ impl AntiDiagonalBounds {
                 continue;
             }
 
-            debug_assert_eq!(
-                forward_bound.anti_diagonal_idx(),
-                backward_bound.anti_diagonal_idx()
-            );
+            debug_assert_eq!(forward_bound.idx(), backward_bound.idx());
 
             // otherwise we have two valid bounds and we can compare them
             forward_bound.left_target_idx = forward_bound

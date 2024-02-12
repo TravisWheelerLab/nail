@@ -1,4 +1,4 @@
-use crate::align::structs::{CloudBound, CloudMatrixLinear};
+use crate::align::structs::{AntiDiagonal, CloudMatrixLinear};
 use crate::max_f32;
 
 pub enum PruneStatus {
@@ -13,7 +13,7 @@ pub struct CloudSearchScores {
 
 #[inline]
 pub fn prune_and_scrub(
-    bound: &mut CloudBound,
+    bound: &mut AntiDiagonal,
     cloud_matrix: &mut CloudMatrixLinear,
     row_idx: usize,
     alpha: f32,
@@ -79,8 +79,8 @@ pub fn prune_and_scrub(
 
 #[inline]
 pub fn scrub_co_located(
-    current_bound: &CloudBound,
-    co_located_bound: &CloudBound,
+    current_bound: &AntiDiagonal,
+    co_located_bound: &AntiDiagonal,
     cloud_matrix: &mut CloudMatrixLinear,
     cloud_matrix_row_idx: usize,
 ) {

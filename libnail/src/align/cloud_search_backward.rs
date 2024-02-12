@@ -172,7 +172,7 @@ pub fn cloud_search_backward(
 
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
-        for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {
+        for (target_idx, profile_idx) in current_bound.cell_zip() {
             compute_backward_cell(
                 target,
                 profile,
@@ -230,7 +230,7 @@ pub fn cloud_search_backward(
             cloud_matrix_row_idx,
         );
 
-        for (target_idx, profile_idx) in current_bound.anti_diagonal_cell_zip() {
+        for (target_idx, profile_idx) in current_bound.cell_zip() {
             compute_backward_cell(
                 target,
                 profile,
