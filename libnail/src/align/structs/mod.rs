@@ -7,9 +7,6 @@ pub use anti_diagonal_bounds::{AntiDiagonal, AntiDiagonalBounds};
 mod cloud_matrix;
 pub use cloud_matrix::CloudMatrixLinear;
 
-mod cloud_search_params;
-pub use cloud_search_params::CloudSearchParams;
-
 mod dp_matrix;
 pub use dp_matrix::{DpMatrix, DpMatrixFlat, DpMatrixSparse};
 

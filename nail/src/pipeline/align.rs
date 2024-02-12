@@ -18,12 +18,12 @@ use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
 use crate::pipeline::seed::SeedMap;
 
 use libnail::align::structs::{
-    Alignment, AntiDiagonalBounds, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds,
-    ScoreParams, Seed, Trace,
+    Alignment, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds, ScoreParams, Seed,
+    Trace,
 };
 use libnail::align::{
     backward, cloud_search_backward, cloud_search_forward, composition_bias_score, forward,
-    length_bias_score, optimal_accuracy, posterior, traceback,
+    length_bias_score, optimal_accuracy, posterior, traceback, CloudSearchParams,
 };
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
