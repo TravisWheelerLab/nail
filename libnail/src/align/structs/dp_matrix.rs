@@ -106,51 +106,51 @@ pub struct DpMatrixFlat {
     pub target_length: usize,
     pub profile_length: usize,
     /// The DP matrix core model data cells as a flat vector.
-    ///
-    /// It's stored in the following pattern:
-    ///     [
-    ///
-    ///         m_(0, 0), i_(0, 0), d_(0, 0),
-    ///         m_(0, 1), i_(0, 1), d_(0, 1),
-    ///         ...
-    ///         m_(0, P), i_(0, P), d_(0, P),
-    ///         ...
-    ///         m_(T, 0), i_(T, 0), d_(T, 0),
-    ///         ...
-    ///         m_(T, P), i_(T, P), d_(T, P)
-    ///
-    ///     ]
-    ///
-    /// where:
-    ///
-    ///     T:        <target_length>
-    ///     S:        <profile_length>
-    ///     m_(i, j): the match score at cell (i, j)
-    ///     i_(i, j): the insert score at cell (i, j)
-    ///     d_(i, j): the delete score at cell (i, j)
-    ///
+    //
+    // the data is stored in the following pattern:
+    //     [
+    //
+    //         m_(0, 0), i_(0, 0), d_(0, 0),
+    //         m_(0, 1), i_(0, 1), d_(0, 1),
+    //         ...
+    //         m_(0, P), i_(0, P), d_(0, P),
+    //         ...
+    //         m_(T, 0), i_(T, 0), d_(T, 0),
+    //         ...
+    //         m_(T, P), i_(T, P), d_(T, P)
+    //
+    //     ]
+    //
+    // where:
+    //
+    //     T:        <target_length>
+    //     S:        <profile_length>
+    //     m_(i, j): the match score at cell (i, j)
+    //     i_(i, j): the insert score at cell (i, j)
+    //     d_(i, j): the delete score at cell (i, j)
+    //
     pub core_data: Vec<f32>,
     /// The DP matrix special state data cells as a flat vector.
-    ///
-    /// It's stored in the following pattern:
-    ///     [
-    ///
-    ///         N_0, B_0, E_0, C_0, J_0,
-    ///         N_1, B_1, E_1, C_1, J_1,
-    ///         ...
-    ///         N_T, B_T, E_T, C_T, J_T,
-    ///
-    ///     ]
-    ///
-    /// where:
-    ///
-    ///     T:        <target_length>
-    ///     N_i: the N state score at target position i
-    ///     B_i: the B state score at target position i
-    ///     E_i: the E state score at target position i
-    ///     C_i: the C state score at target position i
-    ///     J_i: the J state score at target position i
-    ///
+    //
+    // the data is stored in the following pattern:
+    //     [
+    //
+    //         N_0, B_0, E_0, C_0, J_0,
+    //         N_1, B_1, E_1, C_1, J_1,
+    //         ...
+    //         N_T, B_T, E_T, C_T, J_T,
+    //
+    //     ]
+    //
+    // where:
+    //
+    //     T:        <target_length>
+    //     N_i: the N state score at target position i
+    //     B_i: the B state score at target position i
+    //     E_i: the E state score at target position i
+    //     C_i: the C state score at target position i
+    //     J_i: the J state score at target position i
+    //
     pub special_data: Vec<f32>,
 }
 
@@ -485,5 +485,84 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(target_idx <= self.target_length);
         debug_assert!(special_idx < Profile::NUM_SPECIAL_STATES);
         self.special_data[target_idx * 5 + special_idx] = value;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dp_matrix_flat() {
+        let mut m = [[-f32::INFINITY; 6]; 6];
+        let mut i = [[-f32::INFINITY; 6]; 6];
+        let mut d = [[-f32::INFINITY; 6]; 6];
+
+        (1..=5).for_each(|row| {
+            (1..=5).for_each(|col| {
+                m[row][col] = (row * 10 + col) as f32 / 10.0;
+                i[row][col] = ((row + 5) * 10 + col) as f32 / 10.0;
+                d[row][col] = ((row + 10) * 10 + col) as f32 / 10.0;
+            });
+        });
+
+        let mut matrix = DpMatrixFlat::new(5, 5);
+
+        (1..=5).for_each(|row| {
+            (1..=5).for_each(|col| {
+                matrix.set_match(row, col, m[row][col]);
+                matrix.set_insert(row, col, i[row][col]);
+                matrix.set_delete(row, col, d[row][col]);
+            });
+        });
+
+        (0..=5).for_each(|row| {
+            (0..=5).for_each(|col| {
+                assert_eq!(matrix.get_match(row, col), m[row][col]);
+                assert_eq!(matrix.get_insert(row, col), i[row][col]);
+                assert_eq!(matrix.get_delete(row, col), d[row][col]);
+            });
+        });
+    }
+
+    #[test]
+    fn test_dp_matrix_sparse() {
+        let mut m = [[-f32::INFINITY; 6]; 6];
+        let mut i = [[-f32::INFINITY; 6]; 6];
+        let mut d = [[-f32::INFINITY; 6]; 6];
+
+        let bounds = RowBounds {
+            target_start: 1,
+            target_end: 5,
+            row_capacity: 0,
+            left_row_bounds: vec![0, 1, 1, 2, 3, 4],
+            right_row_bounds: vec![0, 2, 3, 4, 5, 5],
+        };
+
+        (bounds.target_start..=bounds.target_end).for_each(|row| {
+            (bounds.left_row_bounds[row]..=bounds.right_row_bounds[row]).for_each(|col| {
+                m[row][col] = (row * 10 + col) as f32 / 10.0;
+                i[row][col] = ((row + 5) * 10 + col) as f32 / 10.0;
+                d[row][col] = ((row + 10) * 10 + col) as f32 / 10.0;
+            });
+        });
+
+        let mut matrix = DpMatrixSparse::new(5, 5, &bounds);
+
+        (bounds.target_start..=bounds.target_end).for_each(|row| {
+            (bounds.left_row_bounds[row]..=bounds.right_row_bounds[row]).for_each(|col| {
+                matrix.set_match(row, col, m[row][col]);
+                matrix.set_insert(row, col, i[row][col]);
+                matrix.set_delete(row, col, d[row][col]);
+            });
+        });
+
+        (0..=5).for_each(|row| {
+            (0..=5).for_each(|col| {
+                assert_eq!(matrix.get_match(row, col), m[row][col]);
+                assert_eq!(matrix.get_insert(row, col), i[row][col]);
+                assert_eq!(matrix.get_delete(row, col), d[row][col]);
+            });
+        });
     }
 }
