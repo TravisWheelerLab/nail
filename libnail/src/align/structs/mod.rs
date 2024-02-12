@@ -11,7 +11,7 @@ mod cloud_search_params;
 pub use cloud_search_params::CloudSearchParams;
 
 mod dp_matrix;
-pub use dp_matrix::{DpMatrix, DpMatrix3D};
+pub use dp_matrix::DpMatrix;
 
 mod dp_matrix_flat;
 pub use dp_matrix_flat::DpMatrixFlat;
