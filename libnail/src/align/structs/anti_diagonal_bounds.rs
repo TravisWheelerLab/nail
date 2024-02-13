@@ -469,4 +469,61 @@ mod tests {
                 assert_eq!(b1, b2);
             })
     }
+
+    #[test]
+    fn test_square_corners() {
+        let mut bounds = AntiDiagonalBounds::new(10, 10);
+        bounds.set(9, 6, 3, 3, 6);
+        bounds.set(10, 6, 4, 4, 6);
+        bounds.set(11, 7, 4, 4, 7);
+
+        let mut squared_bounds = bounds.clone();
+        squared_bounds.square_corners();
+
+        let invalid_range = (0..=5).chain(15..=20);
+        invalid_range
+            .map(|idx| squared_bounds.get(idx))
+            .for_each(|b| assert_eq!(*b, AntiDiagonal::default()));
+
+        let unchanged_range = 9..=11;
+        unchanged_range
+            .map(|idx| (squared_bounds.get(idx), bounds.get(idx)))
+            .for_each(|(b1, b2)| assert_eq!(b1, b2));
+
+        let b = squared_bounds.get(6);
+        assert_eq!(b.left_target_idx, 3);
+        assert_eq!(b.left_profile_idx, 3);
+        assert_eq!(b.right_target_idx, 3);
+        assert_eq!(b.right_profile_idx, 3);
+
+        let b = squared_bounds.get(7);
+        assert_eq!(b.left_target_idx, 4);
+        assert_eq!(b.left_profile_idx, 3);
+        assert_eq!(b.right_target_idx, 3);
+        assert_eq!(b.right_profile_idx, 4);
+
+        let b = squared_bounds.get(8);
+        assert_eq!(b.left_target_idx, 5);
+        assert_eq!(b.left_profile_idx, 3);
+        assert_eq!(b.right_target_idx, 3);
+        assert_eq!(b.right_profile_idx, 5);
+
+        let b = squared_bounds.get(12);
+        assert_eq!(b.left_target_idx, 7);
+        assert_eq!(b.left_profile_idx, 5);
+        assert_eq!(b.right_target_idx, 5);
+        assert_eq!(b.right_profile_idx, 7);
+
+        let b = squared_bounds.get(13);
+        assert_eq!(b.left_target_idx, 7);
+        assert_eq!(b.left_profile_idx, 6);
+        assert_eq!(b.right_target_idx, 6);
+        assert_eq!(b.right_profile_idx, 7);
+
+        let b = squared_bounds.get(14);
+        assert_eq!(b.left_target_idx, 7);
+        assert_eq!(b.left_profile_idx, 7);
+        assert_eq!(b.right_target_idx, 7);
+        assert_eq!(b.right_profile_idx, 7);
+    }
 }
