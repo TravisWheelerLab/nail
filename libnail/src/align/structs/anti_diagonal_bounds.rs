@@ -1,9 +1,9 @@
 use crate::util::PrintMe;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct AntiDiagonal {
     pub left_target_idx: usize,
     pub left_profile_idx: usize,
@@ -24,7 +24,7 @@ impl Default for AntiDiagonal {
     }
 }
 
-impl Display for AntiDiagonal {
+impl Debug for AntiDiagonal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -39,7 +39,7 @@ impl Display for AntiDiagonal {
 
 impl PrintMe for AntiDiagonal {
     fn print(&self) {
-        println!("{}", self);
+        println!("{:?}", self);
     }
 }
 
@@ -406,5 +406,67 @@ impl AntiDiagonalBounds {
                 .right_profile_idx
                 .max(backward_bound.right_profile_idx);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_trim_wings() {
+        let mut bounds = AntiDiagonalBounds::new(10, 10);
+        bounds.set(4, 2, 2, 2, 2);
+        bounds.set(5, 3, 2, 2, 3);
+        bounds.set(6, 4, 2, 2, 4);
+        bounds.set(7, 5, 2, 2, 5);
+        bounds.set(8, 6, 2, 2, 6);
+        bounds.set(9, 5, 4, 4, 5);
+        bounds.set(10, 6, 4, 4, 6);
+        bounds.set(11, 6, 5, 5, 6);
+        bounds.set(12, 8, 4, 4, 8);
+        bounds.set(13, 8, 5, 5, 8);
+        bounds.set(14, 8, 6, 6, 8);
+        bounds.set(15, 8, 7, 7, 8);
+        bounds.set(16, 8, 8, 8, 8);
+
+        let mut trimmed_bounds = bounds.clone();
+
+        trimmed_bounds.trim_wings();
+
+        assert!(trimmed_bounds.valid());
+
+        let invalid_range = (0..=3).chain(17..=20);
+        invalid_range
+            .map(|idx| trimmed_bounds.get(idx))
+            .for_each(|b| assert_eq!(*b, AntiDiagonal::default()));
+
+        let unchanged_range = (4..=7).chain(9..=11).chain(13..=16);
+        unchanged_range
+            .map(|idx| (trimmed_bounds.get(idx), bounds.get(idx)))
+            .for_each(|(b1, b2)| assert_eq!(*b1, *b2));
+
+        let b = trimmed_bounds.get(8);
+        assert_eq!(b.left_target_idx, 5);
+        assert_eq!(b.left_profile_idx, 3);
+        assert_eq!(b.right_target_idx, 3);
+        assert_eq!(b.right_profile_idx, 5);
+
+        let b = trimmed_bounds.get(12);
+        assert_eq!(b.left_target_idx, 7);
+        assert_eq!(b.left_profile_idx, 5);
+        assert_eq!(b.right_target_idx, 5);
+        assert_eq!(b.right_profile_idx, 7);
+
+        let mut retrimmed_bounds = trimmed_bounds.clone();
+        retrimmed_bounds.trim_wings();
+
+        trimmed_bounds
+            .bounds
+            .into_iter()
+            .zip(retrimmed_bounds.bounds)
+            .for_each(|(b1, b2)| {
+                assert_eq!(b1, b2);
+            })
     }
 }
