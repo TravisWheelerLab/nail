@@ -430,44 +430,25 @@ mod tests {
         bounds.set(15, 8, 7, 7, 8);
         bounds.set(16, 8, 8, 8, 8);
 
-        let mut trimmed_bounds = bounds.clone();
+        let mut target_bounds = bounds.clone();
+        target_bounds.set(8, 5, 3, 3, 5);
+        target_bounds.set(12, 7, 5, 5, 7);
 
-        trimmed_bounds.trim_wings();
-
-        assert!(trimmed_bounds.valid());
-
-        let invalid_range = (0..=3).chain(17..=20);
-        invalid_range
-            .map(|idx| trimmed_bounds.get(idx))
-            .for_each(|b| assert_eq!(*b, AntiDiagonal::default()));
-
-        let unchanged_range = (4..=7).chain(9..=11).chain(13..=16);
-        unchanged_range
-            .map(|idx| (trimmed_bounds.get(idx), bounds.get(idx)))
-            .for_each(|(b1, b2)| assert_eq!(*b1, *b2));
-
-        let b = trimmed_bounds.get(8);
-        assert_eq!(b.left_target_idx, 5);
-        assert_eq!(b.left_profile_idx, 3);
-        assert_eq!(b.right_target_idx, 3);
-        assert_eq!(b.right_profile_idx, 5);
-
-        let b = trimmed_bounds.get(12);
-        assert_eq!(b.left_target_idx, 7);
-        assert_eq!(b.left_profile_idx, 5);
-        assert_eq!(b.right_target_idx, 5);
-        assert_eq!(b.right_profile_idx, 7);
-
-        let mut retrimmed_bounds = trimmed_bounds.clone();
-        retrimmed_bounds.trim_wings();
-
-        trimmed_bounds
+        bounds.trim_wings();
+        bounds
             .bounds
-            .into_iter()
-            .zip(retrimmed_bounds.bounds)
-            .for_each(|(b1, b2)| {
-                assert_eq!(b1, b2);
-            })
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+
+        // re-run it to make sure it does
+        // nothing to already-trimmed bounds
+        bounds.trim_wings();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
     }
 
     #[test]
@@ -477,53 +458,77 @@ mod tests {
         bounds.set(10, 6, 4, 4, 6);
         bounds.set(11, 7, 4, 4, 7);
 
-        let mut squared_bounds = bounds.clone();
-        squared_bounds.square_corners();
+        let mut target_bounds = bounds.clone();
+        target_bounds.set(6, 3, 3, 3, 3);
+        target_bounds.set(7, 4, 3, 3, 4);
+        target_bounds.set(8, 5, 3, 3, 5);
 
-        let invalid_range = (0..=5).chain(15..=20);
-        invalid_range
-            .map(|idx| squared_bounds.get(idx))
-            .for_each(|b| assert_eq!(*b, AntiDiagonal::default()));
+        target_bounds.set(12, 7, 5, 5, 7);
+        target_bounds.set(13, 7, 6, 6, 7);
+        target_bounds.set(14, 7, 7, 7, 7);
 
-        let unchanged_range = 9..=11;
-        unchanged_range
-            .map(|idx| (squared_bounds.get(idx), bounds.get(idx)))
-            .for_each(|(b1, b2)| assert_eq!(b1, b2));
+        bounds.square_corners();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
 
-        let b = squared_bounds.get(6);
-        assert_eq!(b.left_target_idx, 3);
-        assert_eq!(b.left_profile_idx, 3);
-        assert_eq!(b.right_target_idx, 3);
-        assert_eq!(b.right_profile_idx, 3);
+        // re-run it to make sure it does
+        // nothing to already-squared bounds
+        bounds.square_corners();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+    }
 
-        let b = squared_bounds.get(7);
-        assert_eq!(b.left_target_idx, 4);
-        assert_eq!(b.left_profile_idx, 3);
-        assert_eq!(b.right_target_idx, 3);
-        assert_eq!(b.right_profile_idx, 4);
+    #[test]
+    fn test_merge_join() {
+        let mut forward_bounds = AntiDiagonalBounds::new(10, 10);
+        forward_bounds.set(8, 4, 4, 4, 4);
+        forward_bounds.set(9, 5, 4, 4, 5);
+        forward_bounds.set(10, 6, 4, 4, 6);
+        forward_bounds.set(11, 7, 4, 4, 7);
+        forward_bounds.set(12, 8, 4, 4, 8);
+        forward_bounds.set(13, 8, 5, 5, 8);
+        forward_bounds.set(14, 8, 6, 6, 8);
 
-        let b = squared_bounds.get(8);
-        assert_eq!(b.left_target_idx, 5);
-        assert_eq!(b.left_profile_idx, 3);
-        assert_eq!(b.right_target_idx, 3);
-        assert_eq!(b.right_profile_idx, 5);
+        let mut reverse_bounds = AntiDiagonalBounds::new(10, 10);
+        reverse_bounds.set(6, 4, 2, 2, 4);
+        reverse_bounds.set(7, 5, 2, 2, 5);
+        reverse_bounds.set(8, 6, 2, 2, 6);
+        reverse_bounds.set(9, 6, 3, 3, 6);
+        reverse_bounds.set(10, 6, 4, 4, 6);
+        reverse_bounds.set(11, 6, 5, 5, 6);
+        reverse_bounds.set(12, 6, 6, 6, 6);
 
-        let b = squared_bounds.get(12);
-        assert_eq!(b.left_target_idx, 7);
-        assert_eq!(b.left_profile_idx, 5);
-        assert_eq!(b.right_target_idx, 5);
-        assert_eq!(b.right_profile_idx, 7);
+        let mut target_bounds = AntiDiagonalBounds::new(10, 10);
+        target_bounds.set(6, 4, 2, 2, 4);
+        target_bounds.set(7, 5, 2, 2, 5);
+        target_bounds.set(8, 6, 2, 2, 6);
+        target_bounds.set(9, 6, 3, 3, 6);
+        target_bounds.set(10, 6, 4, 4, 6);
+        target_bounds.set(11, 7, 4, 4, 7);
+        target_bounds.set(12, 8, 4, 4, 8);
+        target_bounds.set(13, 8, 5, 5, 8);
+        target_bounds.set(14, 8, 6, 6, 8);
 
-        let b = squared_bounds.get(13);
-        assert_eq!(b.left_target_idx, 7);
-        assert_eq!(b.left_profile_idx, 6);
-        assert_eq!(b.right_target_idx, 6);
-        assert_eq!(b.right_profile_idx, 7);
+        AntiDiagonalBounds::join_merge(&mut forward_bounds, &reverse_bounds);
+        forward_bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
 
-        let b = squared_bounds.get(14);
-        assert_eq!(b.left_target_idx, 7);
-        assert_eq!(b.left_profile_idx, 7);
-        assert_eq!(b.right_target_idx, 7);
-        assert_eq!(b.right_profile_idx, 7);
+        // re-run it to make sure that
+        // re-joining the bounds does nothing
+        AntiDiagonalBounds::join_merge(&mut forward_bounds, &reverse_bounds);
+        forward_bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
     }
 }
