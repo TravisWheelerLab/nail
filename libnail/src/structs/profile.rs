@@ -1,4 +1,7 @@
-use crate::align::structs::{DpMatrixFlat, DpMatrixSparse, RowBounds, Trace};
+use rand::SeedableRng;
+use rand_pcg::Pcg64;
+
+use crate::align::structs::{DpMatrixSparse, RowBounds, Trace};
 use crate::align::{forward, length_bias_score};
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
@@ -85,69 +88,56 @@ impl Profile {
     pub const MATCH_TO_INSERT_IDX: usize = 6;
     pub const INSERT_TO_INSERT_IDX: usize = 7;
 
-    pub fn calibrate_tau(&mut self, n: usize, target_length: usize) {
+    pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {
         self.configure_for_target_length(target_length);
 
         let mut row_bounds = RowBounds::new(target_length);
         row_bounds.fill_rectangle(1, 1, target_length, self.length);
         let mut forward_matrix = DpMatrixSparse::new(target_length, self.length, &row_bounds);
 
+        // first we are going to generate n random
+        // sequences drawn from the background
+        // distribution and compute their forward scores
         let mut scores = vec![0.0; n];
+        let mut rng = Pcg64::seed_from_u64(0);
         (0..n).for_each(|seq_idx| {
             forward_matrix.reuse(target_length, self.length, &row_bounds);
-            let seq = Sequence::random_amino(target_length);
+            let seq = Sequence::random_amino(target_length, &mut rng);
+
+            // **NOTE: HMMER uses multi-hit mode to calibrate
+            //         Tau, but we are using uni-hit mode
             let forward_score_nats = forward(self, &seq, &mut forward_matrix, &row_bounds);
+
             let null_score_nats = length_bias_score(target_length);
 
-            let forward_score_bits =
-                (forward_score_nats - null_score_nats) / std::f32::consts::LN_2;
-
-            scores[seq_idx] = forward_score_bits;
+            scores[seq_idx] = (forward_score_nats - null_score_nats) / std::f32::consts::LN_2;
         });
 
-        //let scores = [
-        //    -1.504366, 0.895846, -0.172907, -2.620571, -2.868223, -3.176270, -3.728831, -0.185057,
-        //    -3.539029, -2.430213, -3.994046, -2.577063, -3.359447, -2.216906, -2.557495, -2.467121,
-        //    -3.420379, -2.475419, -0.617509, -1.572560, -2.625687, -3.467364, -2.532328, -1.486470,
-        //    -3.099069, -1.088266, -1.554731, -2.355674, -3.488132, -2.104149, -1.346401, -1.475866,
-        //    -2.891736, -2.777906, -0.928439, -3.422777, -1.885561, -3.030625, -3.083956, -2.576361,
-        //    -2.931466, -2.590394, -2.909705, -3.767259, -2.019206, -2.598923, -0.033133, -1.282793,
-        //    1.145949, -2.516939, -3.042393, 0.450592, -1.811978, -3.199646, -2.705153, -2.248631,
-        //    -3.127073, -2.809953, -2.711109, -2.604893, -1.082016, -3.801274, -3.265915, -2.958324,
-        //    -3.936880, -2.592531, -1.580674, -3.264680, -2.049550, -2.643699, -2.725697, -3.362312,
-        //    -3.266914, -3.090422, -3.677707, -2.412420, -2.727616, -2.725939, -3.437995, -3.088321,
-        //    -3.474075, -0.222862, -3.244580, -2.778144, -3.807859, -2.530046, -3.687471, -3.098586,
-        //    -0.062036, -2.713214, -1.529500, -3.595964, -3.413503, -2.127479, -2.375750, -3.464004,
-        //    -3.203416, -1.626595, -3.734239, -2.022500, -2.140148, -1.103836, -2.039302, -2.788296,
-        //    -2.467240, -3.288251, -1.950479, -2.874652, -3.324462, -3.470531, -1.925927, -3.411441,
-        //    -3.593416, -2.867798, -1.993794, -3.205558, -2.991038, -2.961757, -1.953620, -3.768302,
-        //    -2.976820, -1.868483, -3.590745, -3.227986, -3.009086, -2.223046, -2.981594, 1.806790,
-        //    -3.989222, -0.917316, -2.295252, -3.476153, -0.518589, -2.940001, -3.148827, -2.876527,
-        //    -2.515204, -2.406154, -2.913562, -2.836409, -2.924591, -2.777573, -3.988820, -3.669911,
-        //    -3.195895, -3.341163, -2.802616, -1.503576, -1.748802, -3.406860, -2.448678, -2.638261,
-        //    -3.303933, -3.765265, -2.579837, -2.350813, -1.209413, -3.172528, -3.000526, -3.602516,
-        //    -2.859212, -3.444830, -3.297152, -2.862897, -2.368723, -1.845725, -1.768618, -2.923238,
-        //    1.296241, -3.842624, -3.306856, -1.713498, -2.379782, -2.994811, -2.222899, 0.877470,
-        //    -3.197263, -3.331733, -3.180032, -1.565291, 0.363498, -2.070105, -1.979063, -2.417173,
-        //    -4.005939, -4.027726, -3.326597, -2.862119, -2.628895, -3.245254, -3.533534, -2.602711,
-        //    -1.578742, -1.513021, -3.185244, -3.122952, -2.299559, -0.400301, -3.316555, -2.450500,
-        //];
-
-        fn lawless(samples: &[f32], lambda: f32) -> (f32, f32) {
+        /// This is some black magic from a textbook:
+        ///   Statistical Models and Methods for
+        ///   Lifetime Data by Joseph F. Lawless
+        ///   
+        /// From HMMER:
+        ///   Equation 4.1.6 from [Lawless82], pg. 143, and
+        ///   its first derivative with respect to lambda,
+        ///   for finding the ML fit to Gumbel lambda parameter.
+        ///   This equation gives a result of zero for the maximum
+        ///   likelihood lambda.
+        fn lawless416(samples: &[f32], lambda: f32) -> (f32, f32) {
             // e_sum is the sum of e^(-lambda x_i)
-            let mut e_sum = 0.0;
+            let mut e_sum = 0.0f32;
             // x_sum is the sum of x_i
-            let mut x_sum = 0.0;
+            let mut x_sum = 0.0f32;
             // xe_sum is the sum of x_i * e^(-lambda x_i)
-            let mut xe_sum = 0.0;
+            let mut xe_sum = 0.0f32;
             // xe_sum is the sum of x_i^2 * e^(-lambda x_i)
-            let mut xxe_sum = 0.0;
+            let mut xxe_sum = 0.0f32;
 
             samples.iter().for_each(|x| {
                 e_sum += (-lambda * x).exp();
                 x_sum += x;
                 xe_sum += x * (-lambda * x).exp();
-                xxe_sum += x.powi(2) + (-lambda * x).exp();
+                xxe_sum += x.powi(2) * (-lambda * x).exp();
             });
 
             let fx = (1.0 / lambda) - (x_sum / samples.len() as f32) + (xe_sum / e_sum);
@@ -156,29 +146,61 @@ impl Profile {
             (fx, dfx)
         }
 
+        // now make an initial guess at lambda
+        //
+        // from hmmer:
+        //   (Evans/Hastings/Peacock, Statistical Distributions, 2000, p.86)
         let sum: f32 = scores.iter().sum();
         let squared_sum: f32 = scores.iter().map(|s| s.powi(2)).sum();
-
         let sample_variance: f32 =
             (squared_sum - sum * sum / scores.len() as f32) / (scores.len() as f32 - 1.0);
-        let mut lambda: f32 = std::f32::consts::PI / (6.0 / sample_variance).sqrt();
+        let mut gumbel_lambda: f32 = std::f32::consts::PI / (6.0 / sample_variance).sqrt();
 
+        // now we do this Newton/Raphson root finding
+        // thing until we have converged on lambda
         let tolerance: f32 = 1e-5;
         let mut newton_raphson_success = false;
         for _ in 0..=100 {
-            let (fx, dfx) = lawless(&scores, lambda);
-            println!("{fx}");
-
+            let (fx, dfx) = lawless416(&scores, gumbel_lambda);
             if fx.abs() < tolerance {
                 newton_raphson_success = true;
                 break;
             }
-            lambda -= fx / dfx;
-            lambda = lambda.max(0.001);
-            if lambda <= 0.0 {
-                lambda = 0.001;
+            gumbel_lambda -= fx / dfx;
+
+            if gumbel_lambda <= 0.0 {
+                gumbel_lambda = 0.001;
             }
         }
+
+        if !newton_raphson_success {
+            panic!("newton/raphson failed");
+        }
+
+        // this is apparently substituting into equation 4.1.5
+        // from Lawless[82] to solve for the mu parameter
+        let e_sum: f32 = scores.iter().map(|s| (-gumbel_lambda * s).exp()).sum();
+        let gumbel_mu = -(e_sum / scores.len() as f32).ln() / gumbel_lambda;
+
+        // now that we've fit the gumbel lambda, we are going to find our tau
+
+        /// Calculates the inverse CDF for a Gumbel distribution
+        /// with parameters <mu> and <lambda>. That is, returns
+        /// the quantile <x> at which the CDF is <p>.
+        fn gumbel_inverse_cdf(p: f32, mu: f32, lambda: f32) -> f32 {
+            mu - ((-p.ln()).ln() / lambda)
+        }
+
+        // basically, there is (maybe?) no good method for fitting an exponential,
+        // so instead we have fit a Gumbel that we are going to use to pick our tau
+        //
+        // from hmmer:
+        //   Explanation of the eqn below: first find the x at which the Gumbel tail
+        //   mass is predicted to be equal to tailp. Then back up from that x
+        //   by log(tailp)/lambda to set the origin of the exponential tail to 1.0
+        //   instead of tailp.
+        self.forward_tau = gumbel_inverse_cdf(1.0 - tail_probability, gumbel_mu, gumbel_lambda)
+            + (tail_probability.ln() / self.forward_lambda);
     }
 
     pub fn new(hmm: &Hmm) -> Self {
@@ -542,8 +564,12 @@ mod tests {
         let hmm = Hmm::from_blosum_62_and_sequence(&seq)?;
         let mut profile = Profile::new(&hmm);
 
-        profile.calibrate_tau(200, 100);
-        panic!();
+        profile.calibrate_tau(200, 100, 0.04);
+
+        let correct_tau = -4.193134f32;
+        let diff = (correct_tau - profile.forward_tau).abs();
+        assert!(diff <= 1e-5);
+
         Ok(())
     }
 }

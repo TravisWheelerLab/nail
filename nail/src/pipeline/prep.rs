@@ -127,7 +127,6 @@ pub fn prep(args: &PrepArgs) -> Result<()> {
                     &args.prep_dir.path.join("tmp.fasta"),
                     &args.prep_dir.prep_query_hmm_path(),
                     &args.prep_dir.path.join("tmp.hmm"),
-                    args.common_args.num_threads,
                 )?;
             }
         }
@@ -196,7 +195,6 @@ pub fn build_hmm_from_fasta(
     temp_fasta_path: &impl AsRef<Path>,
     query_hmm_path: &impl AsRef<Path>,
     temp_hmm_path: &impl AsRef<Path>,
-    num_threads: usize,
 ) -> anyhow::Result<()> {
     let query_fasta_path = query_fasta_path.as_ref();
     let query_hmm_path = query_hmm_path.as_ref();

@@ -197,5 +197,9 @@ pub fn forward(
         );
     }
 
-    dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX)
+    let final_c_state_score = dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX);
+    let c_to_n_score =
+        profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX);
+
+    final_c_state_score + c_to_n_score
 }

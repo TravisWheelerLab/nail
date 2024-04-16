@@ -247,7 +247,6 @@ pub fn align(
                         &temp_fasta_path,
                         &hmm_path,
                         &temp_hmm_path,
-                        args.common_args.num_threads,
                     )?;
                     hmm_path
                 }

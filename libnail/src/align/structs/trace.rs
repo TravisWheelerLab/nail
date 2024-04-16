@@ -18,7 +18,7 @@ pub struct Trace {
 }
 
 impl Trace {
-    pub const TRACE_IDX_TO_NAME: [&str; 12] = [
+    pub const TRACE_IDX_TO_NAME: [&'static str; 12] = [
         "INVALID", "M", "D", "I", "S", "N", "B", "E", "C", "T", "J", "X",
     ];
 

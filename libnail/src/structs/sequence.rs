@@ -1,10 +1,12 @@
 use rand::Rng;
+use rand_pcg::Lcg128Xsl64;
 use seq_io::fasta::{Reader, Record};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::Path;
 
 use crate::alphabet::{
-    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, UTF8_SPACE, UTF8_TO_DIGITAL_AMINO,
+    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, AMINO_SENTINEL, UTF8_SPACE,
+    UTF8_TO_DIGITAL_AMINO,
 };
 use anyhow::{Context, Result};
 use thiserror::Error;
@@ -39,11 +41,11 @@ pub struct Sequence {
 }
 
 impl Sequence {
-    pub fn random_amino(length: usize) -> Self {
-        let mut rng = rand::thread_rng();
-        let digital_bytes = (0..=length)
+    pub fn random_amino(length: usize, rng: &mut Lcg128Xsl64) -> Self {
+        let mut digital_bytes = (0..=length)
             .map(|_| {
                 let roll: f32 = rng.gen();
+
                 let mut sum = 0.0f32;
                 let mut choice = 0u8;
                 for (residue_idx, p) in AMINO_BACKGROUND_FREQUENCIES.iter().enumerate() {
@@ -56,6 +58,12 @@ impl Sequence {
                 choice
             })
             .collect::<Vec<u8>>();
+
+        // we should have <length + 1> bytes, since
+        // we start with the sentinel character
+        debug_assert_eq!(length + 1, digital_bytes.len());
+
+        digital_bytes[0] = AMINO_SENTINEL;
 
         let utf8_bytes = digital_bytes
             .iter()
@@ -217,6 +225,9 @@ impl Debug for Sequence {
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng;
+    use rand_pcg::Pcg64;
+
     use crate::{alphabet::AMINO_BACKGROUND_FREQUENCIES, structs::Sequence};
 
     #[test]
@@ -224,25 +235,29 @@ mod tests {
         const TOLERANCE: f32 = 1e-3;
         let mut counts = [0usize; 20];
 
-        (0..100_000).for_each(|_| {
-            let s = Sequence::random_amino(100);
-            s.digital_bytes
+        let mut rng = Pcg64::seed_from_u64(0);
+
+        (0..1_000).for_each(|_| {
+            let s = Sequence::random_amino(100, &mut rng);
+            s.digital_bytes[1..]
                 .iter()
                 .for_each(|&b| counts[b as usize] += 1);
         });
 
-        let total_residues: usize = counts.iter().sum();
+        let total_residues = counts.iter().sum::<usize>() as f32;
 
-        counts.iter().zip(AMINO_BACKGROUND_FREQUENCIES).for_each(
-            |(&residue_count, correct_frequency)| {
-                let computed_frequency = residue_count as f32 / total_residues as f32;
-                let diff = (computed_frequency - correct_frequency).abs();
+        counts
+            .iter()
+            .map(|&c| c as f32 / total_residues)
+            .zip(AMINO_BACKGROUND_FREQUENCIES)
+            .for_each(|(computed_f, correct_f)| {
+                // println!("{correct_f:.3} {computed_f:.3}");
+                let diff = (computed_f - correct_f).abs();
                 assert!(
                     diff <= TOLERANCE,
                     "difference in computed residue frequencies is above tolerance: {diff} > {TOLERANCE}",
                 );
-            },
-        );
+            });
         Ok(())
     }
 }
