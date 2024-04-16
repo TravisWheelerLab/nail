@@ -1,8 +1,11 @@
+use rand::Rng;
 use seq_io::fasta::{Reader, Record};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::Path;
 
-use crate::alphabet::{AMINO_INVERSE_MAP, UTF8_SPACE, UTF8_TO_DIGITAL_AMINO};
+use crate::alphabet::{
+    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, UTF8_SPACE, UTF8_TO_DIGITAL_AMINO,
+};
 use anyhow::{Context, Result};
 use thiserror::Error;
 
@@ -36,6 +39,38 @@ pub struct Sequence {
 }
 
 impl Sequence {
+    pub fn random_amino(length: usize) -> Self {
+        let mut rng = rand::thread_rng();
+        let digital_bytes = (0..=length)
+            .map(|_| {
+                let roll: f32 = rng.gen();
+                let mut sum = 0.0f32;
+                let mut choice = 0u8;
+                for (residue_idx, p) in AMINO_BACKGROUND_FREQUENCIES.iter().enumerate() {
+                    sum += p;
+                    if roll <= sum {
+                        choice = residue_idx as u8;
+                        break;
+                    }
+                }
+                choice
+            })
+            .collect::<Vec<u8>>();
+
+        let utf8_bytes = digital_bytes
+            .iter()
+            .map(|b| *AMINO_INVERSE_MAP.get(b).expect(""))
+            .collect();
+
+        Self {
+            name: "random-seq".to_string(),
+            details: None,
+            length,
+            digital_bytes,
+            utf8_bytes,
+        }
+    }
+
     pub fn amino_from_fasta<P: AsRef<Path>>(path: P) -> Result<Vec<Self>> {
         let mut seqs: Vec<Self> = vec![];
 
@@ -176,6 +211,38 @@ impl Display for Sequence {
 impl Debug for Sequence {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", std::str::from_utf8(&self.utf8_bytes[1..]).unwrap())?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{alphabet::AMINO_BACKGROUND_FREQUENCIES, structs::Sequence};
+
+    #[test]
+    fn test_random_amino() -> anyhow::Result<()> {
+        const TOLERANCE: f32 = 1e-3;
+        let mut counts = [0usize; 20];
+
+        (0..100_000).for_each(|_| {
+            let s = Sequence::random_amino(100);
+            s.digital_bytes
+                .iter()
+                .for_each(|&b| counts[b as usize] += 1);
+        });
+
+        let total_residues: usize = counts.iter().sum();
+
+        counts.iter().zip(AMINO_BACKGROUND_FREQUENCIES).for_each(
+            |(&residue_count, correct_frequency)| {
+                let computed_frequency = residue_count as f32 / total_residues as f32;
+                let diff = (computed_frequency - correct_frequency).abs();
+                assert!(
+                    diff <= TOLERANCE,
+                    "difference in computed residue frequencies is above tolerance: {diff} > {TOLERANCE}",
+                );
+            },
+        );
         Ok(())
     }
 }
