@@ -75,7 +75,7 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
 
     prep(&prep_args)?;
     let (profiles, seed_map) = seed(&seed_args)?;
-
     align(&align_args, Some(profiles), Some(seed_map))?;
+
     Ok(())
 }

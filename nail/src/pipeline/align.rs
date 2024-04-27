@@ -314,6 +314,7 @@ pub fn align(
 
     profile_seeds_pairs
         .into_par_iter()
+        .panic_fuse()
         .for_each_with(thread_data, align_seeds);
 
     Ok(())

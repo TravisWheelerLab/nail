@@ -1,6 +1,8 @@
 mod args;
 mod cli;
+mod database;
 mod extension_traits;
+mod id;
 mod pipeline;
 mod viz;
 
