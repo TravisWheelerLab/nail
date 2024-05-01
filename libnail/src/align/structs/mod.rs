@@ -1,5 +1,5 @@
 mod alignment;
-pub use alignment::{Alignment, ScoreParams};
+pub use alignment::{Alignment, AlignmentBuilder, ScoreParams};
 
 mod anti_diagonal_bounds;
 pub use anti_diagonal_bounds::{AntiDiagonal, AntiDiagonalBounds};

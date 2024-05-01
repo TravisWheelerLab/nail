@@ -516,7 +516,7 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
 
         let mut alignment = Alignment::from_trace(&trace, pair.profile, target, &data.score_params);
 
-        if alignment.evalue <= data.evalue_threshold {
+        if alignment.e_value.unwrap() <= data.evalue_threshold {
             alignment.cell_fraction = Some(
                 cloud_search_data.row_bounds.num_cells() as f32
                     / (target.length * profile_length) as f32,
@@ -527,7 +527,7 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
         }
     }
 
-    alignments.sort_by(|a, b| a.evalue.partial_cmp(&b.evalue).unwrap());
+    alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
 
     alignments.iter().for_each(|a| {
         match data.output.tab_results_writer.lock() {

@@ -2,6 +2,40 @@ use crate::align::structs::Alignment;
 
 use anyhow::Context;
 
+trait ExtractString {
+    fn extract_string(&self) -> String;
+    fn empty_string(&self) -> String {
+        "-".to_string()
+    }
+}
+
+impl ExtractString for Option<String> {
+    fn extract_string(&self) -> String {
+        match self {
+            Some(string) => string.to_string(),
+            None => self.empty_string(),
+        }
+    }
+}
+
+impl ExtractString for Option<f32> {
+    fn extract_string(&self) -> String {
+        match self {
+            Some(f) => format!("{f:.1}"),
+            None => self.empty_string(),
+        }
+    }
+}
+
+impl ExtractString for Option<f64> {
+    fn extract_string(&self) -> String {
+        match self {
+            Some(f) => format!("{f:.1e}"),
+            None => self.empty_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Field {
     Target,
@@ -14,6 +48,23 @@ pub enum Field {
     CompBias,
     Evalue,
     CellFrac,
+}
+
+impl Field {
+    pub fn extract_from(&self, alignment: &Alignment) -> String {
+        match self {
+            Field::Target => alignment.target_name.extract_string(),
+            Field::Query => alignment.profile_name.extract_string(),
+            Field::TargetStart => alignment.target_start.to_string(),
+            Field::TargetEnd => alignment.target_end.to_string(),
+            Field::QueryStart => alignment.profile_start.to_string(),
+            Field::QueryEnd => alignment.profile_end.to_string(),
+            Field::Score => alignment.score_bits.extract_string(),
+            Field::CompBias => alignment.null_two.extract_string(),
+            Field::Evalue => alignment.e_value.extract_string(),
+            Field::CellFrac => alignment.cell_fraction.extract_string(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -79,22 +130,7 @@ impl TableFormat {
 
     pub fn update_widths(&mut self, alignment: &Alignment) {
         self.fields.iter().enumerate().for_each(|(idx, field)| {
-            let width = match field {
-                Field::Target => alignment.target_name.len(),
-                Field::Query => alignment.profile_name.len(),
-                Field::TargetStart => alignment.target_start.to_string().len(),
-                Field::TargetEnd => alignment.target_end.to_string().len(),
-                Field::QueryStart => alignment.profile_start.to_string().len(),
-                Field::QueryEnd => alignment.profile_end.to_string().len(),
-                Field::Score => format!("{:.2}", alignment.score_bits).len(),
-                Field::CompBias => format!("{:.2}", alignment.composition_bias_bits).len(),
-                Field::Evalue => format!("{:.1e}", alignment.evalue).len(),
-                Field::CellFrac => match alignment.cell_fraction {
-                    Some(frac) => format!("{:.1e}", frac).len(),
-                    None => 0,
-                },
-            };
-
+            let width = field.extract_from(alignment).len();
             self.widths[idx] = self.widths[idx].max(width);
         });
     }

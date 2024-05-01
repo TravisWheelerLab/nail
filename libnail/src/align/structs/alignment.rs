@@ -6,26 +6,8 @@ use std::cmp::{max, min};
 use super::Trace;
 
 pub struct Alignment {
-    /// The name of the profile/model
-    pub profile_name: String,
-    /// The name of the target sequence
-    pub target_name: String,
-    /// The final bit score of the alignment (after all bias adjustments)
-    pub score_bits: f32,
-    /// The raw bit score of the alignment (before any bias adjustments)
-    pub raw_score_bits: f32,
-    /// The bit score of the length bias adjustment
-    pub length_bias_bits: f32,
-    /// The bit score of the composition bias adjustment
-    pub composition_bias_bits: f32,
-    /// The P-value of the alignment
-    pub pvalue: f64,
-    /// The E-value of the alignment
-    pub evalue: f64,
     /// The length of the alignment
     pub length: usize,
-    /// The fraction of dynamic programming cells filled in during alignment.
-    pub cell_fraction: Option<f32>,
     /// The start coordinate of the profile (query)
     pub profile_start: usize,
     /// The end coordinate of the profile (query)
@@ -35,16 +17,35 @@ pub struct Alignment {
     /// The end coordinate of the target sequence
     pub target_end: usize,
 
+    // optional fields
+    /// The name of the profile/model
+    pub profile_name: Option<String>,
+    /// The name of the target sequence
+    pub target_name: Option<String>,
+    /// The final bit score of the alignment (after all bias adjustments)
+    pub score_bits: Option<f32>,
+    /// The raw bit score of the alignment (before any bias adjustments)
+    pub raw_score_bits: Option<f32>,
+    /// The bit score of the length bias adjustment
+    pub null_one: Option<f32>,
+    /// The bit score of the composition bias adjustment
+    pub null_two: Option<f32>,
+    /// The P-value of the alignment
+    pub p_value: Option<f64>,
+    /// The E-value of the alignment
+    pub e_value: Option<f64>,
+    /// The fraction of dynamic programming cells filled in during alignment.
+    pub cell_fraction: Option<f32>,
+
     // display strings
-    // ---------------
     /// The display for the profile portion of the alignment
-    pub profile_string: String,
+    pub profile_string: Option<String>,
     /// The display for the target portion of the alignment
-    pub target_string: String,
+    pub target_string: Option<String>,
     /// The display in between the profile and target
-    pub middle_string: String,
+    pub middle_string: Option<String>,
     /// The display for position-specific posterior probability bins
-    pub posterior_probability_string: String,
+    pub posterior_string: Option<String>,
 }
 
 enum SearchState {
@@ -102,14 +103,57 @@ impl ScoreParams {
     }
 }
 
-struct AlignmentBuilder {
+#[derive(Default)]
+pub struct AlignmentBuilder<'a> {
     profile_indices: Vec<usize>,
     target_indices: Vec<usize>,
     posteriors: Vec<f32>,
+    profile: Option<&'a Profile>,
+    target: Option<&'a Sequence>,
+    target_count: Option<usize>,
+    raw_score: Option<f32>,
+    null_one: Option<f32>,
+    null_two: Option<f32>,
+    cell_fraction: Option<f32>,
 }
 
-impl AlignmentBuilder {
-    fn new(trace: &Trace) -> Self {
+struct Nats(f32);
+impl Nats {
+    fn get(&self) -> f32 {
+        self.0
+    }
+
+    fn set(&mut self, value: f32) {
+        self.0 = value;
+    }
+
+    fn to_bits(&self) -> Bits {
+        Bits(self.0 / std::f32::consts::LN_2)
+    }
+}
+
+struct Bits(f32);
+impl Bits {
+    fn get(&self) -> f32 {
+        self.0
+    }
+
+    fn set(&mut self, value: f32) {
+        self.0 = value;
+    }
+
+    fn to_nats(&self) -> Nats {
+        Nats(self.0 * std::f32::consts::LN_2)
+    }
+}
+
+enum Score {
+    Nats(Nats),
+    Bits(Bits),
+}
+
+impl<'a> AlignmentBuilder<'a> {
+    pub fn new(trace: &Trace) -> Self {
         let mut profile_indices = vec![];
         let mut target_indices = vec![];
         let mut posteriors = vec![];
@@ -129,30 +173,166 @@ impl AlignmentBuilder {
             profile_indices,
             target_indices,
             posteriors,
+            ..Default::default()
         }
     }
 
-    fn build(self) -> Alignment {
-        Alignment {
-            profile_name: todo!(),
-            target_name: todo!(),
-            score_bits: todo!(),
-            raw_score_bits: todo!(),
-            length_bias_bits: todo!(),
-            composition_bias_bits: todo!(),
-            pvalue: todo!(),
-            evalue: todo!(),
-            length: todo!(),
-            cell_fraction: todo!(),
-            profile_start: todo!(),
-            profile_end: todo!(),
-            target_start: todo!(),
-            target_end: todo!(),
-            profile_string: todo!(),
-            target_string: todo!(),
-            middle_string: todo!(),
-            posterior_probability_string: todo!(),
-        }
+    pub fn with_profile(mut self, profile: &'a Profile) -> Self {
+        self.profile = Some(profile);
+        self
+    }
+
+    pub fn with_target(mut self, target: &'a Sequence) -> Self {
+        self.target = Some(target);
+        self
+    }
+
+    pub fn with_target_count(mut self, count: usize) -> Self {
+        self.target_count = Some(count);
+        self
+    }
+
+    pub fn with_raw_score(mut self, score: f32) -> Self {
+        self.raw_score = Some(score);
+        self
+    }
+
+    pub fn with_null_one(mut self, null_one: f32) -> Self {
+        self.null_one = Some(null_one);
+        self
+    }
+
+    pub fn with_null_two(mut self, null_two: f32) -> Self {
+        self.null_two = Some(null_two);
+        self
+    }
+
+    pub fn with_cell_fraction(mut self, cell_fraction: f32) -> Self {
+        self.cell_fraction = Some(cell_fraction);
+        self
+    }
+
+    pub fn build(self) -> anyhow::Result<Alignment> {
+        let length = self.profile_indices.len();
+        let profile_start = *self.profile_indices.first().unwrap();
+        let profile_end = *self.profile_indices.last().unwrap();
+        let target_start = *self.target_indices.first().unwrap();
+        let target_end = *self.target_indices.last().unwrap();
+
+        let raw_score = self.raw_score;
+        let score_bits = match raw_score {
+            Some(mut score) => {
+                if let Some(null_one) = self.null_one {
+                    score += null_one
+                }
+
+                if let Some(null_two) = self.null_two {
+                    score += null_two
+                }
+
+                Some(score)
+            }
+            None => None,
+        };
+
+        let target_count = self.target_count.unwrap_or(1);
+
+        let p_value = match (score_bits, self.profile) {
+            (Some(score), Some(profile)) => Some(
+                (-profile.forward_lambda as f64 * (score as f64 - profile.forward_tau as f64))
+                    .exp(),
+            ),
+            (_, _) => None,
+        };
+
+        let e_value = p_value.map(|p_value| p_value * target_count as f64);
+
+        let profile_name = self.profile.map(|profile| profile.name.clone());
+
+        let target_name = self.target.map(|target| target.name.clone());
+
+        let (profile_string, target_string, middle_string) = match (self.profile, self.target) {
+            (Some(profile), Some(target)) => {
+                let mut profile_bytes = vec![];
+                let mut target_bytes = vec![];
+                let mut middle_bytes = vec![];
+                self.profile_indices
+                    .into_iter()
+                    .zip(self.target_indices)
+                    .for_each(|(target_idx, profile_idx)| {
+                        let profile_byte = profile.consensus_sequence[profile_idx];
+                        let target_byte = target.utf8_bytes[target_idx];
+
+                        match (profile_byte, target_byte) {
+                            (0, _) => {
+                                profile_bytes.push(UTF8_DASH);
+                                target_bytes.push(target_byte);
+                            }
+                            (_, 0) => {
+                                profile_bytes.push(profile_byte);
+                                target_bytes.push(UTF8_DASH);
+                            }
+                            (_, _) => {
+                                let target_byte_digital = target.digital_bytes[target_idx];
+
+                                profile_bytes.push(profile_byte);
+                                target_bytes.push(target_byte);
+
+                                if profile_byte == target_byte {
+                                    middle_bytes.push(profile_byte);
+                                } else if profile
+                                    .match_score(target_byte_digital as usize, profile_idx)
+                                    > 0.0
+                                {
+                                    middle_bytes.push(UTF8_PLUS);
+                                } else {
+                                    middle_bytes.push(UTF8_SPACE);
+                                }
+                            }
+                        }
+                    });
+
+                let profile_string = String::from_utf8(profile_bytes)?;
+                let target_string = String::from_utf8(target_bytes)?;
+                let middle_string = String::from_utf8(middle_bytes)?;
+
+                (
+                    Some(profile_string),
+                    Some(target_string),
+                    Some(middle_string),
+                )
+            }
+            _ => (None, None, None),
+        };
+
+        let posterior_string = String::from_utf8(
+            self.posteriors
+                .into_iter()
+                .map(map_posterior_probability_to_bin_byte)
+                .collect(),
+        )
+        .unwrap();
+
+        Ok(Alignment {
+            profile_name,
+            target_name,
+            score_bits,
+            raw_score_bits: self.raw_score,
+            null_one: self.null_one,
+            null_two: self.null_two,
+            p_value,
+            e_value,
+            length,
+            cell_fraction: self.cell_fraction,
+            profile_start,
+            profile_end,
+            target_start,
+            target_end,
+            profile_string,
+            target_string,
+            middle_string,
+            posterior_string: Some(posterior_string),
+        })
     }
 }
 
@@ -258,27 +438,26 @@ impl Alignment {
                             let evalue = pvalue * params.target_count as f64;
 
                             return Alignment {
-                                profile_name: profile.name.clone(),
-                                target_name: target.name.clone(),
-                                score_bits,
-                                raw_score_bits,
-                                length_bias_bits,
-                                composition_bias_bits,
-                                pvalue,
-                                evalue,
+                                profile_name: Some(profile.name.clone()),
+                                target_name: Some(target.name.clone()),
+                                score_bits: Some(score_bits),
+                                raw_score_bits: Some(raw_score_bits),
+                                null_one: Some(length_bias_bits),
+                                null_two: Some(composition_bias_bits),
+                                p_value: Some(pvalue),
+                                e_value: Some(evalue),
                                 length: profile_bytes.len(),
                                 profile_start,
                                 profile_end,
                                 target_start,
                                 target_end,
                                 cell_fraction: None,
-                                profile_string: String::from_utf8(profile_bytes).unwrap(),
-                                target_string: String::from_utf8(target_bytes).unwrap(),
-                                middle_string: String::from_utf8(mid_bytes).unwrap(),
-                                posterior_probability_string: String::from_utf8(
-                                    posterior_probability_bytes,
-                                )
-                                .unwrap(),
+                                profile_string: Some(String::from_utf8(profile_bytes).unwrap()),
+                                target_string: Some(String::from_utf8(target_bytes).unwrap()),
+                                middle_string: Some(String::from_utf8(mid_bytes).unwrap()),
+                                posterior_string: Some(
+                                    String::from_utf8(posterior_probability_bytes).unwrap(),
+                                ),
                             };
                         }
                         _ => {
@@ -295,25 +474,6 @@ impl Alignment {
 
     pub const TAB_HEADER: &'static str = "#target\tquery\ttarget start\ttarget end\tprofile start\tprofile end\tscore\tcomposition bias\tE-value\tcell fraction";
 
-    pub fn tab_string(&self) -> String {
-        format!(
-            "{} {} {} {} {} {} {:.2} {:.2} {:.1e} {}",
-            self.target_name,
-            self.profile_name,
-            self.target_start,
-            self.target_end,
-            self.profile_start,
-            self.profile_end,
-            self.score_bits,
-            self.composition_bias_bits,
-            self.evalue,
-            match self.cell_fraction {
-                Some(frac) => format!("{:.1e}", frac),
-                None => "-".to_string(),
-            },
-        )
-    }
-
     pub fn tab_string_formatted(&self, format: &TableFormat) -> String {
         let mut tab_string = String::new();
 
@@ -322,21 +482,7 @@ impl Alignment {
             .iter()
             .zip(format.widths.iter())
             .for_each(|(field, width)| {
-                let val = match field {
-                    Field::Target => self.target_name.clone(),
-                    Field::Query => self.profile_name.clone(),
-                    Field::TargetStart => self.target_start.to_string(),
-                    Field::TargetEnd => self.target_end.to_string(),
-                    Field::QueryStart => self.profile_start.to_string(),
-                    Field::QueryEnd => self.profile_end.to_string(),
-                    Field::Score => format!("{:.2}", self.score_bits),
-                    Field::CompBias => format!("{:.2}", self.composition_bias_bits),
-                    Field::Evalue => format!("{:.1e}", self.evalue),
-                    Field::CellFrac => match self.cell_fraction {
-                        Some(frac) => format!("{:.1e}", frac),
-                        None => "-".to_string(),
-                    },
-                };
+                let val = field.extract_from(self);
                 tab_string = format!("{tab_string}{val:width$} ", width = width)
             });
 
@@ -347,16 +493,30 @@ impl Alignment {
     }
 
     pub fn ali_string(&self) -> String {
+        let (profile_string, target_string, middle_string, posterior_string) = match (
+            &self.profile_string,
+            &self.target_string,
+            &self.middle_string,
+            &self.posterior_string,
+        ) {
+            (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+            _ => panic!(),
+        };
+
         let mut ali_string = String::new();
         let mut start_offset: usize = 0;
         let mut end_offset: usize = 80;
 
-        let name_width = max(self.profile_name.len(), self.target_name.len());
+        let name_width = max(
+            Field::Query.extract_from(self).len(),
+            Field::Target.extract_from(self).len(),
+        );
 
         // score line
         ali_string.push_str(&format!(
-            "==  score: {:3.1} bits;  E-value: {:1.1e}\n",
-            self.score_bits, self.evalue
+            "==  score: {} bits;  E-value: {}\n",
+            Field::Score.extract_from(self),
+            Field::Evalue.extract_from(self)
         ));
 
         while start_offset <= self.length {
@@ -366,9 +526,9 @@ impl Alignment {
             // profile sequence
             ali_string.push_str(&format!(
                 "{:>W$} {:5} {} {:<5}\n",
-                self.profile_name,
+                Field::Query.extract_from(self).len(),
                 self.profile_start + start_offset,
-                &self.profile_string[start_offset..end_offset],
+                &profile_string[start_offset..end_offset],
                 self.profile_start + end_offset - 1,
                 W = name_width
             ));
@@ -378,16 +538,16 @@ impl Alignment {
                 "{:W$} {:5} {}\n",
                 "",
                 "",
-                &self.middle_string[start_offset..end_offset],
+                &middle_string[start_offset..end_offset],
                 W = name_width
             ));
 
             // target sequence
             ali_string.push_str(&format!(
                 "{:>W$} {:5} {} {:<5}\n",
-                self.target_name,
+                Field::Target.extract_from(self).len(),
                 self.target_start + start_offset,
-                &self.target_string[start_offset..end_offset],
+                &target_string[start_offset..end_offset],
                 self.target_start + end_offset - 1,
                 W = name_width
             ));
@@ -397,7 +557,7 @@ impl Alignment {
                 "{:W$} {:5} {}\n\n",
                 "",
                 "",
-                &self.posterior_probability_string[start_offset..end_offset],
+                &posterior_string[start_offset..end_offset],
                 W = name_width
             ));
 

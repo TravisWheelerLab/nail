@@ -11,8 +11,8 @@ use libnail::{
         backward, cloud_search_backward, cloud_search_forward, composition_bias_score, forward,
         length_bias_score, optimal_accuracy, posterior,
         structs::{
-            Alignment, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds, Seed,
-            Trace,
+            Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse,
+            RowBounds, Seed, Trace,
         },
         traceback, CloudSearchParams, CloudSearchScores,
     },
@@ -203,9 +203,6 @@ impl AlignmentStep {
             bounds,
         );
 
-        let null1 = length_bias_score(target.length);
-        let null2 = composition_bias_score(&self.posterior_matrix, profile, target, bounds);
-
         optimal_accuracy(
             profile,
             &self.posterior_matrix,
@@ -222,17 +219,22 @@ impl AlignmentStep {
             bounds.target_end,
         );
 
-        // TODO: make this work again after I refactor Alignment struct
-        let mut alignment = Alignment::from_trace(&trace, profile, target, todo!());
+        let null1 = length_bias_score(target.length);
+        let null2 = composition_bias_score(&self.posterior_matrix, profile, target, bounds);
 
-        // if alignment.evalue <= data.evalue_threshold {
-        //     alignment.cell_fraction =
-        //         Some(bounds.num_cells() as f32 / (target.length * profile.length) as f32);
-
-        //     data.output.table_format.update_widths(&alignment);
-        //     alignments.push(alignment);
-        // }
-        None
+        match AlignmentBuilder::new(&trace)
+            .with_profile(profile)
+            .with_target(target)
+            .with_target_count(1)
+            .with_raw_score(forward_score_nats)
+            .with_null_one(null1)
+            .with_null_two(null2)
+            .with_cell_fraction(bounds.num_cells() as f32 / (profile.length * target.length) as f32)
+            .build()
+        {
+            Ok(alignment) => Some(alignment),
+            Err(_) => None,
+        }
     }
 }
 
