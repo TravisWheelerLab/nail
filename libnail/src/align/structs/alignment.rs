@@ -102,6 +102,60 @@ impl ScoreParams {
     }
 }
 
+struct AlignmentBuilder {
+    profile_indices: Vec<usize>,
+    target_indices: Vec<usize>,
+    posteriors: Vec<f32>,
+}
+
+impl AlignmentBuilder {
+    fn new(trace: &Trace) -> Self {
+        let mut profile_indices = vec![];
+        let mut target_indices = vec![];
+        let mut posteriors = vec![];
+
+        trace
+            .iter()
+            .filter(|s| {
+                s.state == Trace::M_STATE || s.state == Trace::I_STATE || s.state == Trace::D_STATE
+            })
+            .for_each(|s| {
+                profile_indices.push(s.profile_idx);
+                target_indices.push(s.target_idx);
+                posteriors.push(s.posterior_probability);
+            });
+
+        Self {
+            profile_indices,
+            target_indices,
+            posteriors,
+        }
+    }
+
+    fn build(self) -> Alignment {
+        Alignment {
+            profile_name: todo!(),
+            target_name: todo!(),
+            score_bits: todo!(),
+            raw_score_bits: todo!(),
+            length_bias_bits: todo!(),
+            composition_bias_bits: todo!(),
+            pvalue: todo!(),
+            evalue: todo!(),
+            length: todo!(),
+            cell_fraction: todo!(),
+            profile_start: todo!(),
+            profile_end: todo!(),
+            target_start: todo!(),
+            target_end: todo!(),
+            profile_string: todo!(),
+            target_string: todo!(),
+            middle_string: todo!(),
+            posterior_probability_string: todo!(),
+        }
+    }
+}
+
 impl Alignment {
     pub fn from_trace(
         trace: &Trace,
