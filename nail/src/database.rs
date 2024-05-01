@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use libnail::structs::{Hmm, Profile, Sequence};
 use rayon::iter::{
@@ -11,23 +11,42 @@ pub trait Database<I, O> {
     fn par_iter(&self) -> DbParIter<I, O>;
 }
 
-pub struct ProfileVec {
-    profiles: Vec<Arc<Profile>>,
+pub struct ProfileCollection {
+    profiles: Vec<Arc<Mutex<Profile>>>,
 }
 
-pub struct SeqVec {
+impl ProfileCollection {
+    pub fn new(profiles: Vec<Profile>) -> Self {
+        Self {
+            profiles: profiles
+                .into_iter()
+                .map(|p| Arc::new(Mutex::new(p)))
+                .collect(),
+        }
+    }
+}
+
+pub struct SequenceCollection {
     sequences: Vec<Arc<Sequence>>,
 }
 
-impl Database<Arc<Profile>, Arc<Profile>> for ProfileVec {
-    fn iter(&self) -> DbIter<Arc<Profile>, Arc<Profile>> {
+impl SequenceCollection {
+    pub fn new(sequences: Vec<Sequence>) -> Self {
+        Self {
+            sequences: sequences.into_iter().map(Arc::new).collect(),
+        }
+    }
+}
+
+impl Database<Arc<Mutex<Profile>>, Arc<Mutex<Profile>>> for ProfileCollection {
+    fn iter(&self) -> DbIter<Arc<Mutex<Profile>>, Arc<Mutex<Profile>>> {
         DbIter {
             inner: &self.profiles,
             callback: &|p| p.clone(),
         }
     }
 
-    fn par_iter(&self) -> DbParIter<Arc<Profile>, Arc<Profile>> {
+    fn par_iter(&self) -> DbParIter<Arc<Mutex<Profile>>, Arc<Mutex<Profile>>> {
         DbParIter {
             inner: &self.profiles,
             callback: &|p| p.clone(),
@@ -35,27 +54,43 @@ impl Database<Arc<Profile>, Arc<Profile>> for ProfileVec {
     }
 }
 
-impl Database<Arc<Sequence>, Arc<Profile>> for SeqVec {
-    fn iter(&self) -> DbIter<Arc<Sequence>, Arc<Profile>> {
+impl Database<Arc<Sequence>, Arc<Sequence>> for SequenceCollection {
+    fn iter(&self) -> DbIter<Arc<Sequence>, Arc<Sequence>> {
+        DbIter {
+            inner: &self.sequences,
+            callback: &|s| s.clone(),
+        }
+    }
+
+    fn par_iter(&self) -> DbParIter<Arc<Sequence>, Arc<Sequence>> {
+        DbParIter {
+            inner: &self.sequences,
+            callback: &|s| s.clone(),
+        }
+    }
+}
+
+impl Database<Arc<Sequence>, Arc<Mutex<Profile>>> for SequenceCollection {
+    fn iter(&self) -> DbIter<Arc<Sequence>, Arc<Mutex<Profile>>> {
         DbIter {
             inner: &self.sequences,
             callback: &|seq| {
                 let hmm = Hmm::from_blosum_62_and_sequence(seq).unwrap();
                 let mut profile = Profile::new(&hmm);
                 profile.calibrate_tau(200, 100, 0.04);
-                Arc::new(profile)
+                Arc::new(Mutex::new(profile))
             },
         }
     }
 
-    fn par_iter(&self) -> DbParIter<Arc<Sequence>, Arc<Profile>> {
+    fn par_iter(&self) -> DbParIter<Arc<Sequence>, Arc<Mutex<Profile>>> {
         DbParIter {
             inner: &self.sequences,
             callback: &|seq| {
                 let hmm = Hmm::from_blosum_62_and_sequence(seq).unwrap();
                 let mut profile = Profile::new(&hmm);
                 profile.calibrate_tau(200, 100, 0.04);
-                Arc::new(profile)
+                Arc::new(Mutex::new(profile))
             },
         }
     }

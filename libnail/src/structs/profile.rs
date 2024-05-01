@@ -20,7 +20,7 @@ use std::fmt::Formatter;
 
 use super::Sequence;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,

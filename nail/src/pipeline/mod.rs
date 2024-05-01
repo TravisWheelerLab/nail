@@ -1,5 +1,8 @@
 mod align;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 pub use align::*;
 mod prep;
@@ -7,17 +10,27 @@ use libnail::{
     align::{
         backward, cloud_search_backward, cloud_search_forward, composition_bias_score, forward,
         length_bias_score, optimal_accuracy, posterior,
-        structs::{AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds, Seed, Trace},
+        structs::{
+            Alignment, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds, Seed,
+            Trace,
+        },
         traceback, CloudSearchParams, CloudSearchScores,
     },
     structs::{Profile, Sequence},
 };
 pub use prep::*;
 mod search;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 pub use search::*;
 mod seed;
 pub use seed::*;
 
+use crate::{
+    database::{Database, ProfileCollection, SequenceCollection},
+    extension_traits::PathBufExt,
+};
+
+#[derive(Default, Clone)]
 struct SeedStep {
     seeds: HashMap<String, HashMap<String, Seed>>,
 }
@@ -28,6 +41,7 @@ impl SeedStep {
     }
 }
 
+#[derive(Default, Clone)]
 struct CloudSearchStep {
     cloud_matrix: CloudMatrixLinear,
     forward_bounds: AntiDiagonalBounds,
@@ -87,6 +101,14 @@ impl CloudSearchStep {
         // if Self::cloud_score(&forward_scores, &reverse_scores) < self.params.threshold {
         //     return None;
         // }
+        //
+        // let cloud_pvalue = (-profile.forward_lambda as f64
+        //     * (cloud_score_bits as f64 - profile.forward_tau as f64))
+        //     .exp();
+
+        // if cloud_pvalue >= data.cloud_pvalue_threshold {
+        //     continue;
+        // }
 
         let bounds_intersect =
             self.forward_bounds.max_anti_diagonal_idx >= self.reverse_bounds.min_anti_diagonal_idx;
@@ -129,28 +151,26 @@ impl CloudSearchStep {
     }
 }
 
+#[derive(Default, Clone)]
 struct AlignmentStep {
     forward_matrix: DpMatrixSparse,
     backward_matrix: DpMatrixSparse,
     posterior_matrix: DpMatrixSparse,
     optimal_matrix: DpMatrixSparse,
+    forward_pvalue_threshold: f64,
+    evalue_threshold: f64,
 }
 
 impl AlignmentStep {
-    fn run(&mut self, profile: &Profile, target: &Sequence, bounds: &RowBounds) {
-        todo!();
-
-        // TODO: need to refactor profile to produce a transition score struct
-        // profile.configure_for_target_length(target.length);
-
-        // TODO: move filter to cloud search
-        // let cloud_pvalue = (-profile.forward_lambda as f64
-        //     * (cloud_score_bits as f64 - profile.forward_tau as f64))
-        //     .exp();
-
-        // if cloud_pvalue >= data.cloud_pvalue_threshold {
-        //     continue;
-        // }
+    fn run(
+        &mut self,
+        profile: &mut Profile,
+        target: &Sequence,
+        bounds: &RowBounds,
+    ) -> Option<Alignment> {
+        // configuring for the target length
+        // adjusts special state transitions
+        profile.configure_for_target_length(target.length);
 
         self.forward_matrix
             .reuse(target.length, profile.length, bounds);
@@ -164,14 +184,14 @@ impl AlignmentStep {
         // we use the forward score to compute the final bit score (later)
         let forward_score_nats = forward(profile, target, &mut self.forward_matrix, bounds);
 
+        // for now we compute the P-value for filtering purposes
         let forward_pvalue = (-profile.forward_lambda as f64
             * ((forward_score_nats / std::f32::consts::LN_2) as f64 - profile.forward_tau as f64))
             .exp();
 
-        // TODO: make this work again
-        // if forward_pvalue >= data.forward_pvalue_threshold {
-        //     continue;
-        // }
+        if forward_pvalue >= self.forward_pvalue_threshold {
+            return None;
+        }
 
         backward(profile, target, &mut self.backward_matrix, bounds);
 
@@ -203,7 +223,7 @@ impl AlignmentStep {
         );
 
         // TODO: make this work again after I refactor Alignment struct
-        // let mut alignment = Alignment::from_trace(&trace, profile, target, &data.score_params);
+        let mut alignment = Alignment::from_trace(&trace, profile, target, todo!());
 
         // if alignment.evalue <= data.evalue_threshold {
         //     alignment.cell_fraction =
@@ -212,19 +232,98 @@ impl AlignmentStep {
         //     data.output.table_format.update_widths(&alignment);
         //     alignments.push(alignment);
         // }
+        None
     }
 }
 
-struct Pipeline {
+#[derive(Default, Clone)]
+pub struct Pipeline {
     seed: SeedStep,
     cloud_search: CloudSearchStep,
     align: AlignmentStep,
 }
 
 impl Pipeline {
-    fn run(&mut self, profile: &Profile, target: &Sequence) {
-        let seed = self.seed.run(profile, target).unwrap();
-        let bounds = self.cloud_search.run(profile, target, &seed).unwrap();
-        self.align.run(profile, target, bounds);
+    fn run(&mut self, profile: &mut Profile, target: &Sequence) -> Option<Alignment> {
+        self.seed
+            .run(profile, target)
+            .and_then(|seed| self.cloud_search.run(profile, target, &seed))
+            .and_then(|bounds| self.align.run(profile, target, bounds))
     }
+}
+
+pub fn search_new(args: &SearchArgs) -> anyhow::Result<()> {
+    {
+        // quickly make sure we can write the results
+        args.output_args.tsv_results_path.open(true)?;
+    }
+
+    let seeds_path = args.prep_dir.path.join("./seeds.json");
+    let prep_args = PrepArgs {
+        query_path: args.query_path.clone(),
+        target_path: args.target_path.clone(),
+        skip_hmmbuild: args.prebuilt_query_hmm_path.is_some(),
+        prep_dir: args.prep_dir.clone(),
+        common_args: args.common_args.clone(),
+    };
+
+    let seed_args = SeedArgs {
+        prep_dir_path: Default::default(),
+        seeds_path: seeds_path.clone(),
+        prebuilt_query_hmm_path: args.prebuilt_query_hmm_path.clone(),
+        prep_dir: args.prep_dir.clone(),
+        mmseqs_args: args.mmseqs_args.clone(),
+        common_args: args.common_args.clone(),
+    };
+
+    let align_args = AlignArgs {
+        query_path: args.query_path.clone(),
+        target_path: args.target_path.clone(),
+        seeds_path,
+        nail_args: args.nail_args.clone(),
+        output_args: args.output_args.clone(),
+        common_args: args.common_args.clone(),
+    };
+
+    prep(&prep_args)?;
+    let (profiles_vec, seed_map) = seed(&seed_args)?;
+
+    let mut seeds: HashMap<String, HashMap<String, Seed>> = HashMap::new();
+    seed_map.iter().for_each(|(profile, seed_vec)| {
+        let profile_map = seeds.entry(profile.to_string()).or_default();
+        seed_vec.iter().for_each(|seed| {
+            profile_map.insert(seed.target_name.clone(), seed.clone());
+        });
+    });
+
+    let profiles = ProfileCollection::new(profiles_vec);
+    let seqs = SequenceCollection::new(Sequence::amino_from_fasta(align_args.target_path)?);
+
+    let pipeline = Pipeline {
+        seed: SeedStep { seeds },
+        ..Default::default()
+    };
+
+    run_pipeline(&profiles, &seqs, pipeline);
+
+    Ok(())
+}
+
+pub fn run_pipeline<A, B>(
+    profiles: &dyn Database<A, Arc<Mutex<Profile>>>,
+    targets: &(dyn Database<B, Arc<Sequence>> + Send + Sync),
+    pipeline: Pipeline,
+) where
+    A: Sync + Send,
+    B: Sync + Send,
+{
+    profiles
+        .into_par_iter()
+        .for_each_with((pipeline, targets), |(pipeline, targets), profile| {
+            let mut profile_guard = profile.lock().unwrap();
+            let alignments: Vec<Alignment> = targets
+                .iter()
+                .filter_map(|target| pipeline.run(&mut profile_guard, &target))
+                .collect();
+        })
 }
