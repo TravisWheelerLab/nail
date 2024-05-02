@@ -189,9 +189,9 @@ impl AlignmentStep {
             * ((forward_score_nats / std::f32::consts::LN_2) as f64 - profile.forward_tau as f64))
             .exp();
 
-        if forward_pvalue >= self.forward_pvalue_threshold {
-            return None;
-        }
+        // if forward_pvalue >= self.forward_pvalue_threshold {
+        //     return None;
+        // }
 
         backward(profile, target, &mut self.backward_matrix, bounds);
 
@@ -327,5 +327,9 @@ pub fn run_pipeline<A, B>(
                 .iter()
                 .filter_map(|target| pipeline.run(&mut profile_guard, &target))
                 .collect();
+
+            alignments
+                .iter()
+                .for_each(|a| println!("{}", a.ali_string()));
         })
 }

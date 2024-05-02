@@ -166,7 +166,7 @@ impl<'a> AlignmentBuilder<'a> {
             .for_each(|s| {
                 profile_indices.push(s.profile_idx);
                 target_indices.push(s.target_idx);
-                posteriors.push(s.posterior_probability);
+                posteriors.push(s.posterior);
             });
 
         Self {
@@ -256,10 +256,11 @@ impl<'a> AlignmentBuilder<'a> {
                 let mut profile_bytes = vec![];
                 let mut target_bytes = vec![];
                 let mut middle_bytes = vec![];
+
                 self.profile_indices
                     .into_iter()
                     .zip(self.target_indices)
-                    .for_each(|(target_idx, profile_idx)| {
+                    .for_each(|(profile_idx, target_idx)| {
                         let profile_byte = profile.consensus_sequence[profile_idx];
                         let target_byte = target.utf8_bytes[target_idx];
 

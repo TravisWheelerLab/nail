@@ -6,7 +6,19 @@ pub struct TraceStep {
     pub state: usize,
     pub profile_idx: usize,
     pub target_idx: usize,
-    pub posterior_probability: f32,
+    pub posterior: f32,
+}
+
+impl std::fmt::Debug for TraceStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<{}> p: {} t: {}",
+            Trace::TRACE_IDX_TO_NAME[self.state],
+            self.profile_idx,
+            self.target_idx,
+        )
+    }
 }
 
 #[derive(Default)]
@@ -55,7 +67,7 @@ impl Trace {
                 state: self.states[i],
                 profile_idx: self.profile_idx[i],
                 target_idx: self.target_idx[i],
-                posterior_probability: self.posterior_probabilities[i],
+                posterior: self.posterior_probabilities[i],
             })
             .collect::<Vec<TraceStep>>()
             .into_iter()
