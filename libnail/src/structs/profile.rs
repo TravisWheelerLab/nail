@@ -2,7 +2,7 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64;
 
 use crate::align::structs::{DpMatrixSparse, RowBounds, Trace};
-use crate::align::{forward, length_bias_score};
+use crate::align::{forward, null_one_score};
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
     AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
@@ -108,7 +108,7 @@ impl Profile {
             //         Tau, but we are using uni-hit mode
             let forward_score_nats = forward(self, &seq, &mut forward_matrix, &row_bounds);
 
-            let null_score_nats = length_bias_score(target_length);
+            let null_score_nats = null_one_score(target_length);
 
             scores[seq_idx] = (forward_score_nats - null_score_nats) / std::f32::consts::LN_2;
         });

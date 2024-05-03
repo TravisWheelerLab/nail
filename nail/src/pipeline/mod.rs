@@ -9,8 +9,8 @@ pub use align::*;
 mod prep;
 use libnail::{
     align::{
-        backward, cloud_search_backward, cloud_search_forward, composition_bias_score, forward,
-        length_bias_score, optimal_accuracy, posterior,
+        backward, cloud_search_backward, cloud_search_forward, forward, null_one_score,
+        null_two_score, optimal_accuracy, posterior,
         structs::{
             Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse,
             RowBounds, Seed, Trace,
@@ -221,8 +221,8 @@ impl AlignmentStep {
             bounds.target_end,
         );
 
-        let null_one = length_bias_score(target.length);
-        let null_two = composition_bias_score(&self.posterior_matrix, profile, target, bounds);
+        let null_one = null_one_score(target.length);
+        let null_two = null_two_score(&self.posterior_matrix, profile, target, bounds);
 
         match AlignmentBuilder::new(&trace)
             .with_profile(profile)

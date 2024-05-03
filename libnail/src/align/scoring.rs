@@ -38,12 +38,12 @@ pub enum Score {
     Bits(Bits),
 }
 
-pub fn length_bias_score(target_length: usize) -> f32 {
+pub fn null_one_score(target_length: usize) -> f32 {
     let p1 = (target_length as f32) / (target_length as f32 + 1.0);
     target_length as f32 * p1.ln() + (1.0 - p1).ln()
 }
 
-pub fn composition_bias_score(
+pub fn null_two_score(
     posterior_matrix: &impl DpMatrix,
     profile: &Profile,
     target: &Sequence,
