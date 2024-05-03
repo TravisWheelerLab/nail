@@ -104,41 +104,6 @@ impl ScoreParams {
     }
 }
 
-struct Nats(f32);
-impl Nats {
-    fn get(&self) -> f32 {
-        self.0
-    }
-
-    fn set(&mut self, value: f32) {
-        self.0 = value;
-    }
-
-    fn to_bits(&self) -> Bits {
-        Bits(self.0 / std::f32::consts::LN_2)
-    }
-}
-
-struct Bits(f32);
-impl Bits {
-    fn get(&self) -> f32 {
-        self.0
-    }
-
-    fn set(&mut self, value: f32) {
-        self.0 = value;
-    }
-
-    fn to_nats(&self) -> Nats {
-        Nats(self.0 * std::f32::consts::LN_2)
-    }
-}
-
-enum Score {
-    Nats(Nats),
-    Bits(Bits),
-}
-
 #[derive(Default)]
 pub struct AlignmentBuilder<'a> {
     trace: Vec<TraceStep>,

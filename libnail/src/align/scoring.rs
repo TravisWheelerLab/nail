@@ -3,6 +3,41 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
+struct Nats(f32);
+impl Nats {
+    fn get(&self) -> f32 {
+        self.0
+    }
+
+    fn set(&mut self, value: f32) {
+        self.0 = value;
+    }
+
+    fn to_bits(&self) -> Bits {
+        Bits(self.0 / std::f32::consts::LN_2)
+    }
+}
+
+struct Bits(f32);
+impl Bits {
+    fn get(&self) -> f32 {
+        self.0
+    }
+
+    fn set(&mut self, value: f32) {
+        self.0 = value;
+    }
+
+    fn to_nats(&self) -> Nats {
+        Nats(self.0 * std::f32::consts::LN_2)
+    }
+}
+
+enum Score {
+    Nats(Nats),
+    Bits(Bits),
+}
+
 pub fn length_bias_score(target_length: usize) -> f32 {
     let p1 = (target_length as f32) / (target_length as f32 + 1.0);
     target_length as f32 * p1.ln() + (1.0 - p1).ln()
