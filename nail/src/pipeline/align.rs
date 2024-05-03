@@ -108,7 +108,7 @@ pub struct AlignArgs {
     pub common_args: CommonArgs,
 }
 
-const DEFAULT_COLUMNS: [Field; 10] = [
+pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::Target,
     Field::Query,
     Field::TargetStart,
@@ -521,13 +521,12 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
                 cloud_search_data.row_bounds.num_cells() as f32
                     / (target.length * profile_length) as f32,
             );
-
-            data.output.table_format.update_widths(&alignment);
             alignments.push(alignment);
         }
     }
 
     alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
+    data.output.table_format.update_widths(&alignments);
 
     alignments.iter().for_each(|a| {
         match data.output.tab_results_writer.lock() {

@@ -3,6 +3,7 @@ use crate::output::output_tabular::{Field, TableFormat};
 use crate::structs::{Profile, Sequence};
 use std::cmp::{max, min};
 
+use super::trace::TraceStep;
 use super::Trace;
 
 pub struct Alignment {
@@ -103,20 +104,6 @@ impl ScoreParams {
     }
 }
 
-#[derive(Default)]
-pub struct AlignmentBuilder<'a> {
-    profile_indices: Vec<usize>,
-    target_indices: Vec<usize>,
-    posteriors: Vec<f32>,
-    profile: Option<&'a Profile>,
-    target: Option<&'a Sequence>,
-    target_count: Option<usize>,
-    raw_score: Option<f32>,
-    null_one: Option<f32>,
-    null_two: Option<f32>,
-    cell_fraction: Option<f32>,
-}
-
 struct Nats(f32);
 impl Nats {
     fn get(&self) -> f32 {
@@ -152,27 +139,29 @@ enum Score {
     Bits(Bits),
 }
 
+#[derive(Default)]
+pub struct AlignmentBuilder<'a> {
+    trace: Vec<TraceStep>,
+    profile: Option<&'a Profile>,
+    target: Option<&'a Sequence>,
+    target_count: Option<usize>,
+    raw_score: Option<f32>,
+    null_one: Option<f32>,
+    null_two: Option<f32>,
+    cell_fraction: Option<f32>,
+}
+
 impl<'a> AlignmentBuilder<'a> {
     pub fn new(trace: &Trace) -> Self {
-        let mut profile_indices = vec![];
-        let mut target_indices = vec![];
-        let mut posteriors = vec![];
-
-        trace
+        let trace = trace
             .iter()
             .filter(|s| {
                 s.state == Trace::M_STATE || s.state == Trace::I_STATE || s.state == Trace::D_STATE
             })
-            .for_each(|s| {
-                profile_indices.push(s.profile_idx);
-                target_indices.push(s.target_idx);
-                posteriors.push(s.posterior);
-            });
+            .collect();
 
         Self {
-            profile_indices,
-            target_indices,
-            posteriors,
+            trace,
             ..Default::default()
         }
     }
@@ -213,21 +202,25 @@ impl<'a> AlignmentBuilder<'a> {
     }
 
     pub fn build(self) -> anyhow::Result<Alignment> {
-        let length = self.profile_indices.len();
-        let profile_start = *self.profile_indices.first().unwrap();
-        let profile_end = *self.profile_indices.last().unwrap();
-        let target_start = *self.target_indices.first().unwrap();
-        let target_end = *self.target_indices.last().unwrap();
+        let length = self.trace.len();
+
+        let first = self.trace.first().unwrap();
+        let last = self.trace.last().unwrap();
+
+        let profile_start = first.profile_idx;
+        let profile_end = last.profile_idx;
+        let target_start = first.target_idx;
+        let target_end = last.target_idx;
 
         let raw_score = self.raw_score;
         let score_bits = match raw_score {
             Some(mut score) => {
                 if let Some(null_one) = self.null_one {
-                    score += null_one
+                    score -= null_one
                 }
 
                 if let Some(null_two) = self.null_two {
-                    score += null_two
+                    score -= null_two
                 }
 
                 Some(score)
@@ -251,30 +244,32 @@ impl<'a> AlignmentBuilder<'a> {
 
         let target_name = self.target.map(|target| target.name.clone());
 
-        let (profile_string, target_string, middle_string) = match (self.profile, self.target) {
-            (Some(profile), Some(target)) => {
-                let mut profile_bytes = vec![];
-                let mut target_bytes = vec![];
-                let mut middle_bytes = vec![];
+        let (profile_string, target_string, middle_string, posterior_string) =
+            match (self.profile, self.target) {
+                (Some(profile), Some(target)) => {
+                    let mut profile_bytes = vec![];
+                    let mut target_bytes = vec![];
+                    let mut middle_bytes = vec![];
+                    let mut posteriors = vec![];
 
-                self.profile_indices
-                    .into_iter()
-                    .zip(self.target_indices)
-                    .for_each(|(profile_idx, target_idx)| {
-                        let profile_byte = profile.consensus_sequence[profile_idx];
-                        let target_byte = target.utf8_bytes[target_idx];
+                    self.trace.iter().for_each(|step| {
+                        posteriors.push(map_posterior_probability_to_bin_byte(step.posterior));
+                        let profile_byte = profile.consensus_sequence[step.profile_idx];
+                        let target_byte = target.utf8_bytes[step.target_idx];
 
-                        match (profile_byte, target_byte) {
-                            (0, _) => {
-                                profile_bytes.push(UTF8_DASH);
+                        match step.state {
+                            Trace::I_STATE => {
+                                profile_bytes.push(UTF8_DOT);
                                 target_bytes.push(target_byte);
+                                middle_bytes.push(UTF8_SPACE);
                             }
-                            (_, 0) => {
+                            Trace::D_STATE => {
                                 profile_bytes.push(profile_byte);
                                 target_bytes.push(UTF8_DASH);
+                                middle_bytes.push(UTF8_SPACE);
                             }
-                            (_, _) => {
-                                let target_byte_digital = target.digital_bytes[target_idx];
+                            Trace::M_STATE => {
+                                let target_byte_digital = target.digital_bytes[step.target_idx];
 
                                 profile_bytes.push(profile_byte);
                                 target_bytes.push(target_byte);
@@ -282,7 +277,7 @@ impl<'a> AlignmentBuilder<'a> {
                                 if profile_byte == target_byte {
                                     middle_bytes.push(profile_byte);
                                 } else if profile
-                                    .match_score(target_byte_digital as usize, profile_idx)
+                                    .match_score(target_byte_digital as usize, step.profile_idx)
                                     > 0.0
                                 {
                                     middle_bytes.push(UTF8_PLUS);
@@ -290,29 +285,25 @@ impl<'a> AlignmentBuilder<'a> {
                                     middle_bytes.push(UTF8_SPACE);
                                 }
                             }
+                            _ => {
+                                panic!("invalid trace state in AlignmentBuilder: {}", step.state)
+                            }
                         }
                     });
 
-                let profile_string = String::from_utf8(profile_bytes)?;
-                let target_string = String::from_utf8(target_bytes)?;
-                let middle_string = String::from_utf8(middle_bytes)?;
-
-                (
-                    Some(profile_string),
-                    Some(target_string),
-                    Some(middle_string),
-                )
-            }
-            _ => (None, None, None),
-        };
-
-        let posterior_string = String::from_utf8(
-            self.posteriors
-                .into_iter()
-                .map(map_posterior_probability_to_bin_byte)
-                .collect(),
-        )
-        .unwrap();
+                    let profile_string = String::from_utf8(profile_bytes)?;
+                    let target_string = String::from_utf8(target_bytes)?;
+                    let middle_string = String::from_utf8(middle_bytes)?;
+                    let posterior_string = String::from_utf8(posteriors)?;
+                    (
+                        Some(profile_string),
+                        Some(target_string),
+                        Some(middle_string),
+                        Some(posterior_string),
+                    )
+                }
+                _ => (None, None, None, None),
+            };
 
         Ok(Alignment {
             profile_name,
@@ -332,7 +323,7 @@ impl<'a> AlignmentBuilder<'a> {
             profile_string,
             target_string,
             middle_string,
-            posterior_string: Some(posterior_string),
+            posterior_string,
         })
     }
 }
@@ -355,9 +346,9 @@ impl Alignment {
         let mut search_state: SearchState = SearchState::Begin;
         for trace_idx in 0..trace.length {
             let trace_state = trace.states[trace_idx];
-            let profile_idx = trace.profile_idx[trace_idx];
+            let profile_idx = trace.profile_indices[trace_idx];
             let profile_string_byte = profile.consensus_sequence[profile_idx];
-            let target_idx = trace.target_idx[trace_idx];
+            let target_idx = trace.target_indices[trace_idx];
             let target_string_byte = target.utf8_bytes[target_idx];
 
             posterior_probability_bytes.push(map_posterior_probability_to_bin_byte(
@@ -369,8 +360,8 @@ impl Alignment {
                     if trace_state == Trace::B_STATE {
                         // if we've hit a B state, then the next trace
                         // position should be the start of the alignment
-                        profile_start = trace.profile_idx[trace_idx + 1];
-                        target_start = trace.target_idx[trace_idx + 1];
+                        profile_start = trace.profile_indices[trace_idx + 1];
+                        target_start = trace.target_indices[trace_idx + 1];
                         search_state = SearchState::Alignment;
                     }
                 }
@@ -405,8 +396,8 @@ impl Alignment {
                             // position should be the end of the alignment
 
                             // the alignment ends at the trace position before the E node
-                            let target_end = trace.target_idx[trace_idx - 1];
-                            let profile_end = trace.profile_idx[trace_idx - 1];
+                            let target_end = trace.target_indices[trace_idx - 1];
+                            let profile_end = trace.profile_indices[trace_idx - 1];
 
                             let aligned_target_length = target_end - target_start + 1;
                             let unaligned_target_length =

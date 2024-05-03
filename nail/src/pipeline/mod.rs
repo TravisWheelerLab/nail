@@ -1,6 +1,7 @@
 mod align;
 use std::{
     collections::HashMap,
+    io::{stdout, Write},
     sync::{Arc, Mutex},
 };
 
@@ -16,6 +17,7 @@ use libnail::{
         },
         traceback, CloudSearchParams, CloudSearchScores,
     },
+    output::output_tabular::TableFormat,
     structs::{Profile, Sequence},
 };
 pub use prep::*;
@@ -219,16 +221,16 @@ impl AlignmentStep {
             bounds.target_end,
         );
 
-        let null1 = length_bias_score(target.length);
-        let null2 = composition_bias_score(&self.posterior_matrix, profile, target, bounds);
+        let null_one = length_bias_score(target.length);
+        let null_two = composition_bias_score(&self.posterior_matrix, profile, target, bounds);
 
         match AlignmentBuilder::new(&trace)
             .with_profile(profile)
             .with_target(target)
             .with_target_count(1)
             .with_raw_score(forward_score_nats)
-            .with_null_one(null1)
-            .with_null_two(null2)
+            .with_null_one(null_one)
+            .with_null_two(null_two)
             .with_cell_fraction(bounds.num_cells() as f32 / (profile.length * target.length) as f32)
             .build()
         {
@@ -306,30 +308,82 @@ pub fn search_new(args: &SearchArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    run_pipeline(&profiles, &seqs, pipeline);
+    let output = Arc::new(Mutex::new(Output {
+        alignment_writer: Box::new(stdout()),
+        table_writer: Box::new(args.output_args.tsv_results_path.open(true)?),
+        table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
+        header_status: HeaderStatus::Unwritten,
+    }));
+
+    run_pipeline(&profiles, &seqs, pipeline, output);
 
     Ok(())
+}
+
+pub enum HeaderStatus {
+    Unwritten,
+    Written,
+}
+
+pub struct Output {
+    alignment_writer: Box<dyn Write + Send>,
+    table_writer: Box<dyn Write + Send>,
+    table_format: TableFormat,
+    header_status: HeaderStatus,
+}
+
+impl Output {
+    pub fn write(&mut self, alignments: &mut [Alignment]) -> anyhow::Result<()> {
+        self.table_format.update_widths(alignments);
+
+        alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
+
+        if let HeaderStatus::Unwritten = self.header_status {
+            let header = TableFormat::header(&self.table_format)?;
+            writeln!(self.table_writer, "{header}")?;
+            self.header_status = HeaderStatus::Written;
+        }
+
+        alignments.iter().for_each(|ali| {
+            writeln!(
+                self.table_writer,
+                "{}",
+                ali.tab_string_formatted(&self.table_format)
+            )
+            .expect("failed to write tabular output");
+
+            writeln!(self.alignment_writer, "{}", ali.ali_string())
+                .expect("failed to write alignment output");
+        });
+
+        Ok(())
+    }
 }
 
 pub fn run_pipeline<A, B>(
     profiles: &dyn Database<A, Arc<Mutex<Profile>>>,
     targets: &(dyn Database<B, Arc<Sequence>> + Send + Sync),
     pipeline: Pipeline,
+    output: Arc<Mutex<Output>>,
 ) where
     A: Sync + Send,
     B: Sync + Send,
 {
-    profiles
-        .into_par_iter()
-        .for_each_with((pipeline, targets), |(pipeline, targets), profile| {
+    profiles.into_par_iter().for_each_with(
+        (pipeline, targets, output),
+        |(pipeline, targets, output), profile| {
             let mut profile_guard = profile.lock().unwrap();
-            let alignments: Vec<Alignment> = targets
+            let mut alignments: Vec<Alignment> = targets
                 .iter()
                 .filter_map(|target| pipeline.run(&mut profile_guard, &target))
                 .collect();
 
-            alignments
-                .iter()
-                .for_each(|a| println!("{}", a.ali_string()));
-        })
+            match output.lock() {
+                Ok(mut guard) => {
+                    guard.write(&mut alignments).unwrap();
+                }
+                Err(_) => panic!(),
+            }
+        },
+    )
 }
