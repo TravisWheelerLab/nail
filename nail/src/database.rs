@@ -24,6 +24,10 @@ impl ProfileCollection {
                 .collect(),
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.profiles.len()
+    }
 }
 
 pub struct SequenceCollection {
@@ -35,6 +39,10 @@ impl SequenceCollection {
         Self {
             sequences: sequences.into_iter().map(Arc::new).collect(),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.sequences.len()
     }
 }
 

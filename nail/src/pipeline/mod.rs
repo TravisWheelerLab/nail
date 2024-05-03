@@ -10,7 +10,7 @@ mod prep;
 use libnail::{
     align::{
         backward, cloud_search_backward, cloud_search_forward, forward, null_one_score,
-        null_two_score, optimal_accuracy, posterior,
+        null_two_score, optimal_accuracy, p_value, posterior,
         structs::{
             Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse,
             RowBounds, Seed, Trace,
@@ -160,6 +160,7 @@ struct AlignmentStep {
     posterior_matrix: DpMatrixSparse,
     optimal_matrix: DpMatrixSparse,
     forward_pvalue_threshold: f64,
+    target_count: usize,
     evalue_threshold: f64,
 }
 
@@ -184,12 +185,10 @@ impl AlignmentStep {
             .reuse(target.length, profile.length, bounds);
 
         // we use the forward score to compute the final bit score (later)
-        let forward_score_nats = forward(profile, target, &mut self.forward_matrix, bounds);
+        let forward_score = forward(profile, target, &mut self.forward_matrix, bounds).to_bits();
 
         // for now we compute the P-value for filtering purposes
-        let forward_pvalue = (-profile.forward_lambda as f64
-            * ((forward_score_nats / std::f32::consts::LN_2) as f64 - profile.forward_tau as f64))
-            .exp();
+        let forward_pvalue = p_value(forward_score, profile.forward_lambda, profile.forward_tau);
 
         // if forward_pvalue >= self.forward_pvalue_threshold {
         //     return None;
@@ -224,14 +223,15 @@ impl AlignmentStep {
         let null_one = null_one_score(target.length);
         let null_two = null_two_score(&self.posterior_matrix, profile, target, bounds);
 
+        let cell_fraction = bounds.num_cells() as f32 / (profile.length * target.length) as f32;
         match AlignmentBuilder::new(&trace)
             .with_profile(profile)
             .with_target(target)
-            .with_target_count(1)
-            .with_raw_score(forward_score_nats)
+            .with_target_count(self.target_count)
+            .with_forward_score(forward_score)
             .with_null_one(null_one)
             .with_null_two(null_two)
-            .with_cell_fraction(bounds.num_cells() as f32 / (profile.length * target.length) as f32)
+            .with_cell_fraction(cell_fraction)
             .build()
         {
             Ok(alignment) => Some(alignment),
@@ -301,11 +301,22 @@ pub fn search_new(args: &SearchArgs) -> anyhow::Result<()> {
     });
 
     let profiles = ProfileCollection::new(profiles_vec);
-    let seqs = SequenceCollection::new(Sequence::amino_from_fasta(align_args.target_path)?);
+    let targets = SequenceCollection::new(Sequence::amino_from_fasta(align_args.target_path)?);
 
     let pipeline = Pipeline {
         seed: SeedStep { seeds },
-        ..Default::default()
+        cloud_search: CloudSearchStep {
+            params: CloudSearchParams {
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        align: AlignmentStep {
+            forward_pvalue_threshold: 1e-3,
+            target_count: targets.len(),
+            evalue_threshold: 10.0,
+            ..Default::default()
+        },
     };
 
     let output = Arc::new(Mutex::new(Output {
@@ -315,7 +326,7 @@ pub fn search_new(args: &SearchArgs) -> anyhow::Result<()> {
         header_status: HeaderStatus::Unwritten,
     }));
 
-    run_pipeline(&profiles, &seqs, pipeline, output);
+    run_pipeline(&profiles, &targets, pipeline, output);
 
     Ok(())
 }

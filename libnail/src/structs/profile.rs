@@ -2,7 +2,7 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64;
 
 use crate::align::structs::{DpMatrixSparse, RowBounds, Trace};
-use crate::align::{forward, null_one_score};
+use crate::align::{forward, null_one_score, Bits};
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
     AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
@@ -110,7 +110,7 @@ impl Profile {
 
             let null_score_nats = null_one_score(target_length);
 
-            scores[seq_idx] = (forward_score_nats - null_score_nats) / std::f32::consts::LN_2;
+            scores[seq_idx] = (forward_score_nats - null_score_nats).to_bits().value();
         });
 
         /// This is some black magic from a textbook:

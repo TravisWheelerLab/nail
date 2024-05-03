@@ -1,4 +1,4 @@
-use crate::align::structs::Alignment;
+use crate::align::{structs::Alignment, Bits};
 
 use anyhow::Context;
 
@@ -31,6 +31,15 @@ impl ExtractString for Option<f64> {
     fn extract_string(&self) -> String {
         match self {
             Some(f) => format!("{f:.1e}"),
+            None => self.empty_string(),
+        }
+    }
+}
+
+impl ExtractString for Option<Bits> {
+    fn extract_string(&self) -> String {
+        match self {
+            Some(f) => format!("{:.1}", f.value()),
             None => self.empty_string(),
         }
     }

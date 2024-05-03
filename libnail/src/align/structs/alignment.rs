@@ -1,3 +1,4 @@
+use crate::align::{e_value, p_value, Bits, Score};
 use crate::alphabet::{UTF8_DASH, UTF8_DOT, UTF8_NUMERIC, UTF8_PLUS, UTF8_SPACE};
 use crate::output::output_tabular::{Field, TableFormat};
 use crate::structs::{Profile, Sequence};
@@ -24,13 +25,13 @@ pub struct Alignment {
     /// The name of the target sequence
     pub target_name: Option<String>,
     /// The final bit score of the alignment (after all bias adjustments)
-    pub score_bits: Option<f32>,
+    pub score_bits: Option<Bits>,
     /// The raw bit score of the alignment (before any bias adjustments)
-    pub raw_score_bits: Option<f32>,
+    pub raw_score_bits: Option<Bits>,
     /// The bit score of the length bias adjustment
-    pub null_one: Option<f32>,
+    pub null_one: Option<Bits>,
     /// The bit score of the composition bias adjustment
-    pub null_two: Option<f32>,
+    pub null_two: Option<Bits>,
     /// The P-value of the alignment
     pub p_value: Option<f64>,
     /// The E-value of the alignment
@@ -110,9 +111,9 @@ pub struct AlignmentBuilder<'a> {
     profile: Option<&'a Profile>,
     target: Option<&'a Sequence>,
     target_count: Option<usize>,
-    raw_score: Option<f32>,
-    null_one: Option<f32>,
-    null_two: Option<f32>,
+    forward_score: Option<Bits>,
+    null_one: Option<Bits>,
+    null_two: Option<Bits>,
     cell_fraction: Option<f32>,
 }
 
@@ -146,18 +147,18 @@ impl<'a> AlignmentBuilder<'a> {
         self
     }
 
-    pub fn with_raw_score(mut self, score: f32) -> Self {
-        self.raw_score = Some(score);
+    pub fn with_forward_score(mut self, score: impl Score) -> Self {
+        self.forward_score = Some(score.bits());
         self
     }
 
-    pub fn with_null_one(mut self, null_one: f32) -> Self {
-        self.null_one = Some(null_one);
+    pub fn with_null_one(mut self, score: impl Score) -> Self {
+        self.null_one = Some(score.bits());
         self
     }
 
-    pub fn with_null_two(mut self, null_two: f32) -> Self {
-        self.null_two = Some(null_two);
+    pub fn with_null_two(mut self, score: impl Score) -> Self {
+        self.null_two = Some(score.bits());
         self
     }
 
@@ -177,15 +178,30 @@ impl<'a> AlignmentBuilder<'a> {
         let target_start = first.target_idx;
         let target_end = last.target_idx;
 
-        let raw_score = self.raw_score;
-        let score_bits = match raw_score {
+        let score = match self.forward_score {
             Some(mut score) => {
+                // TODO: decide if we actually want to do this correction
+                if let Some(target) = self.target {
+                    let aligned_target_length = target_end - target_start + 1;
+                    let unaligned_target_length = (target.length - aligned_target_length) as f32;
+
+                    // sum up the loop transitions to the N and/or C states
+                    // once for every position in the target sequence that
+                    // isn't accounted for by the alignment that we produced
+                    let correction = Bits(
+                        unaligned_target_length
+                            * (target.length as f32 / (target.length as f32 + 3.0)).log2(),
+                    );
+
+                    score = score + correction
+                }
+
                 if let Some(null_one) = self.null_one {
-                    score -= null_one
+                    score = score - null_one
                 }
 
                 if let Some(null_two) = self.null_two {
-                    score -= null_two
+                    score = score - null_two
                 }
 
                 Some(score)
@@ -193,17 +209,14 @@ impl<'a> AlignmentBuilder<'a> {
             None => None,
         };
 
-        let target_count = self.target_count.unwrap_or(1);
-
-        let p_value = match (score_bits, self.profile) {
-            (Some(score), Some(profile)) => Some(
-                (-profile.forward_lambda as f64 * (score as f64 - profile.forward_tau as f64))
-                    .exp(),
-            ),
+        let p_value = match (score, self.profile) {
+            (Some(score), Some(profile)) => {
+                Some(p_value(score, profile.forward_lambda, profile.forward_tau))
+            }
             (_, _) => None,
         };
 
-        let e_value = p_value.map(|p_value| p_value * target_count as f64);
+        let e_value = p_value.map(|p_value| e_value(p_value, self.target_count.unwrap_or(1)));
 
         let profile_name = self.profile.map(|profile| profile.name.clone());
 
@@ -273,8 +286,8 @@ impl<'a> AlignmentBuilder<'a> {
         Ok(Alignment {
             profile_name,
             target_name,
-            score_bits,
-            raw_score_bits: self.raw_score,
+            score_bits: score,
+            raw_score_bits: self.forward_score,
             null_one: self.null_one,
             null_two: self.null_two,
             p_value,
@@ -397,10 +410,10 @@ impl Alignment {
                             return Alignment {
                                 profile_name: Some(profile.name.clone()),
                                 target_name: Some(target.name.clone()),
-                                score_bits: Some(score_bits),
-                                raw_score_bits: Some(raw_score_bits),
-                                null_one: Some(length_bias_bits),
-                                null_two: Some(composition_bias_bits),
+                                score_bits: Some(Bits(score_bits)),
+                                raw_score_bits: Some(Bits(raw_score_bits)),
+                                null_one: Some(Bits(length_bias_bits)),
+                                null_two: Some(Bits(composition_bias_bits)),
                                 p_value: Some(pvalue),
                                 e_value: Some(evalue),
                                 length: profile_bytes.len(),

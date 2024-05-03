@@ -463,7 +463,8 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
             target,
             &mut alignment_data.forward_matrix,
             &cloud_search_data.row_bounds,
-        );
+        )
+        .value();
 
         let forward_pvalue = (-pair.profile.forward_lambda as f64
             * ((data.score_params.forward_score_nats / std::f32::consts::LN_2) as f64
@@ -489,14 +490,15 @@ fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
             &cloud_search_data.row_bounds,
         );
 
-        data.score_params.length_bias_score_nats = null_one_score(target.length);
+        data.score_params.length_bias_score_nats = null_one_score(target.length).value();
 
         data.score_params.composition_bias_score_nats = null_two_score(
             &alignment_data.posterior_matrix,
             pair.profile,
             target,
             &cloud_search_data.row_bounds,
-        );
+        )
+        .value();
 
         optimal_accuracy(
             pair.profile,

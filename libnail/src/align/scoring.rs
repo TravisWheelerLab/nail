@@ -4,13 +4,13 @@ use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
 #[derive(Clone, Copy)]
-pub struct Nats(f32);
+pub struct Nats(pub f32);
 impl Nats {
-    fn value(&self) -> f32 {
+    pub fn value(&self) -> f32 {
         self.0
     }
 
-    fn to_bits(self) -> Bits {
+    pub fn to_bits(self) -> Bits {
         Bits(self.0 / std::f32::consts::LN_2)
     }
 }
@@ -54,13 +54,13 @@ impl std::ops::Sub<Bits> for Nats {
 }
 
 #[derive(Clone, Copy)]
-pub struct Bits(f32);
+pub struct Bits(pub f32);
 impl Bits {
-    fn value(&self) -> f32 {
+    pub fn value(&self) -> f32 {
         self.0
     }
 
-    fn to_nats(self) -> Nats {
+    pub fn to_nats(self) -> Nats {
         Nats(self.0 * std::f32::consts::LN_2)
     }
 }
@@ -103,22 +103,77 @@ impl std::ops::Sub<Nats> for Bits {
     }
 }
 
-pub enum Score {
-    Nats(Nats),
-    Bits(Bits),
+pub trait Score {
+    fn bits(self) -> Bits;
+    fn nats(self) -> Nats;
 }
 
-pub fn null_one_score(target_length: usize) -> f32 {
+impl Score for Bits {
+    fn bits(self) -> Bits {
+        self
+    }
+
+    fn nats(self) -> Nats {
+        self.to_nats()
+    }
+}
+
+impl Score for Nats {
+    fn bits(self) -> Bits {
+        self.to_bits()
+    }
+
+    fn nats(self) -> Nats {
+        self
+    }
+}
+
+//pub enum Score {
+//    Nats(Nats),
+//    Bits(Bits),
+//}
+//
+//impl Score {
+//    pub fn bits(self) -> Bits {
+//        match self {
+//            Score::Nats(nats) => nats.to_bits(),
+//            Score::Bits(bits) => bits,
+//        }
+//    }
+//
+//    pub fn nats(self) -> Nats {
+//        match self {
+//            Score::Nats(nats) => nats,
+//            Score::Bits(bits) => bits.to_nats(),
+//        }
+//    }
+//}
+
+pub fn p_value(score: Bits, lambda: f32, tau: f32) -> f64 {
+    (-lambda as f64 * ((score.value()) as f64 - tau as f64)).exp()
+}
+
+pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
+    p_value * num_targets as f64
+}
+
+///
+///
+///
+pub fn null_one_score(target_length: usize) -> Nats {
     let p1 = (target_length as f32) / (target_length as f32 + 1.0);
-    target_length as f32 * p1.ln() + (1.0 - p1).ln()
+    Nats(target_length as f32 * p1.ln() + (1.0 - p1).ln())
 }
 
+///
+///
+///
 pub fn null_two_score(
     posterior_matrix: &impl DpMatrix,
     profile: &Profile,
     target: &Sequence,
     row_bounds: &RowBounds,
-) -> f32 {
+) -> Nats {
     let sub_target_length = (row_bounds.target_end - row_bounds.target_start + 1) as f32;
 
     // TODO: need to prevent these allocations
@@ -232,7 +287,7 @@ pub fn null_two_score(
     let null2_prior = 1.0 / 256.0;
     null2_score = log_sum!(0.0, null2_prior + null2_score);
 
-    null2_score
+    Nats(null2_score)
 }
 
 #[cfg(test)]
