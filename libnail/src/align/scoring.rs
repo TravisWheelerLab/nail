@@ -3,7 +3,7 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
-struct Nats(f32);
+pub struct Nats(f32);
 impl Nats {
     fn get(&self) -> f32 {
         self.0
@@ -18,7 +18,7 @@ impl Nats {
     }
 }
 
-struct Bits(f32);
+pub struct Bits(f32);
 impl Bits {
     fn get(&self) -> f32 {
         self.0
@@ -33,7 +33,7 @@ impl Bits {
     }
 }
 
-enum Score {
+pub enum Score {
     Nats(Nats),
     Bits(Bits),
 }

@@ -19,7 +19,7 @@ mod optimal_accuracy;
 pub use optimal_accuracy::optimal_accuracy;
 
 mod scoring;
-pub use scoring::{composition_bias_score, length_bias_score};
+pub use scoring::{composition_bias_score, length_bias_score, Bits, Nats, Score};
 
 mod traceback;
 pub use traceback::traceback;
