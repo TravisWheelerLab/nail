@@ -3,33 +3,103 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
+#[derive(Clone, Copy)]
 pub struct Nats(f32);
 impl Nats {
-    fn get(&self) -> f32 {
+    fn value(&self) -> f32 {
         self.0
     }
 
-    fn set(&mut self, value: f32) {
-        self.0 = value;
-    }
-
-    fn to_bits(&self) -> Bits {
+    fn to_bits(self) -> Bits {
         Bits(self.0 / std::f32::consts::LN_2)
     }
 }
 
+impl std::fmt::Debug for Nats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Nats({})", self.0)
+    }
+}
+
+impl std::ops::Add for Nats {
+    type Output = Nats;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Nats(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub for Nats {
+    type Output = Nats;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Nats(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::Add<Bits> for Nats {
+    type Output = Nats;
+
+    fn add(self, rhs: Bits) -> Self::Output {
+        self + rhs.to_nats()
+    }
+}
+
+impl std::ops::Sub<Bits> for Nats {
+    type Output = Nats;
+
+    fn sub(self, rhs: Bits) -> Self::Output {
+        self - rhs.to_nats()
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Bits(f32);
 impl Bits {
-    fn get(&self) -> f32 {
+    fn value(&self) -> f32 {
         self.0
     }
 
-    fn set(&mut self, value: f32) {
-        self.0 = value;
-    }
-
-    fn to_nats(&self) -> Nats {
+    fn to_nats(self) -> Nats {
         Nats(self.0 * std::f32::consts::LN_2)
+    }
+}
+
+impl std::fmt::Debug for Bits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Bits({})", self.0)
+    }
+}
+
+impl std::ops::Add for Bits {
+    type Output = Bits;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Bits(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub for Bits {
+    type Output = Bits;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Bits(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::Add<Nats> for Bits {
+    type Output = Bits;
+
+    fn add(self, rhs: Nats) -> Self::Output {
+        self + rhs.to_bits()
+    }
+}
+
+impl std::ops::Sub<Nats> for Bits {
+    type Output = Bits;
+
+    fn sub(self, rhs: Nats) -> Self::Output {
+        self - rhs.to_bits()
     }
 }
 
@@ -163,4 +233,67 @@ pub fn null_two_score(
     null2_score = log_sum!(0.0, null2_prior + null2_score);
 
     null2_score
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_nats_ops() -> anyhow::Result<()> {
+        let a = Nats(10.0);
+        let b = Nats(10.0);
+        let c = a + b;
+        assert_eq!(c.value(), 20.0);
+
+        let a = Nats(20.0);
+        let b = Nats(10.0);
+        let c = a - b;
+        assert_eq!(c.value(), 10.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bits_ops() -> anyhow::Result<()> {
+        let a = Bits(10.0);
+        let b = Bits(10.0);
+        let c = a + b;
+        assert_eq!(c.value(), 20.0);
+
+        let a = Bits(20.0);
+        let b = Bits(10.0);
+        let c = a - b;
+        assert_eq!(c.value(), 10.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_nats_bits_conversion() -> anyhow::Result<()> {
+        let tolerance = 1e-9;
+        let nats = Nats(10.0f32.ln());
+        let bits = Bits(10.0f32.log2());
+
+        assert!((nats.value() - bits.to_nats().value()).abs() < tolerance);
+        assert!((bits.value() - nats.to_bits().value()).abs() < tolerance);
+        Ok(())
+    }
+
+    #[test]
+    fn test_nats_bits_ops() -> anyhow::Result<()> {
+        let a = Nats(10.0f32.ln());
+        let b = Bits(10.0f32.log2());
+        let c = a + b;
+        let correct = a + a;
+        assert_eq!(c.value(), correct.value());
+
+        let a = Bits(10.0f32.log2());
+        let b = Nats(10.0f32.ln());
+        let c = a + b;
+        let correct = a + a;
+        assert_eq!(c.value(), correct.value());
+
+        Ok(())
+    }
 }
