@@ -9,8 +9,8 @@ pub use align::*;
 mod prep;
 use libnail::{
     align::{
-        backward, cloud_search_backward, cloud_search_forward, forward, null_one_score,
-        null_two_score, optimal_accuracy, p_value, posterior,
+        backward, cloud_score, cloud_search_backward, cloud_search_forward, forward,
+        null_one_score, null_two_score, optimal_accuracy, p_value, posterior,
         structs::{
             Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse,
             RowBounds, Seed, Trace,
@@ -50,6 +50,7 @@ struct CloudSearchStep {
     reverse_bounds: AntiDiagonalBounds,
     row_bounds: RowBounds,
     params: CloudSearchParams,
+    p_value_threshold: f64,
 }
 
 impl CloudSearchStep {
@@ -77,22 +78,18 @@ impl CloudSearchStep {
             &mut self.reverse_bounds,
         );
 
-        // TODO: make this actually work
-        // if Self::cloud_score(&forward_scores, &reverse_scores) < self.params.threshold {
-        //     return None;
-        // }
-        //
-        // let cloud_pvalue = (-profile.forward_lambda as f64
-        //     * (cloud_score_bits as f64 - profile.forward_tau as f64))
-        //     .exp();
+        let cloud_score = cloud_score(&forward_scores, &reverse_scores);
 
-        // if cloud_pvalue >= data.cloud_pvalue_threshold {
-        //     continue;
-        // }
+        let cloud_p_value = p_value(cloud_score, profile.forward_lambda, profile.forward_tau);
+
+        if cloud_p_value >= self.p_value_threshold {
+            return None;
+        }
 
         let bounds_intersect =
             self.forward_bounds.max_anti_diagonal_idx >= self.reverse_bounds.min_anti_diagonal_idx;
 
+        // TODO: clean up this mess
         if bounds_intersect {
             AntiDiagonalBounds::join_merge(&mut self.forward_bounds, &self.reverse_bounds);
             if !self.forward_bounds.valid() {
@@ -139,7 +136,7 @@ struct AlignmentStep {
     optimal_matrix: DpMatrixSparse,
     forward_pvalue_threshold: f64,
     target_count: usize,
-    evalue_threshold: f64,
+    e_value_threshold: f64,
 }
 
 impl AlignmentStep {
@@ -292,7 +289,7 @@ pub fn search_new(args: &SearchArgs) -> anyhow::Result<()> {
         align: AlignmentStep {
             forward_pvalue_threshold: 1e-3,
             target_count: targets.len(),
-            evalue_threshold: 10.0,
+            e_value_threshold: 10.0,
             ..Default::default()
         },
     };

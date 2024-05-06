@@ -142,8 +142,8 @@ impl Score for Bits {
     }
 }
 
-pub fn p_value(score: Bits, lambda: f32, tau: f32) -> f64 {
-    (-lambda as f64 * ((score.value()) as f64 - tau as f64)).exp()
+pub fn p_value(score: impl Score, lambda: f32, tau: f32) -> f64 {
+    (-lambda as f64 * ((score.bits().value()) as f64 - tau as f64)).exp()
 }
 
 pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
@@ -151,7 +151,7 @@ pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
 }
 
 /// Compute the cloud score: the approximation of the forward score of the entire cloud.
-fn cloud_score(forward_scores: &CloudSearchScores, reverse_scores: &CloudSearchScores) -> Nats {
+pub fn cloud_score(forward_scores: &CloudSearchScores, reverse_scores: &CloudSearchScores) -> Nats {
     // this approximates the score for the forward
     // cloud that extends past the seed end point
     let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;
