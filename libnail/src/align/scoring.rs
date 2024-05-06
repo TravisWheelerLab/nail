@@ -3,6 +3,9 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, LogAbuse};
 
+use super::CloudSearchScores;
+
+/// A wrapper around f32 to describe nats
 #[derive(Clone, Copy)]
 pub struct Nats(pub f32);
 impl Nats {
@@ -53,6 +56,7 @@ impl std::ops::Sub<Bits> for Nats {
     }
 }
 
+/// A wrapper around f32 to describe bits
 #[derive(Clone, Copy)]
 pub struct Bits(pub f32);
 impl Bits {
@@ -103,19 +107,11 @@ impl std::ops::Sub<Nats> for Bits {
     }
 }
 
+/// A trait to generically accept a score value as either bits or nats
 pub trait Score {
     fn bits(self) -> Bits;
     fn nats(self) -> Nats;
-}
-
-impl Score for Bits {
-    fn bits(self) -> Bits {
-        self
-    }
-
-    fn nats(self) -> Nats {
-        self.to_nats()
-    }
+    fn max(self, other: Self) -> Self;
 }
 
 impl Score for Nats {
@@ -126,28 +122,25 @@ impl Score for Nats {
     fn nats(self) -> Nats {
         self
     }
+
+    fn max(self, other: Self) -> Self {
+        Nats(self.0.max(other.0))
+    }
 }
 
-//pub enum Score {
-//    Nats(Nats),
-//    Bits(Bits),
-//}
-//
-//impl Score {
-//    pub fn bits(self) -> Bits {
-//        match self {
-//            Score::Nats(nats) => nats.to_bits(),
-//            Score::Bits(bits) => bits,
-//        }
-//    }
-//
-//    pub fn nats(self) -> Nats {
-//        match self {
-//            Score::Nats(nats) => nats,
-//            Score::Bits(bits) => bits.to_nats(),
-//        }
-//    }
-//}
+impl Score for Bits {
+    fn bits(self) -> Bits {
+        self
+    }
+
+    fn nats(self) -> Nats {
+        self.to_nats()
+    }
+
+    fn max(self, other: Self) -> Self {
+        Bits(self.0.max(other.0))
+    }
+}
 
 pub fn p_value(score: Bits, lambda: f32, tau: f32) -> f64 {
     (-lambda as f64 * ((score.value()) as f64 - tau as f64)).exp()
@@ -157,17 +150,33 @@ pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
     p_value * num_targets as f64
 }
 
-///
-///
-///
+/// Compute the cloud score: the approximation of the forward score of the entire cloud.
+fn cloud_score(forward_scores: &CloudSearchScores, reverse_scores: &CloudSearchScores) -> Nats {
+    // this approximates the score for the forward
+    // cloud that extends past the seed end point
+    let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;
+
+    // this approximates the score for the reverse
+    // cloud that extends past the seed start point
+    let disjoint_reverse_score = reverse_scores.max_score - reverse_scores.max_score_within;
+
+    // this approximates the score of the intersection
+    // of the forward and reverse clouds
+    let intersection_score = forward_scores
+        .max_score_within
+        .max(reverse_scores.max_score_within);
+
+    intersection_score + disjoint_forward_score + disjoint_reverse_score
+}
+
+/// Compute the null one score adjustment: the sum of the background
+/// transitions across the length of the target sequence.
 pub fn null_one_score(target_length: usize) -> Nats {
     let p1 = (target_length as f32) / (target_length as f32 + 1.0);
     Nats(target_length as f32 * p1.ln() + (1.0 - p1).ln())
 }
 
-///
-///
-///
+/// Compute the null two score adjustment: the composition bias.
 pub fn null_two_score(
     posterior_matrix: &impl DpMatrix,
     profile: &Profile,

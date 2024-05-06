@@ -23,7 +23,7 @@ use libnail::align::structs::{
 };
 use libnail::align::{
     backward, cloud_search_backward, cloud_search_forward, forward, null_one_score, null_two_score,
-    optimal_accuracy, posterior, traceback, CloudSearchParams,
+    optimal_accuracy, posterior, traceback, CloudSearchParams, Score,
 };
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
@@ -363,8 +363,8 @@ fn cloud_search(
         .max_score_within
         .max(backward_scores.max_score_within);
 
-    let cloud_score_nats = intersection_score + disjoint_forward_score + disjoint_backward_score;
-    let cloud_score_bits = cloud_score_nats / std::f32::consts::LN_2;
+    let cloud_score_bits =
+        (intersection_score + disjoint_forward_score + disjoint_backward_score).to_bits();
 
     let bounds_intersect =
         dp.forward_bounds.max_anti_diagonal_idx >= dp.backward_bounds.min_anti_diagonal_idx;
@@ -403,7 +403,7 @@ fn cloud_search(
         );
     }
 
-    cloud_score_bits
+    cloud_score_bits.0
 }
 
 fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {

@@ -53,28 +53,6 @@ struct CloudSearchStep {
 }
 
 impl CloudSearchStep {
-    // TODO: move this to libnail
-    fn cloud_score(forward_scores: &CloudSearchScores, reverse_scores: &CloudSearchScores) -> f32 {
-        // this approximates the score for the forward
-        // cloud that extends past the seed end point
-        let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;
-
-        // this approximates the score for the reverse
-        // cloud that extends past the seed start point
-        let disjoint_reverse_score = reverse_scores.max_score - reverse_scores.max_score_within;
-
-        // this approximates the score of the intersection
-        // of the forward and reverse clouds
-        let intersection_score = forward_scores
-            .max_score_within
-            .max(reverse_scores.max_score_within);
-
-        let cloud_score_nats = intersection_score + disjoint_forward_score + disjoint_reverse_score;
-
-        // convert to bits
-        cloud_score_nats / std::f32::consts::LN_2
-    }
-
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds> {
         self.cloud_matrix.reuse(profile.length);
         self.forward_bounds.reuse(target.length, profile.length);
@@ -190,9 +168,9 @@ impl AlignmentStep {
         // for now we compute the P-value for filtering purposes
         let forward_pvalue = p_value(forward_score, profile.forward_lambda, profile.forward_tau);
 
-        // if forward_pvalue >= self.forward_pvalue_threshold {
-        //     return None;
-        // }
+        if forward_pvalue >= self.forward_pvalue_threshold {
+            return None;
+        }
 
         backward(profile, target, &mut self.backward_matrix, bounds);
 

@@ -4,6 +4,8 @@ use crate::max_f32;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
+use super::Nats;
+
 #[derive(Clone)]
 pub struct CloudSearchParams {
     pub gamma: usize,
@@ -27,8 +29,8 @@ pub enum PruneStatus {
 }
 
 pub struct CloudSearchScores {
-    pub max_score: f32,
-    pub max_score_within: f32,
+    pub max_score: Nats,
+    pub max_score_within: Nats,
 }
 
 #[inline]
@@ -388,8 +390,8 @@ pub fn cloud_search_backward(
     }
 
     CloudSearchScores {
-        max_score,
-        max_score_within,
+        max_score: Nats(max_score),
+        max_score_within: Nats(max_score_within),
     }
 }
 
@@ -653,7 +655,7 @@ pub fn cloud_search_forward(
     }
 
     CloudSearchScores {
-        max_score,
-        max_score_within,
+        max_score: Nats(max_score),
+        max_score_within: Nats(max_score_within),
     }
 }
