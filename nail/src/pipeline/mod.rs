@@ -15,7 +15,7 @@ use libnail::{
             Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse,
             RowBounds, Seed, Trace,
         },
-        traceback, CloudSearchParams, CloudSearchScores,
+        traceback, CloudSearchParams,
     },
     output::output_tabular::TableFormat,
     structs::{Profile, Sequence},
@@ -287,12 +287,13 @@ pub fn search_new(args: &SearchArgs) -> anyhow::Result<()> {
             params: CloudSearchParams {
                 ..Default::default()
             },
+            p_value_threshold: args.nail_args.cloud_pvalue_threshold,
             ..Default::default()
         },
         align: AlignmentStep {
-            forward_pvalue_threshold: 1e-3,
             target_count: targets.len(),
-            e_value_threshold: 10.0,
+            forward_pvalue_threshold: args.nail_args.forward_pvalue_threshold,
+            e_value_threshold: args.output_args.evalue_threshold,
             ..Default::default()
         },
     };
@@ -323,6 +324,7 @@ pub struct Output {
 
 impl Output {
     pub fn write(&mut self, alignments: &mut [Alignment]) -> anyhow::Result<()> {
+        self.table_format.reset_widths();
         self.table_format.update_widths(alignments);
 
         alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
