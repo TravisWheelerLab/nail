@@ -199,7 +199,8 @@ impl AlignmentStep {
         let null_two = null_two_score(&self.posterior_matrix, profile, target, bounds);
 
         let cell_fraction = bounds.num_cells() as f32 / (profile.length * target.length) as f32;
-        match AlignmentBuilder::new(&trace)
+
+        let alignment = AlignmentBuilder::new(&trace)
             .with_profile(profile)
             .with_target(target)
             .with_target_count(self.target_count)
@@ -208,9 +209,11 @@ impl AlignmentStep {
             .with_null_two(null_two)
             .with_cell_fraction(cell_fraction)
             .build()
-        {
-            Ok(alignment) => Some(alignment),
-            Err(_) => None,
+            .unwrap();
+
+        match alignment.e_value {
+            Some(e_value) if e_value <= self.e_value_threshold => Some(alignment),
+            _ => None,
         }
     }
 }
