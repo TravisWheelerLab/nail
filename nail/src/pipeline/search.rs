@@ -1,20 +1,28 @@
 use crate::cli::CommonArgs;
+use crate::database::{ProfileCollection, SequenceCollection};
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::{
-    align, prep, seed, AlignArgs, AlignOutputArgs, MmseqsArgs, NailArgs, PrepArgs, PrepDirArgs,
-    SeedArgs,
+    prep, seed, AlignArgs, AlignOutputArgs, MmseqsArgs, NailArgs, PrepArgs, PrepDirArgs, SeedArgs,
 };
 use clap::Args;
+use libnail::align::structs::Seed;
+use libnail::structs::Sequence;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use super::{align, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep, Output, Pipeline};
 
 #[derive(Debug, Args)]
 pub struct SearchArgs {
     /// Query file
     #[arg(value_name = "QUERY.[fasta:sto]")]
     pub query_path: PathBuf,
+
     /// Target file
     #[arg(value_name = "TARGET.fasta")]
     pub target_path: PathBuf,
+
     /// The path to a pre-built P7HMM file
     #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
     pub prebuilt_query_hmm_path: Option<PathBuf>,
@@ -74,8 +82,29 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
     };
 
     prep(&prep_args)?;
-    let (profiles, seed_map) = seed(&seed_args)?;
-    align(&align_args, Some(profiles), Some(seed_map))?;
+    let (profiles_vec, seed_map) = seed(&seed_args)?;
+
+    // TODO: change seed map structure in seed()
+    let mut seeds: HashMap<String, HashMap<String, Seed>> = HashMap::new();
+    seed_map.iter().for_each(|(profile, seed_vec)| {
+        let profile_map = seeds.entry(profile.to_string()).or_default();
+        seed_vec.iter().for_each(|seed| {
+            profile_map.insert(seed.target_name.clone(), seed.clone());
+        });
+    });
+
+    let profiles = ProfileCollection::new(profiles_vec);
+    let targets = SequenceCollection::new(Sequence::amino_from_fasta(&align_args.target_path)?);
+
+    let pipeline = Pipeline {
+        seed: DefaultSeedStep::new(seeds),
+        cloud_search: DefaultCloudSearchStep::new(&align_args),
+        align: DefaultAlignStep::new(&align_args, targets.len()),
+    };
+
+    let output = Arc::new(Mutex::new(Output::new(&args.output_args)?));
+
+    align(&profiles, &targets, pipeline, output);
 
     Ok(())
 }

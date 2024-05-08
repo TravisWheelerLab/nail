@@ -8,7 +8,7 @@ mod viz;
 
 use cli::Cli;
 use extension_traits::CommandExt;
-use pipeline::{align, prep, search, search_new, seed};
+use pipeline::{align, prep, search, seed};
 
 use crate::cli::SubCommands;
 use anyhow::{Context, Result};
@@ -37,12 +37,6 @@ fn set_threads(num_threads: usize) -> Result<()> {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
-        SubCommands::Search2(args) => {
-            check_hmmer_installed()?;
-            check_mmseqs_installed()?;
-            set_threads(args.common_args.num_threads)?;
-            search_new(&args);
-        }
         SubCommands::Search(args) => {
             check_hmmer_installed()?;
             check_mmseqs_installed()?;
@@ -64,7 +58,8 @@ fn main() -> Result<()> {
         }
         SubCommands::Align(args) => {
             set_threads(args.common_args.num_threads)?;
-            align(&args, None, None)?;
+
+            // align(&args, None, None)?;
         }
     }
     Ok(())

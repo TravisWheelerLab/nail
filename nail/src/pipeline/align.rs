@@ -1,31 +1,25 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{stdout, BufWriter, Write};
-use std::io::{Read, Seek};
+use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::Context;
 use clap::Args;
 use libnail::output::output_tabular::{Field, TableFormat};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use thiserror::Error;
 
-use crate::args::{guess_query_format_from_query_file, FileFormat};
 use crate::cli::CommonArgs;
+use crate::database::Database;
 use crate::extension_traits::PathBufExt;
-use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
-use crate::pipeline::seed::SeedMap;
 
 use libnail::align::structs::{
-    Alignment, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds, ScoreParams, Seed,
-    Trace,
+    Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds,
+    Seed, Trace,
 };
 use libnail::align::{
-    backward, cloud_search_backward, cloud_search_forward, forward, null_one_score, null_two_score,
-    optimal_accuracy, posterior, traceback, CloudSearchParams, Score,
+    backward, cloud_score, cloud_search_backward, cloud_search_forward, forward, null_one_score,
+    null_two_score, optimal_accuracy, p_value, posterior, traceback, CloudSearchParams,
 };
-use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
 
 #[derive(Error, Debug)]
@@ -121,442 +115,346 @@ pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::CellFrac,
 ];
 
-#[derive(Clone)]
-struct OutputData {
-    table_format: TableFormat,
-    tab_results_writer: Arc<Mutex<BufWriter<File>>>,
-    ali_results_writer: Arc<Mutex<Box<dyn Write + Send>>>,
+pub trait SeedStep: Clone {
+    fn run(&self, profile: &Profile, target: &Sequence) -> Option<Seed>;
+}
+
+pub trait CloudSearchStep: Clone {
+    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds>;
+}
+
+pub trait AlignStep: Clone {
+    fn run(
+        &mut self,
+        profile: &mut Profile,
+        target: &Sequence,
+        bounds: &RowBounds,
+    ) -> Option<Alignment>;
 }
 
 #[derive(Default, Clone)]
-struct CloudSearchData {
-    cloud_search_params: CloudSearchParams,
+pub struct DefaultSeedStep {
+    seeds: HashMap<String, HashMap<String, Seed>>,
+}
+
+impl DefaultSeedStep {
+    pub fn new(seeds: HashMap<String, HashMap<String, Seed>>) -> Self {
+        DefaultSeedStep { seeds }
+    }
+}
+
+impl SeedStep for DefaultSeedStep {
+    fn run(&self, profile: &Profile, target: &Sequence) -> Option<Seed> {
+        Some(self.seeds.get(&profile.name)?.get(&target.name)?.clone())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct DefaultCloudSearchStep {
     cloud_matrix: CloudMatrixLinear,
     forward_bounds: AntiDiagonalBounds,
-    backward_bounds: AntiDiagonalBounds,
+    reverse_bounds: AntiDiagonalBounds,
     row_bounds: RowBounds,
+    params: CloudSearchParams,
+    p_value_threshold: f64,
+}
+
+impl DefaultCloudSearchStep {
+    pub fn new(args: &AlignArgs) -> Self {
+        Self {
+            params: CloudSearchParams {
+                gamma: args.nail_args.gamma,
+                alpha: args.nail_args.alpha,
+                beta: args.nail_args.beta,
+            },
+            p_value_threshold: args.nail_args.cloud_pvalue_threshold,
+            ..Default::default()
+        }
+    }
+}
+
+impl CloudSearchStep for DefaultCloudSearchStep {
+    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds> {
+        self.cloud_matrix.reuse(profile.length);
+        self.forward_bounds.reuse(target.length, profile.length);
+        self.reverse_bounds.reuse(target.length, profile.length);
+        self.row_bounds.reuse(target.length);
+
+        let forward_scores = cloud_search_forward(
+            profile,
+            target,
+            seed,
+            &mut self.cloud_matrix,
+            &self.params,
+            &mut self.forward_bounds,
+        );
+
+        let reverse_scores = cloud_search_backward(
+            profile,
+            target,
+            seed,
+            &mut self.cloud_matrix,
+            &self.params,
+            &mut self.reverse_bounds,
+        );
+
+        let cloud_score = cloud_score(&forward_scores, &reverse_scores);
+
+        let cloud_p_value = p_value(cloud_score, profile.forward_lambda, profile.forward_tau);
+
+        if cloud_p_value >= self.p_value_threshold {
+            return None;
+        }
+
+        let bounds_intersect =
+            self.forward_bounds.max_anti_diagonal_idx >= self.reverse_bounds.min_anti_diagonal_idx;
+
+        // TODO: clean up this mess
+        if bounds_intersect {
+            AntiDiagonalBounds::join_merge(&mut self.forward_bounds, &self.reverse_bounds);
+            if !self.forward_bounds.valid() {
+                self.forward_bounds.fill_rectangle(
+                    seed.target_start,
+                    seed.profile_start,
+                    seed.target_end,
+                    seed.profile_end,
+                );
+            }
+
+            self.forward_bounds.square_corners();
+            self.forward_bounds.trim_wings();
+
+            self.row_bounds
+                .fill_from_anti_diagonal_bounds(&self.forward_bounds);
+
+            if !self.row_bounds.valid() {
+                self.row_bounds.fill_rectangle(
+                    seed.target_start,
+                    seed.profile_start,
+                    seed.target_end,
+                    seed.profile_end,
+                );
+            }
+        } else {
+            self.row_bounds.fill_rectangle(
+                seed.target_start,
+                seed.profile_start,
+                seed.target_end,
+                seed.profile_end,
+            );
+        }
+
+        Some(&self.row_bounds)
+    }
 }
 
 #[derive(Default, Clone)]
-struct AlignmentData {
+pub struct DefaultAlignStep {
     forward_matrix: DpMatrixSparse,
     backward_matrix: DpMatrixSparse,
     posterior_matrix: DpMatrixSparse,
     optimal_matrix: DpMatrixSparse,
-}
-
-#[derive(Clone)]
-struct ThreadData {
-    output: OutputData,
-    cloud_search: CloudSearchData,
-    alignment: AlignmentData,
-    target_map: Arc<HashMap<String, Sequence>>,
-    score_params: ScoreParams,
-    evalue_threshold: f64,
-    cloud_pvalue_threshold: f64,
     forward_pvalue_threshold: f64,
-    full_dp: bool,
+    target_count: usize,
+    e_value_threshold: f64,
 }
 
-impl ThreadData {
-    pub fn new(args: &AlignArgs, targets: Vec<Sequence>) -> anyhow::Result<Self> {
-        let table_format =
-            TableFormat::new(&DEFAULT_COLUMNS).context("failed to produce TableFormat")?;
-
-        let tab_writer = Mutex::new(args.output_args.tsv_results_path.open(true)?);
-
-        // TODO: is there a better way to do this without a trait object?
-        // note: I think the type is required here to tell
-        //       the compiler that this is a trait object
-        let ali_writer: Mutex<Box<dyn Write + Send>> = match args.output_args.ali_results_path {
-            Some(ref path) => Mutex::new(Box::new(path.open(true)?)),
-            None => Mutex::new(Box::new(stdout())),
-        };
-
-        let output = OutputData {
-            table_format,
-            tab_results_writer: Arc::new(tab_writer),
-            ali_results_writer: Arc::new(ali_writer),
-        };
-
-        let num_targets = match args.nail_args.target_database_size {
-            Some(size) => size,
-            None => targets.len(),
-        };
-
-        let score_params = ScoreParams::new(num_targets);
-
-        let mut target_map: HashMap<String, Sequence> = HashMap::new();
-        for target in targets {
-            target_map.insert(target.name.clone(), target);
-        }
-
-        let target_map = Arc::new(target_map);
-
-        Ok(Self {
-            output,
-            cloud_search: CloudSearchData {
-                cloud_search_params: CloudSearchParams {
-                    gamma: args.nail_args.gamma,
-                    alpha: args.nail_args.alpha,
-                    beta: args.nail_args.beta,
-                },
-                ..Default::default()
+impl DefaultAlignStep {
+    pub fn new(args: &AlignArgs, target_count: usize) -> Self {
+        Self {
+            target_count: match args.nail_args.target_database_size {
+                Some(size) => size,
+                None => target_count,
             },
-            alignment: AlignmentData::default(),
-            target_map,
-            score_params,
-            evalue_threshold: args.output_args.evalue_threshold,
-            cloud_pvalue_threshold: args.nail_args.cloud_pvalue_threshold,
             forward_pvalue_threshold: args.nail_args.forward_pvalue_threshold,
-            full_dp: args.nail_args.full_dp,
-        })
-    }
-}
-
-struct ProfileSeedsPair<'a> {
-    profile: &'a mut Profile,
-    seeds: &'a Vec<Seed>,
-}
-
-pub fn align(
-    args: &AlignArgs,
-    profiles: Option<Vec<Profile>>,
-    seed_map: Option<SeedMap>,
-) -> anyhow::Result<()> {
-    let mut profiles = match profiles {
-        // if we happened to run the seed step before
-        // this, the profiles will be passed in
-        Some(profiles) => profiles,
-        None => {
-            let query_format = guess_query_format_from_query_file(&args.query_path)?;
-            let hmm_path = match query_format {
-                FileFormat::Fasta => {
-                    let hmm_path = args.query_path.with_extension("hmm");
-                    let query_dir = args.query_path.parent().with_context(|| {
-                        format!(
-                            "failed to resolve query directory from path: {}",
-                            args.query_path.to_string_lossy()
-                        )
-                    })?;
-                    let temp_hmm_path = query_dir.join("tmp.hmm");
-                    let temp_fasta_path = query_dir.join("tmp.fa");
-
-                    build_hmm_from_fasta(
-                        &args.query_path,
-                        &temp_fasta_path,
-                        &hmm_path,
-                        &temp_hmm_path,
-                    )?;
-                    hmm_path
-                }
-                FileFormat::Stockholm => {
-                    let hmm_path = args.query_path.with_extension("hmm");
-                    build_hmm_from_stockholm(
-                        &args.query_path,
-                        &hmm_path,
-                        args.common_args.num_threads,
-                    )?;
-                    hmm_path
-                }
-                FileFormat::Hmm => args.query_path.clone(),
-                FileFormat::Unset => {
-                    // TODO: real error
-                    panic!("query format is unset in call to align()");
-                }
-            };
-
-            let hmms = parse_hmms_from_p7hmm_file(hmm_path)?;
-
-            hmms.iter().map(Profile::new).collect()
-        }
-    };
-
-    let seed_map = match seed_map {
-        // if we happened to run the seed step before
-        // this, the seeds will be passed in
-        Some(seed_map) => seed_map,
-        None => {
-            let mut seeds_string = String::new();
-            File::open(&args.seeds_path)
-                .context(format!(
-                    "failed to open alignment seeds file: {}",
-                    &args.seeds_path.to_string_lossy(),
-                ))?
-                .read_to_string(&mut seeds_string)
-                .context(format!(
-                    "failed to read alignment seeds file: {}",
-                    &args.seeds_path.to_string_lossy(),
-                ))?;
-
-            serde_json::from_str(&seeds_string).context(format!(
-                "failed to parse alignment seeds file: {}",
-                &args.seeds_path.to_string_lossy(),
-            ))?
-        }
-    };
-
-    let targets = Sequence::amino_from_fasta(&args.target_path)?;
-
-    // the thread data is everything that is cloned per thread
-    let thread_data = ThreadData::new(args, targets)?;
-
-    let mut profile_seeds_pairs: Vec<ProfileSeedsPair> = vec![];
-
-    for profile in profiles.iter_mut() {
-        match seed_map.get(&profile.name) {
-            Some(seeds) => profile_seeds_pairs.push(ProfileSeedsPair { profile, seeds }),
-            None => {
-                continue;
-            }
+            e_value_threshold: args.output_args.evalue_threshold,
+            ..Default::default()
         }
     }
-
-    profile_seeds_pairs
-        .into_par_iter()
-        .panic_fuse()
-        .for_each_with(thread_data, align_seeds);
-
-    Ok(())
 }
 
-fn cloud_search(
-    profile: &Profile,
-    target: &Sequence,
-    seed: &Seed,
-    dp: &mut CloudSearchData,
-) -> f32 {
-    dp.cloud_matrix.reuse(profile.length);
-    dp.forward_bounds.reuse(target.length, profile.length);
-    dp.backward_bounds.reuse(target.length, profile.length);
-    dp.row_bounds.reuse(target.length);
+impl AlignStep for DefaultAlignStep {
+    fn run(
+        &mut self,
+        profile: &mut Profile,
+        target: &Sequence,
+        bounds: &RowBounds,
+    ) -> Option<Alignment> {
+        // configuring for the target length
+        // adjusts special state transitions
+        profile.configure_for_target_length(target.length);
 
-    let forward_scores = cloud_search_forward(
-        profile,
-        target,
-        seed,
-        &mut dp.cloud_matrix,
-        &dp.cloud_search_params,
-        &mut dp.forward_bounds,
-    );
-
-    let backward_scores = cloud_search_backward(
-        profile,
-        target,
-        seed,
-        &mut dp.cloud_matrix,
-        &dp.cloud_search_params,
-        &mut dp.backward_bounds,
-    );
-
-    // this approximates the score for the forward
-    // cloud that extends past the seed end point
-    let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;
-
-    // this approximates the score for the backward
-    // cloud that extends past the seed start point
-    let disjoint_backward_score = backward_scores.max_score - backward_scores.max_score_within;
-
-    // this approximates the score of the intersection
-    // of the forward and backward clouds
-    let intersection_score = forward_scores
-        .max_score_within
-        .max(backward_scores.max_score_within);
-
-    let cloud_score_bits =
-        (intersection_score + disjoint_forward_score + disjoint_backward_score).to_bits();
-
-    let bounds_intersect =
-        dp.forward_bounds.max_anti_diagonal_idx >= dp.backward_bounds.min_anti_diagonal_idx;
-
-    if bounds_intersect {
-        AntiDiagonalBounds::join_merge(&mut dp.forward_bounds, &dp.backward_bounds);
-        if !dp.forward_bounds.valid() {
-            dp.forward_bounds.fill_rectangle(
-                seed.target_start,
-                seed.profile_start,
-                seed.target_end,
-                seed.profile_end,
-            );
-        }
-
-        dp.forward_bounds.square_corners();
-        dp.forward_bounds.trim_wings();
-
-        dp.row_bounds
-            .fill_from_anti_diagonal_bounds(&dp.forward_bounds);
-
-        if !dp.row_bounds.valid() {
-            dp.row_bounds.fill_rectangle(
-                seed.target_start,
-                seed.profile_start,
-                seed.target_end,
-                seed.profile_end,
-            );
-        }
-    } else {
-        dp.row_bounds.fill_rectangle(
-            seed.target_start,
-            seed.profile_start,
-            seed.target_end,
-            seed.profile_end,
-        );
-    }
-
-    cloud_score_bits.0
-}
-
-fn align_seeds(data: &mut ThreadData, pair: ProfileSeedsPair) {
-    let alignment_data = &mut data.alignment;
-    let cloud_search_data = &mut data.cloud_search;
-    let profile_length = pair.profile.length;
-
-    data.output.table_format.reset_widths();
-
-    let mut alignments: Vec<Alignment> = vec![];
-
-    for seed in pair.seeds {
-        let target = data.target_map.get(&seed.target_name).unwrap();
-        pair.profile.configure_for_target_length(target.length);
-
-        let cloud_score_bits = if data.full_dp {
-            cloud_search_data
-                .row_bounds
-                .fill_rectangle(1, 1, target.length, profile_length);
-            f32::MAX
-        } else {
-            cloud_search(pair.profile, target, seed, cloud_search_data)
-        };
-
-        let cloud_pvalue = (-pair.profile.forward_lambda as f64
-            * (cloud_score_bits as f64 - pair.profile.forward_tau as f64))
-            .exp();
-
-        if cloud_pvalue >= data.cloud_pvalue_threshold {
-            continue;
-        }
-
-        alignment_data.forward_matrix.reuse(
-            target.length,
-            profile_length,
-            &cloud_search_data.row_bounds,
-        );
-        alignment_data.backward_matrix.reuse(
-            target.length,
-            profile_length,
-            &cloud_search_data.row_bounds,
-        );
-        alignment_data.posterior_matrix.reuse(
-            target.length,
-            profile_length,
-            &cloud_search_data.row_bounds,
-        );
-        alignment_data.optimal_matrix.reuse(
-            target.length,
-            profile_length,
-            &cloud_search_data.row_bounds,
-        );
+        self.forward_matrix
+            .reuse(target.length, profile.length, bounds);
+        self.backward_matrix
+            .reuse(target.length, profile.length, bounds);
+        self.posterior_matrix
+            .reuse(target.length, profile.length, bounds);
+        self.optimal_matrix
+            .reuse(target.length, profile.length, bounds);
 
         // we use the forward score to compute the final bit score (later)
-        data.score_params.forward_score_nats = forward(
-            pair.profile,
-            target,
-            &mut alignment_data.forward_matrix,
-            &cloud_search_data.row_bounds,
-        )
-        .value();
+        let forward_score = forward(profile, target, &mut self.forward_matrix, bounds).to_bits();
 
-        let forward_pvalue = (-pair.profile.forward_lambda as f64
-            * ((data.score_params.forward_score_nats / std::f32::consts::LN_2) as f64
-                - pair.profile.forward_tau as f64))
-            .exp();
+        // for now we compute the P-value for filtering purposes
+        let forward_pvalue = p_value(forward_score, profile.forward_lambda, profile.forward_tau);
 
-        if forward_pvalue >= data.forward_pvalue_threshold {
-            continue;
+        if forward_pvalue >= self.forward_pvalue_threshold {
+            return None;
         }
 
-        backward(
-            pair.profile,
-            target,
-            &mut alignment_data.backward_matrix,
-            &cloud_search_data.row_bounds,
-        );
+        backward(profile, target, &mut self.backward_matrix, bounds);
 
         posterior(
-            pair.profile,
-            &alignment_data.forward_matrix,
-            &alignment_data.backward_matrix,
-            &mut alignment_data.posterior_matrix,
-            &cloud_search_data.row_bounds,
+            profile,
+            &self.forward_matrix,
+            &self.backward_matrix,
+            &mut self.posterior_matrix,
+            bounds,
         );
-
-        data.score_params.length_bias_score_nats = null_one_score(target.length).value();
-
-        data.score_params.composition_bias_score_nats = null_two_score(
-            &alignment_data.posterior_matrix,
-            pair.profile,
-            target,
-            &cloud_search_data.row_bounds,
-        )
-        .value();
 
         optimal_accuracy(
-            pair.profile,
-            &alignment_data.posterior_matrix,
-            &mut alignment_data.optimal_matrix,
-            &cloud_search_data.row_bounds,
+            profile,
+            &self.posterior_matrix,
+            &mut self.optimal_matrix,
+            bounds,
         );
 
-        let mut trace = Trace::new(target.length, profile_length);
+        let mut trace = Trace::new(target.length, profile.length);
         traceback(
-            pair.profile,
-            &alignment_data.posterior_matrix,
-            &alignment_data.optimal_matrix,
+            profile,
+            &self.posterior_matrix,
+            &self.optimal_matrix,
             &mut trace,
-            cloud_search_data.row_bounds.target_end,
+            bounds.target_end,
         );
 
-        let mut alignment = Alignment::from_trace(&trace, pair.profile, target, &data.score_params);
+        let null_one = null_one_score(target.length);
+        let null_two = null_two_score(&self.posterior_matrix, profile, target, bounds);
 
-        if alignment.e_value.unwrap() <= data.evalue_threshold {
-            alignment.cell_fraction = Some(
-                cloud_search_data.row_bounds.num_cells() as f32
-                    / (target.length * profile_length) as f32,
-            );
-            alignments.push(alignment);
+        let cell_fraction = bounds.num_cells() as f32 / (profile.length * target.length) as f32;
+
+        let alignment = AlignmentBuilder::new(&trace)
+            .with_profile(profile)
+            .with_target(target)
+            .with_target_count(self.target_count)
+            .with_forward_score(forward_score)
+            .with_null_one(null_one)
+            .with_null_two(null_two)
+            .with_cell_fraction(cell_fraction)
+            .build()
+            .unwrap();
+
+        match alignment.e_value {
+            Some(e_value) if e_value <= self.e_value_threshold => Some(alignment),
+            _ => None,
         }
     }
+}
 
-    alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
-    data.output.table_format.update_widths(&alignments);
+#[derive(Default, Clone)]
+pub struct Pipeline<S, C, A>
+where
+    S: SeedStep,
+    C: CloudSearchStep,
+    A: AlignStep,
+{
+    pub seed: S,
+    pub cloud_search: C,
+    pub align: A,
+}
 
-    alignments.iter().for_each(|a| {
-        match data.output.tab_results_writer.lock() {
-            Ok(mut writer) => {
-                if writer
-                    .stream_position()
-                    .expect("failed to retrieve stream position of tabular results writer")
-                    == 0
-                {
-                    let header = TableFormat::header(&data.output.table_format).unwrap();
-                    writeln!(writer, "{header}").unwrap();
-                }
+impl<S, C, A> Pipeline<S, C, A>
+where
+    S: SeedStep,
+    C: CloudSearchStep,
+    A: AlignStep,
+{
+    fn run(&mut self, profile: &mut Profile, target: &Sequence) -> Option<Alignment> {
+        self.seed
+            .run(profile, target)
+            .and_then(|seed| self.cloud_search.run(profile, target, &seed))
+            .and_then(|bounds| self.align.run(profile, target, bounds))
+    }
+}
 
-                writeln!(
-                    writer,
-                    "{}",
-                    a.tab_string_formatted(&data.output.table_format)
-                )
-                .expect("failed to write tabular output")
-            }
-            Err(_) => panic!("tabular results writer mutex was poisoned"),
-        };
+pub enum HeaderStatus {
+    Unwritten,
+    Written,
+}
 
-        match data.output.ali_results_writer.lock() {
-            Ok(mut writer) => {
-                writeln!(writer, "{}", a.ali_string()).expect("failed to write alignment output");
-            }
-            Err(_) => panic!("alignment results writer mutex was poisoned"),
+pub struct Output {
+    alignment_writer: Box<dyn Write + Send>,
+    table_writer: Box<dyn Write + Send>,
+    table_format: TableFormat,
+    header_status: HeaderStatus,
+}
+
+impl Output {
+    pub fn new(args: &AlignOutputArgs) -> anyhow::Result<Self> {
+        Ok(Self {
+            alignment_writer: Box::new(stdout()),
+            table_writer: Box::new(args.tsv_results_path.open(true)?),
+            table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
+            header_status: HeaderStatus::Unwritten,
+        })
+    }
+
+    pub fn write(&mut self, alignments: &mut [Alignment]) -> anyhow::Result<()> {
+        self.table_format.reset_widths();
+        self.table_format.update_widths(alignments);
+
+        alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
+
+        if let HeaderStatus::Unwritten = self.header_status {
+            let header = TableFormat::header(&self.table_format)?;
+            writeln!(self.table_writer, "{header}")?;
+            self.header_status = HeaderStatus::Written;
         }
-    });
+
+        alignments.iter().for_each(|ali| {
+            writeln!(
+                self.table_writer,
+                "{}",
+                ali.tab_string_formatted(&self.table_format)
+            )
+            .expect("failed to write tabular output");
+
+            writeln!(self.alignment_writer, "{}", ali.ali_string())
+                .expect("failed to write alignment output");
+        });
+
+        Ok(())
+    }
+}
+
+pub fn align<P, T, S, C, A>(
+    profiles: &dyn Database<P, Arc<Mutex<Profile>>>,
+    targets: &(dyn Database<T, Arc<Sequence>> + Send + Sync),
+    pipeline: Pipeline<S, C, A>,
+    output: Arc<Mutex<Output>>,
+) where
+    P: Sync + Send,
+    T: Sync + Send,
+    S: SeedStep + Sync + Send,
+    C: CloudSearchStep + Sync + Send,
+    A: AlignStep + Sync + Send,
+{
+    profiles.into_par_iter().for_each_with(
+        (pipeline, targets, output),
+        |(pipeline, targets, output), profile| {
+            let mut profile_guard = profile.lock().unwrap();
+            let mut alignments: Vec<Alignment> = targets
+                .iter()
+                .filter_map(|target| pipeline.run(&mut profile_guard, &target))
+                .collect();
+
+            match output.lock() {
+                Ok(mut guard) => {
+                    guard.write(&mut alignments).unwrap();
+                }
+                Err(_) => panic!(),
+            }
+        },
+    )
 }
