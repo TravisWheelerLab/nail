@@ -52,6 +52,9 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
     {
         // quickly make sure we can write the results
         args.output_args.tsv_results_path.open(true)?;
+        if let Some(path) = &args.output_args.ali_results_path {
+            path.open(true)?;
+        }
     }
 
     let seeds_path = args.prep_dir.path.join("./seeds.json");

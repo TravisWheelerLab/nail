@@ -3,16 +3,12 @@ use crate::cli::CommonArgs;
 use crate::extension_traits::CommandExt;
 use crate::pipeline::InvalidFileFormatError;
 
-use std::fs::{self, create_dir_all};
-use std::io::{BufWriter, Read, Write};
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use clap::Args;
-use libnail::structs::Sequence;
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct PrepDirArgs {
@@ -121,14 +117,7 @@ pub fn prep(args: &PrepArgs) -> Result<()> {
                 .arg(&args.prep_dir.mmseqs_query_db_path())
                 .run()?;
 
-            if !args.skip_hmmbuild {
-                build_hmm_from_fasta(
-                    &args.query_path,
-                    &args.prep_dir.path.join("tmp.fasta"),
-                    &args.prep_dir.prep_query_hmm_path(),
-                    &args.prep_dir.path.join("tmp.hmm"),
-                )?;
-            }
+            // NOTE: we no longer prebuild HMMs from fasta queries
         }
         FileFormat::Stockholm => {
             Command::new("mmseqs")
@@ -186,93 +175,6 @@ pub fn build_hmm_from_stockholm(
         .arg(hmm_path.as_ref())
         .arg(stockholm_path.as_ref())
         .run()?;
-
-    Ok(())
-}
-
-pub fn build_hmm_from_fasta(
-    query_fasta_path: &impl AsRef<Path>,
-    temp_fasta_path: &impl AsRef<Path>,
-    query_hmm_path: &impl AsRef<Path>,
-    temp_hmm_path: &impl AsRef<Path>,
-) -> anyhow::Result<()> {
-    let query_fasta_path = query_fasta_path.as_ref();
-    let query_hmm_path = query_hmm_path.as_ref();
-
-    let query_seqs = Sequence::amino_from_fasta(query_fasta_path).with_context(|| {
-        format!(
-            "failed to parse query fasta: {}",
-            query_fasta_path.to_string_lossy()
-        )
-    })?;
-
-    // this is the query hmm file we are going to build
-    let query_hmm_file = std::fs::File::create(query_hmm_path)?;
-    let hmm_buf_writer = BufWriter::new(query_hmm_file);
-
-    fs::create_dir(temp_hmm_path)?;
-    fs::create_dir(temp_fasta_path)?;
-
-    let pb = indicatif::ProgressBar::new(query_seqs.len() as u64);
-    pb.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {human_pos}/{human_len} ({eta})")
-        .unwrap()
-        .progress_chars("#>-"));
-
-    #[derive(Clone)]
-    struct ThreadData {
-        progress_bar: Arc<Mutex<indicatif::ProgressBar>>,
-        hmm_writer: Arc<Mutex<BufWriter<std::fs::File>>>,
-        hmm_bytes: Vec<u8>,
-        hmm_path: PathBuf,
-        fasta_path: PathBuf,
-    }
-
-    let init = ThreadData {
-        progress_bar: Arc::new(Mutex::new(pb)),
-        hmm_writer: Arc::new(Mutex::new(hmm_buf_writer)),
-        hmm_bytes: vec![],
-        hmm_path: temp_hmm_path.as_ref().to_path_buf(),
-        fasta_path: temp_fasta_path.as_ref().to_path_buf(),
-    };
-
-    query_seqs
-        .into_par_iter()
-        .enumerate()
-        .try_for_each_with(init, |data, (idx, seq)| {
-            data.hmm_bytes.clear();
-
-            let temp_fasta_path = data.fasta_path.join(idx.to_string());
-            let temp_hmm_path = data.hmm_path.join(idx.to_string());
-
-            let mut temp_fasta_file = std::fs::File::create(&temp_fasta_path)
-                .context("failed to open temporary fasta file")?;
-            writeln!(temp_fasta_file, "{}", seq)
-                .context("failed to write to temporary fasta file")?;
-
-            Command::new("hmmbuild")
-                .args(["-n", &seq.name])
-                .arg("--amino")
-                .arg(&temp_hmm_path)
-                .arg(&temp_fasta_path)
-                .run()
-                .context("failed to run hmmbuild")?;
-
-            let mut temp_hmm_file =
-                std::fs::File::open(temp_hmm_path).context("failed to open temporary hmm file")?;
-
-            temp_hmm_file
-                .read_to_end(&mut data.hmm_bytes)
-                .context("failed to read temporary hmm file")?;
-
-            let pb = data.progress_bar.lock().unwrap();
-            pb.inc(1);
-
-            let mut writer = data.hmm_writer.lock().unwrap();
-            writer
-                .write_all(&data.hmm_bytes)
-                .context("failed to write to query hmm file")
-        })
-        .context("failed to build hmm from fasta")?;
 
     Ok(())
 }
