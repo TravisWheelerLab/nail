@@ -484,7 +484,7 @@ pub fn parse_hmms_from_p7hmm_file<P: AsRef<Path>>(path: P) -> Result<Vec<Hmm>> {
                         get_joined_tokens(&tokens, 1).with_context(|| "")?;
                     parser_state = ParserState::Header;
                 }
-                _ => panic!("unknown flag: {}", flag),
+                _ => panic!("unknown flag: {}\non line:\n{}", flag, line),
             },
             ParserState::Header => {
                 let error_context = || {

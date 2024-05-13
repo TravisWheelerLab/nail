@@ -428,14 +428,12 @@ impl Output {
     }
 }
 
-pub fn align<P, T, S, C, A>(
-    profiles: &dyn Database<P, Arc<Mutex<Profile>>>,
-    targets: &(dyn Database<T, Arc<Sequence>> + Send + Sync),
+pub fn align<S, C, A>(
+    profiles: &dyn Database<Arc<Mutex<Profile>>>,
+    targets: &(dyn Database<Arc<Sequence>> + Send + Sync),
     pipeline: Pipeline<S, C, A>,
     output: Arc<Mutex<Output>>,
 ) where
-    P: Sync + Send,
-    T: Sync + Send,
     S: SeedStep + Sync + Send,
     C: CloudSearchStep + Sync + Send,
     A: AlignStep + Sync + Send,

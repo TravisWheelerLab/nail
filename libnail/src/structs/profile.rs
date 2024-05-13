@@ -2,7 +2,7 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64;
 
 use crate::align::structs::{DpMatrixSparse, RowBounds, Trace};
-use crate::align::{forward, null_one_score, Bits};
+use crate::align::{forward, null_one_score};
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
     AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
@@ -43,7 +43,7 @@ pub struct Profile {
     /// The expected number of times that the J state is used
     pub expected_j_uses: f32,
     /// The profile's consensus sequence
-    pub consensus_sequence: Vec<u8>,
+    pub consensus_sequence_bytes_utf8: Vec<u8>,
     /// The sequence alphabet
     pub alphabet: Alphabet,
     pub forward_tau: f32,
@@ -222,7 +222,7 @@ impl Profile {
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
             // buffered with a space so that indexing starts at 1
-            consensus_sequence: vec![UTF8_SPACE],
+            consensus_sequence_bytes_utf8: vec![UTF8_SPACE],
             alphabet: Alphabet::Amino,
             forward_tau: hmm.stats.forward_tau,
             forward_lambda: hmm.stats.forward_lambda,
@@ -296,7 +296,7 @@ impl Profile {
                 hmm.model.match_probabilities[model_position_idx][match_probabilities_argmax];
 
             profile
-                .consensus_sequence
+                .consensus_sequence_bytes_utf8
                 .push(if match_probabilities_max > 0.5 {
                     // if the match emission probability for the residue is greater
                     // than 0.50 (amino), we want to display it as a capital letter

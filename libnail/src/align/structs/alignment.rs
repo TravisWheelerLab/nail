@@ -232,7 +232,7 @@ impl<'a> AlignmentBuilder<'a> {
 
                     self.trace.iter().for_each(|step| {
                         posteriors.push(map_posterior_probability_to_bin_byte(step.posterior));
-                        let profile_byte = profile.consensus_sequence[step.profile_idx];
+                        let profile_byte = profile.consensus_sequence_bytes_utf8[step.profile_idx];
                         let target_byte = target.utf8_bytes[step.target_idx];
 
                         match step.state {
@@ -325,7 +325,7 @@ impl Alignment {
         for trace_idx in 0..trace.length {
             let trace_state = trace.states[trace_idx];
             let profile_idx = trace.profile_indices[trace_idx];
-            let profile_string_byte = profile.consensus_sequence[profile_idx];
+            let profile_string_byte = profile.consensus_sequence_bytes_utf8[profile_idx];
             let target_idx = trace.target_indices[trace_idx];
             let target_string_byte = target.utf8_bytes[target_idx];
 
@@ -365,7 +365,7 @@ impl Alignment {
                             mid_bytes.push(UTF8_SPACE);
                         }
                         Trace::D_STATE => {
-                            profile_bytes.push(profile.consensus_sequence[profile_idx]);
+                            profile_bytes.push(profile.consensus_sequence_bytes_utf8[profile_idx]);
                             target_bytes.push(UTF8_DASH);
                             mid_bytes.push(UTF8_SPACE);
                         }

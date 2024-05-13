@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use libnail::structs::{Hmm, Profile, Sequence};
 use rayon::iter::{
@@ -6,136 +9,169 @@ use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
 
-pub trait Database<I, O> {
-    fn iter(&self) -> DbIter<I, O>;
-    fn par_iter(&self) -> DbParIter<I, O>;
+use crate::id::{next_id, Id};
+
+pub trait Database<O> {
+    fn iter(&self) -> DbIter<O>;
+    fn par_iter(&self) -> DbParIter<O>;
+    fn get(&self, id: &Id) -> Option<O>;
 }
 
 pub struct ProfileCollection {
-    profiles: Vec<Arc<Mutex<Profile>>>,
+    profile_map: HashMap<Id, Arc<Mutex<Profile>>>,
+    ids: Vec<Id>,
 }
 
 impl ProfileCollection {
     pub fn new(profiles: Vec<Profile>) -> Self {
-        Self {
-            profiles: profiles
-                .into_iter()
-                .map(|p| Arc::new(Mutex::new(p)))
-                .collect(),
-        }
+        let ids: Vec<_> = profiles.iter().map(|_| next_id()).collect();
+        let mut profile_map: HashMap<_, _> = HashMap::new();
+
+        profiles
+            .into_iter()
+            .map(|p| Arc::new(Mutex::new(p)))
+            .zip(&ids)
+            .for_each(|(p, &i)| {
+                profile_map.insert(i, p);
+            });
+
+        Self { profile_map, ids }
     }
 
     pub fn len(&self) -> usize {
-        self.profiles.len()
+        self.profile_map.len()
+    }
+
+    pub fn ids(&self) -> &[Id] {
+        &self.ids
     }
 }
 
 pub struct SequenceCollection {
-    sequences: Vec<Arc<Sequence>>,
+    sequence_map: HashMap<Id, Arc<Sequence>>,
+    ids: Vec<Id>,
 }
 
 impl SequenceCollection {
     pub fn new(sequences: Vec<Sequence>) -> Self {
-        Self {
-            sequences: sequences.into_iter().map(Arc::new).collect(),
-        }
+        let ids: Vec<_> = sequences.iter().map(|_| next_id()).collect();
+        let mut sequence_map: HashMap<_, _> = HashMap::new();
+
+        sequences
+            .into_iter()
+            .map(Arc::new)
+            .zip(&ids)
+            .for_each(|(p, &i)| {
+                sequence_map.insert(i, p);
+            });
+        Self { sequence_map, ids }
     }
 
     pub fn len(&self) -> usize {
-        self.sequences.len()
+        self.sequence_map.len()
+    }
+
+    pub fn ids(&self) -> &[Id] {
+        &self.ids
     }
 }
 
-impl Database<Arc<Mutex<Profile>>, Arc<Mutex<Profile>>> for ProfileCollection {
-    fn iter(&self) -> DbIter<Arc<Mutex<Profile>>, Arc<Mutex<Profile>>> {
+impl Database<Arc<Mutex<Profile>>> for ProfileCollection {
+    fn iter(&self) -> DbIter<Arc<Mutex<Profile>>> {
         DbIter {
-            inner: &self.profiles,
-            callback: &|p| p.clone(),
+            inner: self,
+            ids: &self.ids,
         }
     }
 
-    fn par_iter(&self) -> DbParIter<Arc<Mutex<Profile>>, Arc<Mutex<Profile>>> {
+    fn par_iter(&self) -> DbParIter<Arc<Mutex<Profile>>> {
         DbParIter {
-            inner: &self.profiles,
-            callback: &|p| p.clone(),
+            inner: self,
+            ids: &self.ids,
         }
+    }
+
+    fn get(&self, id: &Id) -> Option<Arc<Mutex<Profile>>> {
+        self.profile_map.get(id).cloned()
     }
 }
 
-impl Database<Arc<Sequence>, Arc<Sequence>> for SequenceCollection {
-    fn iter(&self) -> DbIter<Arc<Sequence>, Arc<Sequence>> {
+impl Database<Arc<Sequence>> for SequenceCollection {
+    fn iter(&self) -> DbIter<Arc<Sequence>> {
         DbIter {
-            inner: &self.sequences,
-            callback: &|s| s.clone(),
+            inner: self,
+            ids: &self.ids,
         }
     }
 
-    fn par_iter(&self) -> DbParIter<Arc<Sequence>, Arc<Sequence>> {
+    fn par_iter(&self) -> DbParIter<Arc<Sequence>> {
         DbParIter {
-            inner: &self.sequences,
-            callback: &|s| s.clone(),
+            inner: self,
+            ids: &self.ids,
         }
+    }
+
+    fn get(&self, id: &Id) -> Option<Arc<Sequence>> {
+        self.sequence_map.get(id).cloned()
     }
 }
 
-impl Database<Arc<Sequence>, Arc<Mutex<Profile>>> for SequenceCollection {
-    fn iter(&self) -> DbIter<Arc<Sequence>, Arc<Mutex<Profile>>> {
+impl Database<Arc<Mutex<Profile>>> for SequenceCollection {
+    fn iter(&self) -> DbIter<Arc<Mutex<Profile>>> {
         DbIter {
-            inner: &self.sequences,
-            callback: &|seq| {
-                let hmm = Hmm::from_blosum_62_and_sequence(seq).unwrap();
+            inner: self,
+            ids: &self.ids,
+        }
+    }
+
+    fn par_iter(&self) -> DbParIter<Arc<Mutex<Profile>>> {
+        DbParIter {
+            inner: self,
+            ids: &self.ids,
+        }
+    }
+
+    fn get(&self, id: &Id) -> Option<Arc<Mutex<Profile>>> {
+        match self.sequence_map.get(id) {
+            Some(seq) => {
+                let hmm = Hmm::from_blosum_62_and_sequence(seq)
+                    .expect("failed to create Hmm from Sequence");
                 let mut profile = Profile::new(&hmm);
                 profile.calibrate_tau(200, 100, 0.04);
-                Arc::new(Mutex::new(profile))
-            },
-        }
-    }
-
-    fn par_iter(&self) -> DbParIter<Arc<Sequence>, Arc<Mutex<Profile>>> {
-        DbParIter {
-            inner: &self.sequences,
-            callback: &|seq| {
-                let hmm = Hmm::from_blosum_62_and_sequence(seq).unwrap();
-                let mut profile = Profile::new(&hmm);
-                profile.calibrate_tau(200, 100, 0.04);
-                Arc::new(Mutex::new(profile))
-            },
+                Some(Arc::new(Mutex::new(profile)))
+            }
+            None => None,
         }
     }
 }
 
-///
-///
-///
-pub struct DbIter<'a, I, O> {
-    inner: &'a [I],
-    callback: &'a (dyn Fn(&I) -> O),
+pub struct DbIter<'a, O> {
+    inner: &'a dyn Database<O>,
+    ids: &'a [Id],
 }
 
-///
-///
-///
-struct DbProducer<'a, I, O> {
-    inner: &'a [I],
-    callback: &'a (dyn Fn(&I) -> O + Send + Sync),
+pub struct DbProducer<'a, O> {
+    inner: &'a (dyn Database<O> + Send + Sync),
+    ids: &'a [Id],
 }
 
-///
-///
-///
-pub struct DbParIter<'a, I, O> {
-    inner: &'a [I],
-    callback: &'a (dyn Fn(&I) -> O + Send + Sync),
+pub struct DbParIter<'a, O> {
+    inner: &'a (dyn Database<O> + Send + Sync),
+    ids: &'a [Id],
 }
 
-impl<'a, I, O> Iterator for DbIter<'a, I, O> {
+impl<'a, O> Iterator for DbIter<'a, O> {
     type Item = O;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.first() {
-            Some(item) => {
-                self.inner = &self.inner[1..];
-                Some((self.callback)(item))
+        match self.ids.first() {
+            Some(id) => {
+                self.ids = &self.ids[1..];
+                match self.inner.get(id) {
+                    Some(item) => Some(item),
+                    // being very cautious here
+                    None => panic!("invalid Id in DbIter"),
+                }
             }
             None => None,
         }
@@ -146,26 +182,29 @@ impl<'a, I, O> Iterator for DbIter<'a, I, O> {
     // the ExactSizerIterator trait to work; the
     // default impl of size_hint returns (0, None)
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.inner.len();
+        let size = self.ids.len();
         (size, Some(size))
     }
 }
 
 // rayon expects the the iterators it
 // uses to implement DoubleEndedIterator
-impl<'a, I, O> DoubleEndedIterator for DbIter<'a, I, O> {
+impl<'a, O> DoubleEndedIterator for DbIter<'a, O> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        match self.inner.last() {
-            Some(item) => {
-                self.inner = &self.inner[0..self.len() - 1];
-                Some((self.callback)(item))
+        match self.ids.last() {
+            Some(id) => {
+                self.ids = &self.ids[0..self.len() - 1];
+                match self.inner.get(id) {
+                    Some(item) => Some(item),
+                    None => panic!("invalid Id in DbIter"),
+                }
             }
             None => None,
         }
     }
 }
 
-impl<'a, I, O> ExactSizeIterator for DbIter<'a, I, O> {}
+impl<'a, O> ExactSizeIterator for DbIter<'a, O> {}
 
 // ------------
 // rayon traits
@@ -174,43 +213,39 @@ impl<'a, I, O> ExactSizeIterator for DbIter<'a, I, O> {}
 //
 //
 //
-impl<'a, I, O> Producer for DbProducer<'a, I, O>
+
+impl<'a, O> Producer for DbProducer<'a, O>
 where
-    I: Send + Sync,
     O: Send + Sync,
 {
     type Item = O;
 
-    type IntoIter = DbIter<'a, I, O>;
+    type IntoIter = DbIter<'a, O>;
 
     fn into_iter(self) -> Self::IntoIter {
         DbIter {
             inner: self.inner,
-            callback: self.callback,
+            ids: self.ids,
         }
     }
 
     fn split_at(self, index: usize) -> (Self, Self) {
-        let (left, right) = self.inner.split_at(index);
+        let (left, right) = self.ids.split_at(index);
         (
             Self {
-                inner: left,
-                callback: self.callback,
+                inner: self.inner,
+                ids: left,
             },
             Self {
-                inner: right,
-                callback: self.callback,
+                inner: self.inner,
+                ids: right,
             },
         )
     }
 }
 
-//
-//
-//
-impl<'a, I, O> ParallelIterator for DbParIter<'a, I, O>
+impl<'a, O> ParallelIterator for DbParIter<'a, O>
 where
-    I: Send + Sync,
     O: Send + Sync,
 {
     type Item = O;
@@ -223,16 +258,12 @@ where
     }
 }
 
-//
-//
-//
-impl<'a, I, O> IndexedParallelIterator for DbParIter<'a, I, O>
+impl<'a, O> IndexedParallelIterator for DbParIter<'a, O>
 where
-    I: Send + Sync,
     O: Send + Sync,
 {
     fn len(&self) -> usize {
-        self.inner.len()
+        self.ids.len()
     }
 
     fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
@@ -242,22 +273,18 @@ where
     fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
         let producer = DbProducer {
             inner: self.inner,
-            callback: self.callback,
+            ids: self.ids,
         };
 
         callback.callback(producer)
     }
 }
 
-//
-//
-//
-impl<'a, I, O> IntoParallelIterator for &'a dyn Database<I, O>
+impl<'a, O> IntoParallelIterator for &'a dyn Database<O>
 where
-    I: Send + Sync,
     O: Send + Sync,
 {
-    type Iter = DbParIter<'a, I, O>;
+    type Iter = DbParIter<'a, O>;
 
     type Item = O;
 

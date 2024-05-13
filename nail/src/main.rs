@@ -8,7 +8,7 @@ mod viz;
 
 use cli::Cli;
 use extension_traits::CommandExt;
-use pipeline::{align, prep, search, seed};
+use pipeline::{align, search, seed};
 
 use crate::cli::SubCommands;
 use anyhow::{Context, Result};
@@ -43,18 +43,13 @@ fn main() -> Result<()> {
             set_threads(args.common_args.num_threads)?;
             search(&args)?;
         }
-        SubCommands::Prep(args) => {
-            check_hmmer_installed()?;
-            check_mmseqs_installed()?;
-            prep(&args)?;
-        }
         SubCommands::Seed(mut args) => {
             check_hmmer_installed()?;
             check_mmseqs_installed()?;
             // TODO: I'd like to think of a way to remove this nonsense
             args.prep_dir.path = args.prep_dir_path.clone();
 
-            seed(&args)?;
+            // seed(&args)?;
         }
         SubCommands::Align(args) => {
             set_threads(args.common_args.num_threads)?;
