@@ -1,12 +1,10 @@
-use crate::args::{
-    guess_query_format_from_query_file, read_query_format_from_mmseqs_query_db, FileFormat,
-};
+use crate::args::{guess_query_format_from_query_file, FileFormat};
 use crate::database::{Database, ProfileCollection};
 use crate::extension_traits::{CommandExt, PathBufExt};
 
 use libnail::align::structs::Seed;
-use libnail::align::{needleman_wunsch, SimpleTraceStep};
-use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
+use libnail::align::{needleman_wunsch, Nats, SimpleTraceStep};
+use libnail::alphabet::UTF8_TO_DIGITAL_AMINO;
 use libnail::structs::{Profile, Sequence};
 use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
@@ -14,7 +12,6 @@ use std::io::Write;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
 
 use crate::cli::CommonArgs;
 use anyhow::Context;
@@ -22,6 +19,87 @@ use clap::Args;
 use thiserror::Error;
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
+
+pub fn p7_to_mmseqs_profile(profiles: &[Profile], args: &PrepDirArgs) -> anyhow::Result<()> {
+    create_dir_all(&args.path)?;
+
+    args.mmseqs_query_h_dbtype_path()
+        .open(true)?
+        .write_all(&[12, 0, 0, 0])?;
+
+    args.mmseqs_query_dbtype_path()
+        .open(true)?
+        .write_all(&[2, 0, 0, 0])?;
+
+    let mut query_db = args.mmseqs_query_db_path().open(true)?;
+    let mut query_db_index = args.mmseqs_query_db_index_path().open(true)?;
+    let mut query_db_header = args.mmseqs_query_db_h_path().open(true)?;
+    let mut query_db_header_index = args.mmseqs_query_db_h_index_path().open(true)?;
+
+    let mut query_offset = 0usize;
+    let mut header_offset = 0usize;
+
+    for (profile_count, profile) in profiles.iter().enumerate() {
+        for profile_idx in 1..=profile.length {
+            for byte in (0..20)
+                .map(|residue| Nats(profile.match_score(residue, profile_idx)))
+                .map(|nats| nats.to_bits())
+                .map(|bits| bits.value())
+                // multiply the bits by 8.0 just because
+                // that's what they do in mmseqs
+                .map(|s| (s * 8.0) as i8)
+                .map(|s| s as u8)
+            {
+                query_db.write_all(&[byte])?;
+            }
+
+            let consensus_byte_digital = *UTF8_TO_DIGITAL_AMINO
+                .get(&profile.consensus_sequence_bytes_utf8[profile_idx])
+                .unwrap();
+
+            // query sequence byte?
+            // still not sure what this is, so we'll just put the consensus
+            query_db.write_all(&[consensus_byte_digital])?;
+
+            // consensus sequence byte
+            query_db.write_all(&[consensus_byte_digital])?;
+
+            // neff value
+            query_db.write_all(&[0u8])?;
+
+            // something
+            query_db.write_all(&[0u8])?;
+            // something
+            query_db.write_all(&[0u8])?;
+        }
+
+        let query_byte_length = (profile.length + 1) * 25;
+
+        writeln!(
+            query_db_index,
+            "{}\t{}\t{}",
+            profile_count, query_offset, query_byte_length,
+        )?;
+
+        // for some reason, the header has newlines and 0-byte separators?
+        writeln!(query_db_header, "{}", profile.name)?;
+        query_db_header.write_all(&[0u8])?;
+
+        // +1 for the 0 byte, +1 for the newline
+        let header_byte_length = profile.name.len() + 2;
+
+        writeln!(
+            query_db_header_index,
+            "{}\t{}\t{}",
+            profile_count, header_offset, header_byte_length
+        )?;
+
+        query_offset += query_byte_length;
+        header_offset += header_byte_length;
+    }
+
+    Ok(())
+}
 
 #[derive(Args, Debug, Clone)]
 pub struct MmseqsArgs {
@@ -90,13 +168,19 @@ impl PrepDirArgs {
     pub fn mmseqs_query_db_index_path(&self) -> PathBuf {
         self.path.join("queryDB.index")
     }
-    /// Produce a path to the MMseqs2 query database h file
+    /// Produce a path to the MMseqs2 query database header file
     pub fn mmseqs_query_db_h_path(&self) -> PathBuf {
         self.path.join("queryDB_h")
     }
-    /// Produce a path to the MMseqs2 query database h file index
+    /// Produce a path to the MMseqs2 query database header file index
     pub fn mmseqs_query_db_h_index_path(&self) -> PathBuf {
         self.path.join("queryDB_h.index")
+    }
+    /// Produce a path to the MMseqs2 query database header dbtype file.
+    ///
+    /// This file holds a byte that describes the original query file format.
+    pub fn mmseqs_query_h_dbtype_path(&self) -> PathBuf {
+        self.path.join("queryDB_h.dbtype")
     }
     /// Produce a path to the MMseqs2 target database.
     ///
