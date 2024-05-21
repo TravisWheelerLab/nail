@@ -5,6 +5,7 @@ use crate::extension_traits::{CommandExt, PathBufExt};
 use libnail::align::structs::Seed;
 use libnail::align::{needleman_wunsch, Nats, SimpleTraceStep};
 use libnail::alphabet::UTF8_TO_DIGITAL_AMINO;
+use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
 use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
@@ -73,7 +74,7 @@ pub fn p7_to_mmseqs_profile(profiles: &[Profile], args: &PrepDirArgs) -> anyhow:
             query_db.write_all(&[0u8])?;
         }
 
-        let query_byte_length = (profile.length + 1) * 25;
+        let query_byte_length = profile.length * 25;
 
         writeln!(
             query_db_index,
@@ -257,6 +258,14 @@ fn run_mmseqs_search(args: &SeedArgs) -> anyhow::Result<()> {
 
             // NOTE: we no longer prebuild HMMs from fasta queries
         }
+        FileFormat::Hmm => {
+            let profiles = parse_hmms_from_p7hmm_file(&args.query_path)
+                .context("failed to read query hmm")?
+                .iter()
+                .map(Profile::new)
+                .collect::<Vec<_>>();
+            p7_to_mmseqs_profile(&profiles, &args.prep_dir)?;
+        }
         FileFormat::Stockholm => {
             Command::new("mmseqs")
                 .arg("convertmsa")
@@ -304,12 +313,24 @@ fn run_mmseqs_search(args: &SeedArgs) -> anyhow::Result<()> {
     let num_targets = target_db_file.lines().count() as f64;
     let effective_e_value = args.mmseqs_args.pvalue_threshold * num_targets;
 
+    args.prep_dir.mmseqs_align_db_path().remove();
+
+    args.prep_dir
+        .mmseqs_align_db_path()
+        .with_extension("dbtype")
+        .remove();
+
+    args.prep_dir
+        .mmseqs_align_db_path()
+        .with_extension("index")
+        .remove();
+
     Command::new("mmseqs")
         .arg("search")
         .arg(&args.prep_dir.mmseqs_query_db_path())
         .arg(&args.prep_dir.mmseqs_target_db_path())
         .arg(&args.prep_dir.mmseqs_align_db_path())
-        .arg(&args.prep_dir_path.join("tmp"))
+        .arg(&args.prep_dir.path)
         .args(["--threads", &args.common_args.num_threads.to_string()])
         .args(["-k", &args.mmseqs_args.k.to_string()])
         .args(["--k-score", &args.mmseqs_args.k_score.to_string()])

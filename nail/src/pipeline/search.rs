@@ -93,6 +93,16 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
             );
             Box::new(queries)
         }
+        FileFormat::Hmm => {
+            let profiles = parse_hmms_from_p7hmm_file(&args.query_path)
+                .context("failed to read query hmm")?
+                .iter()
+                .map(Profile::new)
+                .collect();
+            let queries = ProfileCollection::new(profiles);
+
+            Box::new(queries)
+        }
         FileFormat::Stockholm => {
             let profiles = parse_hmms_from_p7hmm_file(args.prep_dir.prep_query_hmm_path())
                 .context("failed to read query hmm")?
