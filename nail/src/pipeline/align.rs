@@ -393,7 +393,10 @@ pub struct Output {
 impl Output {
     pub fn new(args: &AlignOutputArgs) -> anyhow::Result<Self> {
         Ok(Self {
-            alignment_writer: Box::new(stdout()),
+            alignment_writer: match &args.ali_results_path {
+                Some(path) => Box::new(path.open(true)?),
+                None => Box::new(stdout()),
+            },
             table_writer: Box::new(args.tsv_results_path.open(true)?),
             table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
             header_status: HeaderStatus::Unwritten,
