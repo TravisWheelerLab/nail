@@ -3,12 +3,14 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
+use super::Nats;
+
 pub fn forward(
     profile: &Profile,
     target: &Sequence,
     dp_matrix: &mut impl DpMatrix,
     bounds: &RowBounds,
-) -> f32 {
+) -> Nats {
     let end_score: f32 = 0.0;
 
     dp_matrix.set_special(bounds.target_start - 1, Profile::SPECIAL_N_IDX, 0.0);
@@ -197,5 +199,9 @@ pub fn forward(
         );
     }
 
-    dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX)
+    let final_c_state_score = dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX);
+    let c_to_n_score =
+        profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX);
+
+    Nats(final_c_state_score + c_to_n_score)
 }

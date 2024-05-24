@@ -38,6 +38,7 @@ impl CommandExt for Command {
 
 pub trait PathBufExt {
     fn open(&self, allow_overwrite: bool) -> anyhow::Result<BufWriter<File>>;
+    fn remove(&self) -> anyhow::Result<()>;
 }
 
 impl PathBufExt for PathBuf {
@@ -55,5 +56,10 @@ impl PathBufExt for PathBuf {
             .context(format!("failed to create file: {}", self.to_string_lossy()))?;
 
         Ok(BufWriter::new(file))
+    }
+
+    fn remove(&self) -> anyhow::Result<()> {
+        std::fs::remove_file(self)?;
+        Ok(())
     }
 }

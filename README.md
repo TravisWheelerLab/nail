@@ -17,7 +17,7 @@ The `nail search` pipeline uses `mmseqs search` from the MMseqs2 suite and the `
 In the future, we plan to replace both dependencies with our own alternatives that will be internal to nail.
 
 nail has been tested with [MMseqs2 Release 15-6f452](https://github.com/soedinglab/MMseqs2/releases/tag/15-6f452) and [HMMER v3.4](http://hmmer.org/download.html).
-We have not tested nail against versions of these tools, but they may work.
+We have not tested nail against other versions of these tools, but they may work.
 
 To run the `nail search` pipeline, `mmseqs search` and `hmmbuild` must be available in your system path.
 

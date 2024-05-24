@@ -1,12 +1,14 @@
-use std::fmt::{Display, Formatter};
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
-
-use anyhow::Context;
+use anyhow::{anyhow, bail, Context, Result};
+use regex::Regex;
+use std::{
+    fmt::{Display, Formatter},
+    fs::File,
+    io::{BufRead, BufReader, Read},
+    path::Path,
+};
 use thiserror::Error;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub enum FileFormat {
     Fasta,
     Stockholm,
@@ -26,7 +28,7 @@ impl Display for FileFormat {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 #[error("can't guess file format of: {path}")]
 pub struct UnrecognizedFileFormatError {
     path: String,
@@ -34,7 +36,7 @@ pub struct UnrecognizedFileFormatError {
 
 pub fn guess_query_format_from_query_file(
     query_path: &impl AsRef<Path>,
-) -> anyhow::Result<FileFormat> {
+) -> Result<FileFormat> {
     let file = File::open(query_path).context(format!(
         "failed to open query file: {}",
         query_path.as_ref().to_string_lossy()
@@ -58,15 +60,45 @@ pub fn guess_query_format_from_query_file(
     }
 }
 
+pub fn my_guess_query_format_from_query_file(
+    query_path: &impl AsRef<Path>,
+) -> Result<FileFormat> {
+    let file = File::open(query_path).map_err(|e| {
+        anyhow!("{}: {e}", query_path.as_ref().to_string_lossy())
+    })?;
+
+    let mut reader = BufReader::new(file);
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line)?;
+
+    let fasta_re = Regex::new("^>").unwrap();
+    let sto_re = Regex::new("^# STOCKHOLM").unwrap();
+    let hmmer_re = Regex::new("^HMMER").unwrap();
+
+    if fasta_re.is_match(&first_line) {
+        Ok(FileFormat::Fasta)
+    } else if sto_re.is_match(&first_line) {
+        Ok(FileFormat::Stockholm)
+    } else if hmmer_re.is_match(&first_line) {
+        Ok(FileFormat::Hmm)
+    } else {
+        bail!(format!(
+            r#"Unknown format: "{}""#,
+            query_path.as_ref().to_string_lossy().to_string()
+        ))
+    }
+}
+
 #[derive(Error, Debug)]
 #[error("unsupported MMseqs2 database type: {code}")]
 pub struct UnsupportedMmseqsDbError {
     code: u8,
 }
 
-pub fn read_query_format_from_mmseqs_query_db(
+// Not used?
+pub fn _read_query_format_from_mmseqs_query_db(
     query_db_path: &impl AsRef<Path>,
-) -> anyhow::Result<FileFormat> {
+) -> Result<FileFormat> {
     let mut file = File::open(query_db_path)?;
     let mut dbtype_buf: Vec<u8> = vec![];
     file.read_to_end(&mut dbtype_buf)?;
@@ -99,5 +131,51 @@ pub fn read_query_format_from_mmseqs_query_db(
             code: dbtype_buf[0],
         }
         .into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{my_guess_query_format_from_query_file, FileFormat};
+    use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_guess_query_format_from_query_file() {
+        let res =
+            my_guess_query_format_from_query_file(&PathBuf::from("./bad"));
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "./bad: No such file or directory (os error 2)"
+        );
+
+        let empty = "tests/inputs/empty";
+        let res =
+            my_guess_query_format_from_query_file(&PathBuf::from(empty));
+        assert!(res.is_err());
+        let res = res.unwrap_err();
+        assert_eq!(
+            res.to_string(),
+            r#"Unknown format: "tests/inputs/empty""#
+        );
+
+        let res = my_guess_query_format_from_query_file(&PathBuf::from(
+            "tests/inputs/query.fa",
+        ));
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), FileFormat::Fasta);
+
+        let res = my_guess_query_format_from_query_file(&PathBuf::from(
+            "tests/inputs/query.sto",
+        ));
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), FileFormat::Stockholm);
+
+        let res = my_guess_query_format_from_query_file(&PathBuf::from(
+            "tests/inputs/query.hmm",
+        ));
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), FileFormat::Hmm);
     }
 }

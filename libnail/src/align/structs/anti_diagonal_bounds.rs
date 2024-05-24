@@ -1,21 +1,21 @@
 use crate::util::PrintMe;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
 
-#[derive(Clone)]
-pub struct CloudBound {
+#[derive(Clone, PartialEq)]
+pub struct AntiDiagonal {
     pub left_target_idx: usize,
     pub left_profile_idx: usize,
     pub right_target_idx: usize,
     pub right_profile_idx: usize,
 }
 
-impl Default for CloudBound {
+impl Default for AntiDiagonal {
     fn default() -> Self {
         // set the default to a simple invalid bound
         // (the left bound is on the right, and vice versa)
-        CloudBound {
+        AntiDiagonal {
             left_target_idx: 0,
             left_profile_idx: 1,
             right_target_idx: 1,
@@ -24,7 +24,7 @@ impl Default for CloudBound {
     }
 }
 
-impl Display for CloudBound {
+impl Debug for AntiDiagonal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -37,22 +37,22 @@ impl Display for CloudBound {
     }
 }
 
-impl PrintMe for CloudBound {
+impl PrintMe for AntiDiagonal {
     fn print(&self) {
-        println!("{}", self);
+        println!("{:?}", self);
     }
 }
 
-impl CloudBound {
+impl AntiDiagonal {
     pub fn was_pruned(&self) -> bool {
         self.left_target_idx < self.right_target_idx
     }
 
-    pub fn anti_diagonal_idx(&self) -> usize {
+    pub fn idx(&self) -> usize {
         self.left_target_idx + self.left_profile_idx
     }
 
-    pub fn anti_diagonal_cell_zip(&self) -> Zip<Rev<RangeInclusive<usize>>, RangeInclusive<usize>> {
+    pub fn cell_zip(&self) -> Zip<Rev<RangeInclusive<usize>>, RangeInclusive<usize>> {
         let target_range = (self.right_target_idx..=self.left_target_idx).rev();
         let profile_range = self.left_profile_idx..=self.right_profile_idx;
         target_range.zip(profile_range)
@@ -61,7 +61,7 @@ impl CloudBound {
 
 #[derive(Default, Clone)]
 pub struct AntiDiagonalBounds {
-    pub bounds: Vec<CloudBound>,
+    pub bounds: Vec<AntiDiagonal>,
     pub target_length: usize,
     pub profile_length: usize,
     pub size: usize,
@@ -73,7 +73,7 @@ impl AntiDiagonalBounds {
     pub fn new(target_length: usize, profile_length: usize) -> Self {
         let size = target_length + profile_length + 1;
         Self {
-            bounds: vec![CloudBound::default(); size],
+            bounds: vec![AntiDiagonal::default(); size],
             target_length,
             profile_length,
             size,
@@ -83,7 +83,7 @@ impl AntiDiagonalBounds {
     }
 
     pub fn resize(&mut self, new_size: usize) {
-        self.bounds.resize(new_size, CloudBound::default());
+        self.bounds.resize(new_size, AntiDiagonal::default());
         self.size = new_size;
     }
 
@@ -93,42 +93,42 @@ impl AntiDiagonalBounds {
             self.resize(new_size);
         }
 
-        self.min_anti_diagonal_idx = new_size;
-        self.max_anti_diagonal_idx = 0;
-
-        self.target_length = target_length;
-        self.profile_length = profile_length;
-
-        // TODO: think about this
-        for bound in self.bounds.iter_mut() {
+        for bound in self.bounds_mut() {
             bound.left_target_idx = 0;
             bound.left_profile_idx = 1;
             bound.right_target_idx = 1;
             bound.right_profile_idx = 0;
         }
-    }
 
-    pub fn fill(&mut self) {
-        todo!()
+        self.min_anti_diagonal_idx = new_size;
+        self.max_anti_diagonal_idx = 0;
+
+        self.target_length = target_length;
+        self.profile_length = profile_length;
     }
 
     pub fn set(
         &mut self,
-        // TODO: remove this
         anti_diagonal_idx: usize,
         left_target_idx: usize,
         left_profile_idx: usize,
         right_target_idx: usize,
         right_profile_idx: usize,
     ) {
-        // TODO: I don't think there's much point to setting these here
+        // **NOTE: these asserts always fail currently because
+        //         of the access pattern during cloud search
+        //
+        // make sure the two cells are on the same anti-diagonal
+        //debug_assert_eq!(
+        //    left_target_idx + left_profile_idx,
+        //    right_target_idx + right_profile_idx
+        //);
+
+        // make sure we are setting the anti-diagonal that we think we are
+        //debug_assert_eq!(anti_diagonal_idx, left_target_idx + left_profile_idx);
+
         self.min_anti_diagonal_idx = self.min_anti_diagonal_idx.min(anti_diagonal_idx);
         self.max_anti_diagonal_idx = self.max_anti_diagonal_idx.max(anti_diagonal_idx);
-
-        debug_assert_eq!(
-            left_target_idx + left_profile_idx,
-            right_target_idx + right_profile_idx
-        );
 
         let bound = &mut self.bounds[anti_diagonal_idx];
         bound.left_target_idx = left_target_idx;
@@ -137,19 +137,19 @@ impl AntiDiagonalBounds {
         bound.right_profile_idx = right_profile_idx;
     }
 
-    pub fn get(&self, idx: usize) -> &CloudBound {
+    pub fn get(&self, idx: usize) -> &AntiDiagonal {
         &self.bounds[idx]
     }
 
-    pub fn get_mut(&mut self, idx: usize) -> &mut CloudBound {
+    pub fn get_mut(&mut self, idx: usize) -> &mut AntiDiagonal {
         &mut self.bounds[idx]
     }
 
-    pub fn get_first(&self) -> &CloudBound {
+    pub fn get_first(&self) -> &AntiDiagonal {
         self.get(self.min_anti_diagonal_idx)
     }
 
-    pub fn get_last(&self) -> &CloudBound {
+    pub fn get_last(&self) -> &AntiDiagonal {
         self.get(self.max_anti_diagonal_idx)
     }
 
@@ -176,8 +176,16 @@ impl AntiDiagonalBounds {
         self.max_anti_diagonal_idx - self.min_anti_diagonal_idx + 1
     }
 
-    /// This removes all of the protruding regions in the cloud that are unreachable from a traceback
-    /// that traverses the entire cloud.
+    pub fn bounds(&self) -> &[AntiDiagonal] {
+        &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
+    }
+
+    pub fn bounds_mut(&mut self) -> &mut [AntiDiagonal] {
+        &mut self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
+    }
+
+    /// This removes all of the protruding regions in the cloud that are
+    /// unreachable from a traceback that traverses the entire cloud.
     pub fn trim_wings(&mut self) {
         for anti_diagonal_idx in self.min_anti_diagonal_idx + 1..=self.max_anti_diagonal_idx {
             let previous_bound = self.get(anti_diagonal_idx - 1);
@@ -251,35 +259,70 @@ impl AntiDiagonalBounds {
             )
         }
     }
+    pub fn square_corners(&mut self) {
+        // this is a bit of jumping through hoops
+        // to appease the borrow checker
+        let (
+            left_distance,
+            first_anti_diagonal_idx,
+            first_left_target_idx,
+            first_left_profile_idx,
+            first_right_target_idx,
+            first_right_profile_idx,
+        ) = {
+            let first_bound = self.get_first();
+            (
+                first_bound.left_target_idx - first_bound.right_target_idx,
+                first_bound.idx(),
+                first_bound.left_target_idx,
+                first_bound.left_profile_idx,
+                first_bound.right_target_idx,
+                first_bound.right_profile_idx,
+            )
+        };
 
-    /// Add a square block of bounds to the group with side length of `size`.
-    ///
-    /// This is currently intended for debugging.
-    pub fn bound_block(&mut self, target_start: usize, profile_start: usize, size: usize) {
-        let idx = target_start + profile_start;
-        for i in 0..size {
-            self.set(
-                idx + i,
-                target_start + i,
-                profile_start,
-                target_start,
-                profile_start + i,
-            );
-        }
-        let idx = target_start + profile_start + size;
-        for i in 0..=size {
-            self.set(
-                idx + i,
-                target_start + size,
-                profile_start + i,
-                target_start + i,
-                profile_start + size,
-            );
-        }
-    }
+        (1..=left_distance)
+            .map(|offset| (offset, first_anti_diagonal_idx - offset))
+            .for_each(|(offset, anti_diagonal_idx)| {
+                self.set(
+                    anti_diagonal_idx,
+                    first_left_target_idx - offset,
+                    first_left_profile_idx,
+                    first_right_target_idx,
+                    first_right_profile_idx - offset,
+                );
+            });
 
-    pub fn bounds(&self) -> &[CloudBound] {
-        &self.bounds[self.min_anti_diagonal_idx..=self.max_anti_diagonal_idx]
+        let (
+            right_distance,
+            last_anti_diagonal_idx,
+            last_left_target_idx,
+            last_left_profile_idx,
+            last_right_target_idx,
+            last_right_profile_idx,
+        ) = {
+            let last_bound = self.get_last();
+            (
+                last_bound.left_target_idx - last_bound.right_target_idx,
+                last_bound.idx(),
+                last_bound.left_target_idx,
+                last_bound.left_profile_idx,
+                last_bound.right_target_idx,
+                last_bound.right_profile_idx,
+            )
+        };
+
+        (1..=right_distance)
+            .map(|offset| (offset, last_anti_diagonal_idx + offset))
+            .for_each(|(offset, anti_diagonal_idx)| {
+                self.set(
+                    anti_diagonal_idx,
+                    last_left_target_idx,
+                    last_left_profile_idx + offset,
+                    last_right_target_idx + offset,
+                    last_right_profile_idx,
+                );
+            });
     }
 
     pub fn fill_rectangle(
@@ -347,10 +390,7 @@ impl AntiDiagonalBounds {
                 continue;
             }
 
-            debug_assert_eq!(
-                forward_bound.anti_diagonal_idx(),
-                backward_bound.anti_diagonal_idx()
-            );
+            debug_assert_eq!(forward_bound.idx(), backward_bound.idx());
 
             // otherwise we have two valid bounds and we can compare them
             forward_bound.left_target_idx = forward_bound
@@ -369,5 +409,129 @@ impl AntiDiagonalBounds {
                 .right_profile_idx
                 .max(backward_bound.right_profile_idx);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_trim_wings() {
+        let mut bounds = AntiDiagonalBounds::new(10, 10);
+        bounds.set(4, 2, 2, 2, 2);
+        bounds.set(5, 3, 2, 2, 3);
+        bounds.set(6, 4, 2, 2, 4);
+        bounds.set(7, 5, 2, 2, 5);
+        bounds.set(8, 6, 2, 2, 6);
+        bounds.set(9, 5, 4, 4, 5);
+        bounds.set(10, 6, 4, 4, 6);
+        bounds.set(11, 6, 5, 5, 6);
+        bounds.set(12, 8, 4, 4, 8);
+        bounds.set(13, 8, 5, 5, 8);
+        bounds.set(14, 8, 6, 6, 8);
+        bounds.set(15, 8, 7, 7, 8);
+        bounds.set(16, 8, 8, 8, 8);
+
+        let mut target_bounds = bounds.clone();
+        target_bounds.set(8, 5, 3, 3, 5);
+        target_bounds.set(12, 7, 5, 5, 7);
+
+        bounds.trim_wings();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+
+        // re-run it to make sure it does
+        // nothing to already-trimmed bounds
+        bounds.trim_wings();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+    }
+
+    #[test]
+    fn test_square_corners() {
+        let mut bounds = AntiDiagonalBounds::new(10, 10);
+        bounds.set(9, 6, 3, 3, 6);
+        bounds.set(10, 6, 4, 4, 6);
+        bounds.set(11, 7, 4, 4, 7);
+
+        let mut target_bounds = bounds.clone();
+        target_bounds.set(6, 3, 3, 3, 3);
+        target_bounds.set(7, 4, 3, 3, 4);
+        target_bounds.set(8, 5, 3, 3, 5);
+
+        target_bounds.set(12, 7, 5, 5, 7);
+        target_bounds.set(13, 7, 6, 6, 7);
+        target_bounds.set(14, 7, 7, 7, 7);
+
+        bounds.square_corners();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+
+        // re-run it to make sure it does
+        // nothing to already-squared bounds
+        bounds.square_corners();
+        bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+    }
+
+    #[test]
+    fn test_merge_join() {
+        let mut forward_bounds = AntiDiagonalBounds::new(10, 10);
+        forward_bounds.set(8, 4, 4, 4, 4);
+        forward_bounds.set(9, 5, 4, 4, 5);
+        forward_bounds.set(10, 6, 4, 4, 6);
+        forward_bounds.set(11, 7, 4, 4, 7);
+        forward_bounds.set(12, 8, 4, 4, 8);
+        forward_bounds.set(13, 8, 5, 5, 8);
+        forward_bounds.set(14, 8, 6, 6, 8);
+
+        let mut reverse_bounds = AntiDiagonalBounds::new(10, 10);
+        reverse_bounds.set(6, 4, 2, 2, 4);
+        reverse_bounds.set(7, 5, 2, 2, 5);
+        reverse_bounds.set(8, 6, 2, 2, 6);
+        reverse_bounds.set(9, 6, 3, 3, 6);
+        reverse_bounds.set(10, 6, 4, 4, 6);
+        reverse_bounds.set(11, 6, 5, 5, 6);
+        reverse_bounds.set(12, 6, 6, 6, 6);
+
+        let mut target_bounds = AntiDiagonalBounds::new(10, 10);
+        target_bounds.set(6, 4, 2, 2, 4);
+        target_bounds.set(7, 5, 2, 2, 5);
+        target_bounds.set(8, 6, 2, 2, 6);
+        target_bounds.set(9, 6, 3, 3, 6);
+        target_bounds.set(10, 6, 4, 4, 6);
+        target_bounds.set(11, 7, 4, 4, 7);
+        target_bounds.set(12, 8, 4, 4, 8);
+        target_bounds.set(13, 8, 5, 5, 8);
+        target_bounds.set(14, 8, 6, 6, 8);
+
+        AntiDiagonalBounds::join_merge(&mut forward_bounds, &reverse_bounds);
+        forward_bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
+
+        // re-run it to make sure that
+        // re-joining the bounds does nothing
+        AntiDiagonalBounds::join_merge(&mut forward_bounds, &reverse_bounds);
+        forward_bounds
+            .bounds
+            .iter()
+            .zip(&target_bounds.bounds)
+            .for_each(|(a, b)| assert_eq!(a, b));
     }
 }

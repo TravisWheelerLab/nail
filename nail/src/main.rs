@@ -1,12 +1,14 @@
 mod args;
 mod cli;
+mod database;
 mod extension_traits;
+mod id;
 mod pipeline;
 mod viz;
 
 use cli::Cli;
 use extension_traits::CommandExt;
-use pipeline::{align, prep, search, seed};
+use pipeline::{align, search, seed};
 
 use crate::cli::SubCommands;
 use anyhow::{Context, Result};
@@ -26,25 +28,33 @@ fn check_mmseqs_installed() -> Result<()> {
         .context("mmseqs2 does not appear to be in the system path")
 }
 
-fn main() -> Result<()> {
-    check_hmmer_installed()?;
-    check_mmseqs_installed()?;
+fn set_threads(num_threads: usize) -> Result<()> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()
+        .context("failed to build rayon global threadpool")
+}
 
+fn main() -> Result<()> {
     match Cli::parse().command {
         SubCommands::Search(args) => {
+            check_hmmer_installed()?;
+            check_mmseqs_installed()?;
+            set_threads(args.common_args.num_threads)?;
             search(&args)?;
         }
-        SubCommands::Prep(args) => {
-            prep(&args)?;
-        }
         SubCommands::Seed(mut args) => {
+            check_hmmer_installed()?;
+            check_mmseqs_installed()?;
             // TODO: I'd like to think of a way to remove this nonsense
             args.prep_dir.path = args.prep_dir_path.clone();
 
-            seed(&args)?;
+            // seed(&args)?;
         }
         SubCommands::Align(args) => {
-            align(&args, None, None)?;
+            set_threads(args.common_args.num_threads)?;
+
+            // align(&args, None, None)?;
         }
     }
     Ok(())

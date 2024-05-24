@@ -6,6 +6,7 @@ pub const UTF8_PLUS: u8 = 43;
 pub const UTF8_DASH: u8 = 45;
 pub const UTF8_DOT: u8 = 46;
 pub const UTF8_PIPE: u8 = 124;
+pub const AMINO_SENTINEL: u8 = 255;
 
 /// maps from \<usize\> -> \<UTF8 value for usize\>
 pub const UTF8_NUMERIC: [u8; 11] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, UTF8_STAR];

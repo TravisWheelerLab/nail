@@ -32,9 +32,6 @@ impl RowBounds {
     }
 
     pub fn reuse(&mut self, target_length: usize) {
-        debug_assert_eq!(self.row_capacity, self.left_row_bounds.capacity());
-        debug_assert_eq!(self.row_capacity, self.right_row_bounds.capacity());
-
         for row_idx in self.target_start..=self.target_end {
             self.left_row_bounds[row_idx] = usize::MAX;
             self.right_row_bounds[row_idx] = 0;

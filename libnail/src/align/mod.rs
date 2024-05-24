@@ -1,7 +1,10 @@
 pub mod structs;
 
-mod cloud_search_common;
-pub use cloud_search_common::{prune_and_scrub, scrub_co_located};
+mod cloud_search;
+pub use cloud_search::{
+    cloud_search_backward, cloud_search_forward, prune_and_scrub, scrub_co_located,
+    CloudSearchParams, CloudSearchScores,
+};
 
 mod forward;
 pub use forward::forward;
@@ -15,14 +18,10 @@ pub use posterior::posterior;
 mod optimal_accuracy;
 pub use optimal_accuracy::optimal_accuracy;
 
-mod cloud_search_backward;
-pub use cloud_search_backward::cloud_search_backward;
-
-mod cloud_search_forward;
-pub use cloud_search_forward::cloud_search_forward;
-
 mod scoring;
-pub use scoring::{composition_bias_score, length_bias_score};
+pub use scoring::{
+    cloud_score, e_value, null_one_score, null_two_score, p_value, Bits, Nats, Score,
+};
 
 mod traceback;
 pub use traceback::traceback;
