@@ -1,6 +1,5 @@
 use crate::args::{guess_query_format_from_query_file, FileFormat};
 use crate::cli::CommonArgs;
-use crate::database::{Database, ProfileCollection, SequenceCollection};
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::{
     seed, AlignArgs, AlignOutputArgs, MmseqsArgs, NailArgs, PrepDirArgs, SeedArgs,
@@ -9,12 +8,13 @@ use anyhow::Context;
 use clap::Args;
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::{
-    align, map_p7_to_mmseqs_profiles, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
-    Output, Pipeline,
+    align_profiles, align_sequences, map_p7_to_mmseqs_profiles, DefaultAlignStep,
+    DefaultCloudSearchStep, DefaultSeedStep, FullDpCloudSearchStep, Output, Pipeline,
 };
 
 #[derive(Debug, Args)]
@@ -85,31 +85,34 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
     let mut seeds = seed(&seed_args)?;
 
     let query_format = guess_query_format_from_query_file(&args.query_path)?;
-    let queries: Box<dyn Database<Arc<Mutex<Profile>>>> = match query_format {
+
+    pub enum Queries {
+        Sequence(Vec<Sequence>),
+        Profile(Vec<Profile>),
+    }
+
+    let queries = match query_format {
         FileFormat::Fasta => {
-            let queries = SequenceCollection::new(
-                Sequence::amino_from_fasta(&align_args.query_path)
-                    .context("failed to read query fasta")?,
-            );
-            Box::new(queries)
+            let queries = Sequence::amino_from_fasta(&align_args.query_path)
+                .context("failed to read query fasta")?;
+
+            Queries::Sequence(queries)
         }
         FileFormat::Hmm => {
-            let profiles = parse_hmms_from_p7hmm_file(&args.query_path)
+            let queries: Vec<Profile> = parse_hmms_from_p7hmm_file(&args.query_path)
                 .context("failed to read query hmm")?
                 .iter()
                 .map(Profile::new)
                 .collect();
-            let queries = ProfileCollection::new(profiles);
-
-            Box::new(queries)
+            Queries::Profile(queries)
         }
         FileFormat::Stockholm => {
-            let profiles = parse_hmms_from_p7hmm_file(args.prep_dir.prep_query_hmm_path())
-                .context("failed to read query hmm")?
-                .iter()
-                .map(Profile::new)
-                .collect();
-            let queries = ProfileCollection::new(profiles);
+            let queries: Vec<Profile> =
+                parse_hmms_from_p7hmm_file(args.prep_dir.prep_query_hmm_path())
+                    .context("failed to read query hmm")?
+                    .iter()
+                    .map(Profile::new)
+                    .collect();
 
             let p7_to_mmseqs_map = map_p7_to_mmseqs_profiles(&queries, &seed_args)?;
 
@@ -121,27 +124,38 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
                 });
             });
 
-            Box::new(queries)
+            Queries::Profile(queries)
         }
         _ => {
             panic!()
         }
     };
 
-    let targets = SequenceCollection::new(
-        Sequence::amino_from_fasta(&align_args.target_path)
-            .context("failed to read target fasta")?,
-    );
+    let targets: HashMap<String, Sequence> = Sequence::amino_from_fasta(&align_args.target_path)
+        .context("failed to read target fasta")?
+        .into_iter()
+        .map(|t| (t.name.clone(), t))
+        .collect();
 
     let pipeline = Pipeline {
-        seed: DefaultSeedStep::new(seeds),
-        cloud_search: DefaultCloudSearchStep::new(&align_args),
-        align: DefaultAlignStep::new(&align_args, targets.len()),
+        seed: Box::new(DefaultSeedStep::new(seeds)),
+        cloud_search: match args.nail_args.full_dp {
+            true => Box::<FullDpCloudSearchStep>::default(),
+            false => Box::new(DefaultCloudSearchStep::new(&align_args)),
+        },
+        align: Box::new(DefaultAlignStep::new(&align_args, targets.len())),
     };
 
     let output = Arc::new(Mutex::new(Output::new(&args.output_args)?));
 
-    align(&*queries, &targets, pipeline, output);
+    match queries {
+        Queries::Sequence(queries) => {
+            align_sequences(&queries, &targets, pipeline, output);
+        }
+        Queries::Profile(mut queries) => {
+            align_profiles(&mut queries, &targets, pipeline, output);
+        }
+    }
 
     Ok(())
 }

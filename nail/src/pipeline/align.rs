@@ -5,11 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use clap::Args;
 use libnail::output::output_tabular::{Field, TableFormat};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 
 use crate::cli::CommonArgs;
-use crate::database::Database;
 use crate::extension_traits::PathBufExt;
 
 use libnail::align::structs::{
@@ -20,7 +19,7 @@ use libnail::align::{
     backward, cloud_score, cloud_search_backward, cloud_search_forward, forward, null_one_score,
     null_two_score, optimal_accuracy, p_value, posterior, traceback, CloudSearchParams,
 };
-use libnail::structs::{Profile, Sequence};
+use libnail::structs::{Hmm, Profile, Sequence};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -115,15 +114,19 @@ pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::CellFrac,
 ];
 
-pub trait SeedStep: Clone {
-    fn run(&self, profile: &Profile, target: &Sequence) -> Option<Seed>;
+pub trait SeedStep: dyn_clone::DynClone {
+    fn run(
+        &self,
+        profile: &Profile,
+        target: &HashMap<String, Sequence>,
+    ) -> Option<&HashMap<String, Seed>>;
 }
 
-pub trait CloudSearchStep: Clone {
+pub trait CloudSearchStep: dyn_clone::DynClone {
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds>;
 }
 
-pub trait AlignStep: Clone {
+pub trait AlignStep: dyn_clone::DynClone {
     fn run(
         &mut self,
         profile: &mut Profile,
@@ -131,6 +134,10 @@ pub trait AlignStep: Clone {
         bounds: &RowBounds,
     ) -> Option<Alignment>;
 }
+
+dyn_clone::clone_trait_object!(SeedStep);
+dyn_clone::clone_trait_object!(CloudSearchStep);
+dyn_clone::clone_trait_object!(AlignStep);
 
 #[derive(Default, Clone)]
 pub struct DefaultSeedStep {
@@ -144,8 +151,25 @@ impl DefaultSeedStep {
 }
 
 impl SeedStep for DefaultSeedStep {
-    fn run(&self, profile: &Profile, target: &Sequence) -> Option<Seed> {
-        Some(self.seeds.get(&profile.name)?.get(&target.name)?.clone())
+    fn run(
+        &self,
+        profile: &Profile,
+        _target: &HashMap<String, Sequence>,
+    ) -> Option<&HashMap<String, Seed>> {
+        self.seeds.get(&profile.name)
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct FullDpCloudSearchStep {
+    row_bounds: RowBounds,
+}
+
+impl CloudSearchStep for FullDpCloudSearchStep {
+    fn run(&mut self, profile: &Profile, target: &Sequence, _seed: &Seed) -> Option<&RowBounds> {
+        self.row_bounds
+            .fill_rectangle(1, 1, target.length, profile.length);
+        Some(&self.row_bounds)
     }
 }
 
@@ -352,29 +376,30 @@ impl AlignStep for DefaultAlignStep {
     }
 }
 
-#[derive(Default, Clone)]
-pub struct Pipeline<S, C, A>
-where
-    S: SeedStep,
-    C: CloudSearchStep,
-    A: AlignStep,
-{
-    pub seed: S,
-    pub cloud_search: C,
-    pub align: A,
+#[derive(Clone)]
+pub struct Pipeline {
+    pub seed: Box<dyn SeedStep + Send + Sync>,
+    pub cloud_search: Box<dyn CloudSearchStep + Send + Sync>,
+    pub align: Box<dyn AlignStep + Send + Sync>,
 }
 
-impl<S, C, A> Pipeline<S, C, A>
-where
-    S: SeedStep,
-    C: CloudSearchStep,
-    A: AlignStep,
-{
-    fn run(&mut self, profile: &mut Profile, target: &Sequence) -> Option<Alignment> {
-        self.seed
-            .run(profile, target)
-            .and_then(|seed| self.cloud_search.run(profile, target, &seed))
-            .and_then(|bounds| self.align.run(profile, target, bounds))
+impl Pipeline {
+    fn run(
+        &mut self,
+        profile: &mut Profile,
+        targets: &HashMap<String, Sequence>,
+    ) -> Option<Vec<Alignment>> {
+        self.seed.run(profile, targets).map(|seeds| {
+            seeds
+                .iter()
+                .filter_map(|(target_name, seed)| {
+                    let target = targets.get(target_name).unwrap();
+                    self.cloud_search
+                        .run(profile, target, seed)
+                        .and_then(|bounds| self.align.run(profile, target, bounds))
+                })
+                .collect()
+        })
     }
 }
 
@@ -431,24 +456,43 @@ impl Output {
     }
 }
 
-pub fn align<S, C, A>(
-    profiles: &dyn Database<Arc<Mutex<Profile>>>,
-    targets: &(dyn Database<Arc<Sequence>> + Send + Sync),
-    pipeline: Pipeline<S, C, A>,
+pub fn align_profiles(
+    queries: &mut [Profile],
+    targets: &HashMap<String, Sequence>,
+    pipeline: Pipeline,
     output: Arc<Mutex<Output>>,
-) where
-    S: SeedStep + Sync + Send,
-    C: CloudSearchStep + Sync + Send,
-    A: AlignStep + Sync + Send,
-{
-    profiles.into_par_iter().for_each_with(
+) {
+    queries.par_iter_mut().for_each_with(
         (pipeline, targets, output),
         |(pipeline, targets, output), profile| {
-            let mut profile_guard = profile.lock().unwrap();
-            let mut alignments: Vec<Alignment> = targets
-                .iter()
-                .filter_map(|target| pipeline.run(&mut profile_guard, &target))
-                .collect();
+            let mut alignments: Vec<Alignment> = pipeline.run(profile, targets).unwrap();
+
+            match output.lock() {
+                Ok(mut guard) => {
+                    guard.write(&mut alignments).unwrap();
+                }
+                Err(_) => panic!(),
+            }
+        },
+    )
+}
+
+pub fn align_sequences(
+    queries: &[Sequence],
+    targets: &HashMap<String, Sequence>,
+    pipeline: Pipeline,
+    output: Arc<Mutex<Output>>,
+) {
+    queries.par_iter().for_each_with(
+        (pipeline, targets, output),
+        |(pipeline, targets, output), sequence| {
+            let mut profile = Hmm::from_blosum_62_and_sequence(sequence)
+                .map(|h| Profile::new(&h))
+                .expect("failed to build profile from sequence");
+
+            profile.calibrate_tau(200, 100, 0.04);
+
+            let mut alignments: Vec<Alignment> = pipeline.run(&mut profile, targets).unwrap();
 
             match output.lock() {
                 Ok(mut guard) => {

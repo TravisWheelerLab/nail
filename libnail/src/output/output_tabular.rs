@@ -21,7 +21,7 @@ impl ExtractString for Option<String> {
 impl ExtractString for Option<f32> {
     fn extract_string(&self) -> String {
         match self {
-            Some(f) => format!("{f:.1}"),
+            Some(f) => format!("{f:.3}"),
             None => self.empty_string(),
         }
     }

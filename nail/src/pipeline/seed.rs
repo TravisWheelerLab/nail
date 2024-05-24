@@ -1,5 +1,4 @@
 use crate::args::{guess_query_format_from_query_file, FileFormat};
-use crate::database::{Database, ProfileCollection};
 use crate::extension_traits::{CommandExt, PathBufExt};
 
 use libnail::align::structs::Seed;
@@ -313,14 +312,16 @@ fn run_mmseqs_search(args: &SeedArgs) -> anyhow::Result<()> {
     let num_targets = target_db_file.lines().count() as f64;
     let effective_e_value = args.mmseqs_args.pvalue_threshold * num_targets;
 
-    args.prep_dir.mmseqs_align_db_path().remove();
+    let _ = args.prep_dir.mmseqs_align_db_path().remove();
 
-    args.prep_dir
+    let _ = args
+        .prep_dir
         .mmseqs_align_db_path()
         .with_extension("dbtype")
         .remove();
 
-    args.prep_dir
+    let _ = args
+        .prep_dir
         .mmseqs_align_db_path()
         .with_extension("index")
         .remove();
@@ -382,15 +383,14 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<SeedMap> {
 }
 
 pub fn map_p7_to_mmseqs_profiles(
-    p7_profiles: &ProfileCollection,
+    p7_profiles: &[Profile],
     args: &SeedArgs,
 ) -> anyhow::Result<HashMap<String, Vec<usize>>> {
     let mmseqs_consensus_map = extract_mmseqs_profile_consensus_sequences(args)?;
 
     let mut mmseqs_to_p7_idx_by_name: HashMap<String, Vec<usize>> = HashMap::new();
 
-    for p7_mutex in p7_profiles.iter() {
-        let p7_profile = p7_mutex.lock().unwrap();
+    for p7_profile in p7_profiles.iter() {
         let name = &p7_profile.name;
         let mmseqs_consensus = mmseqs_consensus_map.get(name).unwrap();
         let p7_consensus = Sequence::from_utf8(&p7_profile.consensus_sequence_bytes_utf8[1..])?;

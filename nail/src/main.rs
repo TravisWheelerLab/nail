@@ -1,14 +1,12 @@
 mod args;
 mod cli;
-mod database;
 mod extension_traits;
-mod id;
 mod pipeline;
 mod viz;
 
 use cli::Cli;
 use extension_traits::CommandExt;
-use pipeline::{align, search, seed};
+use pipeline::search;
 
 use crate::cli::SubCommands;
 use anyhow::{Context, Result};
