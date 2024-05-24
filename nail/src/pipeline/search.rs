@@ -3,7 +3,8 @@ use crate::cli::CommonArgs;
 use crate::database::{Database, ProfileCollection, SequenceCollection};
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::{
-    seed, AlignArgs, AlignOutputArgs, MmseqsArgs, NailArgs, PrepDirArgs, SeedArgs,
+    seed, AlignArgs, AlignOutputArgs, MmseqsArgs, NailArgs, PrepDirArgs,
+    SeedArgs,
 };
 use anyhow::Context;
 use clap::Args;
@@ -13,8 +14,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::{
-    align, map_p7_to_mmseqs_profiles, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
-    Output, Pipeline,
+    align, map_p7_to_mmseqs_profiles, DefaultAlignStep,
+    DefaultCloudSearchStep, DefaultSeedStep, Output, Pipeline,
 };
 
 #[derive(Debug, Args)]
@@ -91,6 +92,7 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
                 Sequence::amino_from_fasta(&align_args.query_path)
                     .context("failed to read query fasta")?,
             );
+
             Box::new(queries)
         }
         FileFormat::Hmm => {
@@ -104,14 +106,17 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
             Box::new(queries)
         }
         FileFormat::Stockholm => {
-            let profiles = parse_hmms_from_p7hmm_file(args.prep_dir.prep_query_hmm_path())
-                .context("failed to read query hmm")?
-                .iter()
-                .map(Profile::new)
-                .collect();
+            let profiles = parse_hmms_from_p7hmm_file(
+                args.prep_dir.prep_query_hmm_path(),
+            )
+            .context("failed to read query hmm")?
+            .iter()
+            .map(Profile::new)
+            .collect();
             let queries = ProfileCollection::new(profiles);
 
-            let p7_to_mmseqs_map = map_p7_to_mmseqs_profiles(&queries, &seed_args)?;
+            let p7_to_mmseqs_map =
+                map_p7_to_mmseqs_profiles(&queries, &seed_args)?;
 
             seeds.iter_mut().for_each(|(a, b)| {
                 let map = p7_to_mmseqs_map.get(a).unwrap();
