@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::io::{stdout, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use clap::Args;
-use libnail::output::output_tabular::{Field, TableFormat};
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 
-use crate::cli::CommonArgs;
-use crate::extension_traits::PathBufExt;
+use crate::args::CommonArgs;
+use crate::mmseqs::consts::ALIGN_TSV;
+use crate::mmseqs::{run_mmseqs_search, seeds_from_mmseqs_align_tsv, MmseqsArgs};
+use crate::util::PathBufExt;
 
 use libnail::align::structs::{
     Alignment, AlignmentBuilder, AntiDiagonalBounds, CloudMatrixLinear, DpMatrixSparse, RowBounds,
@@ -19,7 +20,10 @@ use libnail::align::{
     backward, cloud_score, cloud_search_backward, cloud_search_forward, forward, null_one_score,
     null_two_score, optimal_accuracy, p_value, posterior, traceback, CloudSearchParams,
 };
+use libnail::output::output_tabular::{Field, TableFormat};
 use libnail::structs::{Hmm, Profile, Sequence};
+
+use super::{Queries, SeedArgs, SeedMap};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -141,11 +145,25 @@ dyn_clone::clone_trait_object!(AlignStep);
 
 #[derive(Default, Clone)]
 pub struct DefaultSeedStep {
-    seeds: HashMap<String, HashMap<String, Seed>>,
+    seeds: SeedMap,
 }
 
 impl DefaultSeedStep {
-    pub fn new(seeds: HashMap<String, HashMap<String, Seed>>) -> Self {
+    pub fn new(
+        queries: &Queries,
+        targets: &[Sequence],
+        prep_dir: &impl AsRef<Path>,
+        num_threads: usize,
+        mmseqs_args: &MmseqsArgs,
+    ) -> anyhow::Result<Self> {
+        run_mmseqs_search(queries, targets, prep_dir, num_threads, mmseqs_args)?;
+
+        let seeds = seeds_from_mmseqs_align_tsv(prep_dir.as_ref().join(ALIGN_TSV))?;
+
+        Ok(Self { seeds })
+    }
+
+    pub fn from_seed_map(seeds: SeedMap) -> Self {
         DefaultSeedStep { seeds }
     }
 }
@@ -456,7 +474,7 @@ impl Output {
     }
 }
 
-pub fn align_profiles(
+pub fn run_pipeline_profile_to_sequence(
     queries: &mut [Profile],
     targets: &HashMap<String, Sequence>,
     pipeline: Pipeline,
@@ -477,7 +495,7 @@ pub fn align_profiles(
     )
 }
 
-pub fn align_sequences(
+pub fn run_pipeline_sequence_to_sequence(
     queries: &[Sequence],
     targets: &HashMap<String, Sequence>,
     pipeline: Pipeline,

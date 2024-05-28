@@ -1,9 +1,7 @@
-use crate::args::{guess_query_format_from_query_file, FileFormat};
-use crate::cli::CommonArgs;
-use crate::extension_traits::PathBufExt;
-use crate::pipeline::{
-    seed, AlignArgs, AlignOutputArgs, MmseqsArgs, NailArgs, PrepDirArgs, SeedArgs,
-};
+use crate::args::CommonArgs;
+use crate::mmseqs::MmseqsArgs;
+use crate::pipeline::{AlignArgs, AlignOutputArgs, NailArgs, SeedArgs};
+use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 use anyhow::Context;
 use clap::Args;
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
@@ -13,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::{
-    align_profiles, align_sequences, map_p7_to_mmseqs_profiles, DefaultAlignStep,
+    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DefaultAlignStep,
     DefaultCloudSearchStep, DefaultSeedStep, FullDpCloudSearchStep, Output, Pipeline,
 };
 
@@ -31,9 +29,9 @@ pub struct SearchArgs {
     #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
     pub prebuilt_query_hmm_path: Option<PathBuf>,
 
-    /// Provides paths to the prep dir and the files placed in it
-    #[command(flatten)]
-    pub prep_dir: PrepDirArgs,
+    /// The directory where intermediate files will be placed
+    #[arg(long = "prep", value_name = "<PATH>", default_value = "prep/")]
+    pub prep_dir: PathBuf,
 
     /// Arguments that control output options
     #[command(flatten)]
@@ -52,6 +50,11 @@ pub struct SearchArgs {
     pub common_args: CommonArgs,
 }
 
+pub enum Queries {
+    Sequence(Vec<Sequence>),
+    Profile(Vec<Profile>),
+}
+
 pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
     {
         // quickly make sure we can write the results
@@ -61,14 +64,13 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
         }
     }
 
-    let seeds_path = args.prep_dir.path.join("./seeds.json");
+    let seeds_path = args.prep_dir.join("./seeds.json");
 
     let seed_args = SeedArgs {
         prep_dir_path: Default::default(),
         seeds_path: seeds_path.clone(),
         query_path: args.query_path.clone(),
         target_path: args.target_path.clone(),
-        prep_dir: args.prep_dir.clone(),
         mmseqs_args: args.mmseqs_args.clone(),
         common_args: args.common_args.clone(),
     };
@@ -82,14 +84,7 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
         common_args: args.common_args.clone(),
     };
 
-    let mut seeds = seed(&seed_args)?;
-
     let query_format = guess_query_format_from_query_file(&args.query_path)?;
-
-    pub enum Queries {
-        Sequence(Vec<Sequence>),
-        Profile(Vec<Profile>),
-    }
 
     let queries = match query_format {
         FileFormat::Fasta => {
@@ -106,39 +101,22 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
                 .collect();
             Queries::Profile(queries)
         }
-        FileFormat::Stockholm => {
-            let queries: Vec<Profile> =
-                parse_hmms_from_p7hmm_file(args.prep_dir.prep_query_hmm_path())
-                    .context("failed to read query hmm")?
-                    .iter()
-                    .map(Profile::new)
-                    .collect();
-
-            let p7_to_mmseqs_map = map_p7_to_mmseqs_profiles(&queries, &seed_args)?;
-
-            seeds.iter_mut().for_each(|(a, b)| {
-                let map = p7_to_mmseqs_map.get(a).unwrap();
-                b.values_mut().for_each(|seed| {
-                    seed.profile_start = map[seed.profile_start].max(1);
-                    seed.profile_end = map[seed.profile_end];
-                });
-            });
-
-            Queries::Profile(queries)
-        }
         _ => {
             panic!()
         }
     };
 
-    let targets: HashMap<String, Sequence> = Sequence::amino_from_fasta(&align_args.target_path)
-        .context("failed to read target fasta")?
-        .into_iter()
-        .map(|t| (t.name.clone(), t))
-        .collect();
+    let targets = Sequence::amino_from_fasta(&align_args.target_path)
+        .context("failed to read target fasta")?;
 
     let pipeline = Pipeline {
-        seed: Box::new(DefaultSeedStep::new(seeds)),
+        seed: Box::new(DefaultSeedStep::new(
+            &queries,
+            &targets,
+            &args.prep_dir,
+            args.common_args.num_threads,
+            &args.mmseqs_args,
+        )?),
         cloud_search: match args.nail_args.full_dp {
             true => Box::<FullDpCloudSearchStep>::default(),
             false => Box::new(DefaultCloudSearchStep::new(&align_args)),
@@ -148,12 +126,15 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
 
     let output = Arc::new(Mutex::new(Output::new(&args.output_args)?));
 
+    let target_map: HashMap<String, Sequence> =
+        targets.into_iter().map(|t| (t.name.clone(), t)).collect();
+
     match queries {
         Queries::Sequence(queries) => {
-            align_sequences(&queries, &targets, pipeline, output);
+            run_pipeline_sequence_to_sequence(&queries, &target_map, pipeline, output);
         }
         Queries::Profile(mut queries) => {
-            align_profiles(&mut queries, &targets, pipeline, output);
+            run_pipeline_profile_to_sequence(&mut queries, &target_map, pipeline, output);
         }
     }
 
