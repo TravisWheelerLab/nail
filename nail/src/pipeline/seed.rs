@@ -8,8 +8,6 @@ use crate::mmseqs::MmseqsArgs;
 
 use clap::Args;
 
-pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
-
 #[derive(Args, Debug, Clone)]
 pub struct SeedArgs {
     /// The location of files prepared with nail prep

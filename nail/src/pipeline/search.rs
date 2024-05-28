@@ -1,9 +1,10 @@
 use crate::args::CommonArgs;
 use crate::mmseqs::MmseqsArgs;
-use crate::pipeline::{AlignArgs, AlignOutputArgs, NailArgs, SeedArgs};
+use crate::pipeline::{AlignArgs, AlignOutputArgs, NailArgs};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 use anyhow::Context;
 use clap::Args;
+use libnail::align::structs::Seed;
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
 use std::collections::HashMap;
@@ -50,6 +51,9 @@ pub struct SearchArgs {
     pub common_args: CommonArgs,
 }
 
+// TODO: move this
+pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
+
 pub enum Queries {
     Sequence(Vec<Sequence>),
     Profile(Vec<Profile>),
@@ -65,15 +69,6 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
     }
 
     let seeds_path = args.prep_dir.join("./seeds.json");
-
-    let seed_args = SeedArgs {
-        prep_dir_path: Default::default(),
-        seeds_path: seeds_path.clone(),
-        query_path: args.query_path.clone(),
-        target_path: args.target_path.clone(),
-        mmseqs_args: args.mmseqs_args.clone(),
-        common_args: args.common_args.clone(),
-    };
 
     let align_args = AlignArgs {
         query_path: args.query_path.clone(),

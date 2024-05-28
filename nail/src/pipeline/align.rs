@@ -23,7 +23,7 @@ use libnail::align::{
 use libnail::output::output_tabular::{Field, TableFormat};
 use libnail::structs::{Hmm, Profile, Sequence};
 
-use super::{Queries, SeedArgs, SeedMap};
+use super::{Queries, SeedMap};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]

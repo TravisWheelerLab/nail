@@ -1,4 +1,4 @@
-use crate::pipeline::{AlignArgs, SearchArgs, SeedArgs};
+use crate::pipeline::{AlignArgs, SearchArgs};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Args, Debug, Clone)]
@@ -17,8 +17,6 @@ pub struct CommonArgs {
 pub enum SubCommands {
     #[command(about = "Run the entire nail pipeline: prep, seed, & align")]
     Search(SearchArgs),
-    #[command(about = "Use MMseqs2 to create a set of alignment seeds for the align step")]
-    Seed(SeedArgs),
     #[command(about = "Search with the query against the target, using alignment seeds")]
     Align(AlignArgs),
 }

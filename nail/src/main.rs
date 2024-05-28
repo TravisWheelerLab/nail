@@ -18,15 +18,8 @@ fn main() -> anyhow::Result<()> {
             set_threads(args.common_args.num_threads)?;
             search(&args)?;
         }
-        SubCommands::Seed(mut args) => {
-            check_hmmer_installed()?;
-            check_mmseqs_installed()?;
-
-            // seed(&args)?;
-        }
         SubCommands::Align(args) => {
             set_threads(args.common_args.num_threads)?;
-
             // align(&args, None, None)?;
         }
     }
