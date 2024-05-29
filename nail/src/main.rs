@@ -18,10 +18,7 @@ fn main() -> anyhow::Result<()> {
             set_threads(args.common_args.num_threads)?;
             search(&args)?;
         }
-        SubCommands::Align(args) => {
-            set_threads(args.common_args.num_threads)?;
-            // align(&args, None, None)?;
-        }
+        SubCommands::Seed(_) => todo!(),
     }
     Ok(())
 }

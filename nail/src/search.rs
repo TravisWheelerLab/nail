@@ -1,53 +1,17 @@
-use crate::args::CommonArgs;
-use crate::mmseqs::MmseqsArgs;
-use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, AlignArgs,
-    AlignOutputArgs, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
-    FullDpCloudSearchStep, NailArgs, Output, Pipeline,
-};
-use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
-use anyhow::Context;
-use clap::Args;
-use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
-use libnail::structs::{Profile, Sequence};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Args)]
-pub struct SearchArgs {
-    /// Query file
-    #[arg(value_name = "QUERY.[fasta:sto]")]
-    pub query_path: PathBuf,
+use crate::args::{AlignArgs, SearchArgs};
+use crate::pipeline::{
+    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DefaultAlignStep,
+    DefaultCloudSearchStep, DefaultSeedStep, FullDpCloudSearchStep, Output, Pipeline,
+};
+use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
-    /// Target file
-    #[arg(value_name = "TARGET.fasta")]
-    pub target_path: PathBuf,
+use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
+use libnail::structs::{Profile, Sequence};
 
-    /// The path to a pre-built P7HMM file
-    #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
-    pub prebuilt_query_hmm_path: Option<PathBuf>,
-
-    /// The directory where intermediate files will be placed
-    #[arg(long = "prep", value_name = "<PATH>", default_value = "prep/")]
-    pub prep_dir: PathBuf,
-
-    /// Arguments that control output options
-    #[command(flatten)]
-    pub output_args: AlignOutputArgs,
-
-    /// Arguments that are passed to libnail functions
-    #[command(flatten)]
-    pub nail_args: NailArgs,
-
-    /// Arguments that are passed to MMseqs2
-    #[command(flatten)]
-    pub mmseqs_args: MmseqsArgs,
-
-    /// Arguments that are common across all nail subcommands
-    #[command(flatten)]
-    pub common_args: CommonArgs,
-}
+use anyhow::Context;
 
 pub enum Queries {
     Sequence(Vec<Sequence>),

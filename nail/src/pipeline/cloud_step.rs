@@ -7,7 +7,7 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use super::AlignArgs;
+use crate::args::AlignArgs;
 
 pub trait CloudSearchStep: dyn_clone::DynClone {
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds>;

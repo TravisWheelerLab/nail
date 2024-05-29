@@ -9,19 +9,17 @@ pub use align_step::*;
 
 use std::collections::HashMap;
 use std::io::{stdout, Write};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use clap::Args;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
-
-use crate::args::CommonArgs;
-use crate::util::PathBufExt;
 
 use libnail::align::structs::Alignment;
 use libnail::output::output_tabular::{Field, TableFormat};
 use libnail::structs::{Hmm, Profile, Sequence};
+
+use crate::args::AlignOutputArgs;
+use crate::util::PathBufExt;
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -33,74 +31,6 @@ pub struct ProfileNotFoundError {
 #[error("no target with name: {target_name}")]
 pub struct TargetNotFoundError {
     target_name: String,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct NailArgs {
-    /// Override the target database size (number of sequences) used for E-value calculation
-    #[arg(short = 'Z', value_name = "N")]
-    pub target_database_size: Option<usize>,
-    /// Pruning parameter alpha
-    #[arg(short = 'A', default_value_t = 12.0, value_name = "F")]
-    pub alpha: f32,
-    /// Pruning parameter beta
-    #[arg(short = 'B', default_value_t = 20.0, value_name = "F")]
-    pub beta: f32,
-    /// Pruning parameter gamma
-    #[arg(short = 'G', default_value_t = 5, value_name = "N")]
-    pub gamma: usize,
-    /// The P-value threshold for promoting hits past cloud search
-    #[arg(long = "cloud-thresh", default_value_t = 1e-3, value_name = "F")]
-    pub cloud_pvalue_threshold: f64,
-    /// The P-value threshold for promoting hits past forward
-    #[arg(long = "forward-thresh", default_value_t = 1e-4, value_name = "F")]
-    pub forward_pvalue_threshold: f64,
-    /// Compute the full dynamic programming matrices during alignment
-    #[arg(long, action)]
-    pub full_dp: bool,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct AlignOutputArgs {
-    /// Only report hits with an E-value below this value
-    #[arg(short = 'E', default_value_t = 10.0, value_name = "F")]
-    pub evalue_threshold: f64,
-    /// Where to place tabular output
-    #[arg(
-        short = 'T',
-        long = "tab-output",
-        default_value = "results.tsv",
-        value_name = "path"
-    )]
-    pub tsv_results_path: PathBuf,
-    /// Where to place alignment output
-    #[arg(short = 'O', long = "output", value_name = "path")]
-    pub ali_results_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct AlignArgs {
-    /// Query file
-    #[arg(value_name = "QUERY.[fasta:hmm:sto]")]
-    pub query_path: PathBuf,
-    /// Target file
-    #[arg(value_name = "TARGET.fasta")]
-    pub target_path: PathBuf,
-    /// Alignment seeds from running nail seed (or elsewhere)
-    #[arg(value_name = "SEEDS.json")]
-    pub seeds_path: PathBuf,
-
-    /// Arguments that are passed to nail functions
-    #[command(flatten)]
-    pub nail_args: NailArgs,
-
-    /// Arguments that control output options
-    #[command(flatten)]
-    pub output_args: AlignOutputArgs,
-
-    /// Arguments that are common across all nail subcommands
-    #[command(flatten)]
-    pub common_args: CommonArgs,
 }
 
 pub const DEFAULT_COLUMNS: [Field; 10] = [
