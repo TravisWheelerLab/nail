@@ -1,11 +1,11 @@
 mod args;
 mod mmseqs;
 mod pipeline;
+mod search;
 mod util;
-mod viz;
 
 use args::{Cli, SubCommands};
-use pipeline::search;
+use search::search;
 use util::{check_hmmer_installed, check_mmseqs_installed, set_threads};
 
 use clap::Parser;

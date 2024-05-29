@@ -1,4 +1,4 @@
-use crate::pipeline::{AlignArgs, SearchArgs};
+use crate::{pipeline::AlignArgs, search::SearchArgs};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Args, Debug, Clone)]

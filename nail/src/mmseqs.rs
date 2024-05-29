@@ -18,7 +18,8 @@ use libnail::{
 };
 
 use crate::{
-    pipeline::{Queries, SeedMap},
+    pipeline::SeedMap,
+    search::Queries,
     util::{CommandExt, PathBufExt},
 };
 
