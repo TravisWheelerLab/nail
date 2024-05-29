@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::args::{AlignArgs, SearchArgs};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DefaultAlignStep,
-    DefaultCloudSearchStep, DefaultSeedStep, FullDpCloudSearchStep, Output, Pipeline,
+    DefaultCloudSearchStep, DefaultSeedStep, FullDpCloudSearchStep, OutputStep, Pipeline,
 };
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
@@ -76,19 +76,18 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
             false => Box::new(DefaultCloudSearchStep::new(&align_args)),
         },
         align: Box::new(DefaultAlignStep::new(&align_args, targets.len())),
+        output: Arc::new(Mutex::new(OutputStep::new(&args.output_args)?)),
     };
-
-    let output = Arc::new(Mutex::new(Output::new(&args.output_args)?));
 
     let target_map: HashMap<String, Sequence> =
         targets.into_iter().map(|t| (t.name.clone(), t)).collect();
 
     match queries {
         Queries::Sequence(queries) => {
-            run_pipeline_sequence_to_sequence(&queries, &target_map, pipeline, output);
+            run_pipeline_sequence_to_sequence(&queries, &target_map, pipeline);
         }
         Queries::Profile(mut queries) => {
-            run_pipeline_profile_to_sequence(&mut queries, &target_map, pipeline, output);
+            run_pipeline_profile_to_sequence(&mut queries, &target_map, pipeline);
         }
     }
 
