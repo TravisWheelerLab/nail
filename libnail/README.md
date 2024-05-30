@@ -11,7 +11,7 @@ This libary is in early stages of development. The API should be considered high
 To build libnail from source, you'll first need to install Rust and Cargo. 
 The easiest way to do that is to use [rustup](https://rustup.rs/).
 
-Once that's done, you can then build nale:
+Once that's done, you can then build nail:
 
     git clone https://github.com/TravisWheelerLab/nail
     cd nail/
