@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use thiserror::Error;
 
 #[derive(Default, Debug, Clone)]
@@ -65,11 +65,11 @@ struct CommandExitStatusError;
 
 /// An extension trait that is intended to add a run method to the std::process::Command struct.
 pub trait CommandExt {
-    fn run(&mut self) -> Result<()>;
+    fn run(&mut self) -> anyhow::Result<()>;
 }
 
 impl CommandExt for Command {
-    fn run(&mut self) -> Result<()> {
+    fn run(&mut self) -> anyhow::Result<()> {
         let output = self.output().context("failed to run command")?;
 
         match output.status.success() {
@@ -117,21 +117,21 @@ impl PathBufExt for PathBuf {
     }
 }
 
-pub fn check_hmmer_installed() -> Result<()> {
-    std::process::Command::new("hmmbuild")
+pub fn check_hmmer_installed() -> anyhow::Result<()> {
+    Command::new("hmmbuild")
         .arg("-h")
         .run()
         .context("hmmbuild does not appear to be in the system path")
 }
 
-pub fn check_mmseqs_installed() -> Result<()> {
-    std::process::Command::new("mmseqs")
+pub fn check_mmseqs_installed() -> anyhow::Result<()> {
+    Command::new("mmseqs")
         .arg("-h")
         .run()
         .context("mmseqs2 does not appear to be in the system path")
 }
 
-pub fn set_threads(num_threads: usize) -> Result<()> {
+pub fn set_threads(num_threads: usize) -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build_global()

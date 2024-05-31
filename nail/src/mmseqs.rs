@@ -8,7 +8,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::Args;
 
 use libnail::{
@@ -217,6 +217,7 @@ pub fn run_mmseqs_search(
         Queries::Profile(profiles) => {
             write_mmseqs_profile_database(profiles, prep_dir.join("queryDB"))?;
         }
+        _ => bail!("unsupported query format"),
     }
 
     write_mmseqs_sequence_database(targets, prep_dir.join("targetDB"))?;
