@@ -13,7 +13,7 @@ use crate::structs::hmm::constants::{
 };
 use crate::structs::hmm::Alphabet;
 use crate::structs::Hmm;
-use crate::util::{f32_vec_argmax, LogAbuse};
+use crate::util::{avg_relative_entropy, f32_vec_argmax, LogAbuse, VecUtils};
 
 use std::fmt;
 use std::fmt::Formatter;
@@ -87,6 +87,96 @@ impl Profile {
     pub const DELETE_TO_DELETE_IDX: usize = 5;
     pub const MATCH_TO_INSERT_IDX: usize = 6;
     pub const INSERT_TO_INSERT_IDX: usize = 7;
+
+    pub fn tune_relative_entropy(&mut self, target: f32) {
+        const TOLERANCE: f32 = 1e-3;
+
+        let start_probs_by_pos: Vec<Vec<f32>> = self
+            .match_scores
+            .iter()
+            .map(|scores| {
+                scores
+                    .iter()
+                    .take(20)
+                    .enumerate()
+                    .map(|(idx, score)| score.exp() * AMINO_BACKGROUND_FREQUENCIES[idx])
+                    .collect::<Vec<f32>>()
+            })
+            .collect();
+
+        enum Mode {
+            Growing,
+            Binary,
+        }
+
+        let mut search_mode = Mode::Growing;
+
+        let mut new_probs_by_pos = start_probs_by_pos.clone();
+        let mut factor = 0.1;
+        let mut upper_bound = 0.0;
+        let mut lower_bound = 0.0;
+        let mut relative_entropy =
+            avg_relative_entropy(&new_probs_by_pos, &AMINO_BACKGROUND_FREQUENCIES);
+
+        while (relative_entropy - target).abs() > TOLERANCE {
+            new_probs_by_pos
+                .iter_mut()
+                .zip(&start_probs_by_pos)
+                // skip model position 0
+                .skip(1)
+                .for_each(|(new_probs, start_probs)| {
+                    new_probs
+                        .iter_mut()
+                        .zip(start_probs)
+                        .enumerate()
+                        .take(Profile::MAX_ALPHABET_SIZE)
+                        .for_each(|(idx, (p_new, p_start))| {
+                            *p_new = p_start - factor * AMINO_BACKGROUND_FREQUENCIES[idx]
+                        });
+
+                    new_probs.saturate_lower(1e-3);
+                    new_probs.normalize();
+                });
+
+            relative_entropy =
+                avg_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
+
+            match search_mode {
+                Mode::Growing => {
+                    if relative_entropy > target {
+                        upper_bound = factor;
+                        factor = (lower_bound + upper_bound) / 2.0;
+                        search_mode = Mode::Binary;
+                    } else {
+                        lower_bound = factor;
+                        factor += 0.1;
+                    }
+                }
+                Mode::Binary => {
+                    if relative_entropy > target {
+                        upper_bound = factor;
+                    } else {
+                        lower_bound = factor;
+                    }
+                    factor = (lower_bound + upper_bound) / 2.0;
+                }
+            }
+        }
+
+        self.match_scores
+            .iter_mut()
+            .zip(new_probs_by_pos)
+            // skip model position 0
+            .skip(1)
+            .for_each(|(scores, probs)| {
+                scores
+                    .iter_mut()
+                    .zip(probs)
+                    .enumerate()
+                    .take(Profile::MAX_ALPHABET_SIZE)
+                    .for_each(|(idx, (s, p))| *s = (p / AMINO_BACKGROUND_FREQUENCIES[idx]).ln())
+            });
+    }
 
     pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {
         self.configure_for_target_length(target_length);
