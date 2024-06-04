@@ -496,7 +496,7 @@ impl Alignment {
             // profile sequence
             ali_string.push_str(&format!(
                 "{:>W$} {:5} {} {:<5}\n",
-                Field::Query.extract_from(self).len(),
+                Field::Query.extract_from(self),
                 self.profile_start + start_offset,
                 &profile_string[start_offset..end_offset],
                 self.profile_start + end_offset - 1,
@@ -515,7 +515,7 @@ impl Alignment {
             // target sequence
             ali_string.push_str(&format!(
                 "{:>W$} {:5} {} {:<5}\n",
-                Field::Target.extract_from(self).len(),
+                Field::Target.extract_from(self),
                 self.target_start + start_offset,
                 &target_string[start_offset..end_offset],
                 self.target_start + end_offset - 1,
