@@ -4,7 +4,9 @@
 
 This is a cargo workspace for nail, which is a profile Hidden Markov Model (pHMM) biological sequence alignment tool.
 Using the fast [MMseqs2](https://github.com/soedinglab/MMseqs2) search pipeline to produce candidate alignment seeds, nail computes a fast approximation of the [HMMER3](http://hmmer.org/) Forward/Backward (F/B) sequence alignment algorithm.
-Currently, nail only supports amino acid search, with nucleotide search coming in a future update. 
+Currently, nail only supports amino acid search, with nucleotide search coming in a future update.
+
+The nail preprint paper can be found on bioRxiv (doi: https://doi.org/10.1101/2024.01.27.577580).
 
 ### What's here
 There are two sub-projects in the nail workspace:
