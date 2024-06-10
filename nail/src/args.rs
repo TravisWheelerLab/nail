@@ -47,10 +47,6 @@ pub struct SearchArgs {
     #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
     pub prebuilt_query_hmm_path: Option<PathBuf>,
 
-    /// The directory where intermediate files will be placed
-    #[arg(long = "prep", value_name = "<PATH>", default_value = "prep/")]
-    pub prep_dir: PathBuf,
-
     /// Arguments that control output options
     #[command(flatten)]
     pub output_args: AlignOutputArgs,

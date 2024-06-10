@@ -1,16 +1,13 @@
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use crate::args::{AlignArgs, SearchArgs};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DefaultAlignStep,
-    DefaultCloudSearchStep, DefaultSeedStep, DoubleSeedStep, FullDpCloudSearchStep, OutputStep,
-    Pipeline,
+    DefaultCloudSearchStep, FullDpCloudSearchStep, OutputStep, Pipeline, ProfileSeedStep,
+    SequenceSeedStep,
 };
-use crate::util::{
-    check_hmmer_installed, guess_query_format_from_query_file, CommandExt, FileFormat, PathBufExt,
-};
+use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
 use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
@@ -20,7 +17,6 @@ use anyhow::Context;
 pub enum Queries {
     Sequence(Vec<Sequence>),
     Profile(Vec<Profile>),
-    DoubleProfile((Vec<Profile>, Vec<Profile>)),
 }
 
 pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
@@ -32,7 +28,7 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
         }
     }
 
-    let seeds_path = args.prep_dir.join("./seeds.json");
+    let seeds_path = args.mmseqs_args.prep_dir.join("./seeds.json");
 
     let align_args = AlignArgs {
         query_path: args.query_path.clone(),
@@ -58,36 +54,8 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
                 .iter()
                 .map(Profile::new)
                 .collect();
+
             Queries::Profile(queries)
-        }
-        FileFormat::Stockholm => {
-            check_hmmer_installed()?;
-            let hmm_path = args.prep_dir.join("query.hmm");
-
-            Command::new("hmmbuild")
-                .args(["--cpu", &args.common_args.num_threads.to_string()])
-                .arg(&hmm_path)
-                .arg(&args.query_path)
-                .run()?;
-
-            let queries_a = parse_hmms_from_p7hmm_file(&hmm_path)?
-                .iter()
-                .map(Profile::new)
-                .collect();
-
-            Command::new("hmmbuild")
-                .args(["--ere", "1.0"])
-                .args(["--cpu", &args.common_args.num_threads.to_string()])
-                .arg(&hmm_path)
-                .arg(&args.query_path)
-                .run()?;
-
-            let queries_b = parse_hmms_from_p7hmm_file(&hmm_path)?
-                .iter()
-                .map(Profile::new)
-                .collect();
-
-            Queries::DoubleProfile((queries_a, queries_b))
         }
         _ => {
             panic!()
@@ -99,17 +67,15 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
 
     let pipeline = Pipeline {
         seed: match queries {
-            Queries::DoubleProfile(_) => Box::new(DoubleSeedStep::new(
-                &queries,
+            Queries::Sequence(ref queries) => Box::new(SequenceSeedStep::new(
+                queries,
                 &targets,
-                &args.prep_dir,
                 args.common_args.num_threads,
                 &args.mmseqs_args,
             )?),
-            _ => Box::new(DefaultSeedStep::new(
-                &queries,
+            Queries::Profile(ref queries) => Box::new(ProfileSeedStep::new(
+                queries,
                 &targets,
-                &args.prep_dir,
                 args.common_args.num_threads,
                 &args.mmseqs_args,
             )?),
@@ -131,9 +97,6 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
             run_pipeline_sequence_to_sequence(&queries, &target_map, pipeline);
         }
         Queries::Profile(mut queries) => {
-            run_pipeline_profile_to_sequence(&mut queries, &target_map, pipeline);
-        }
-        Queries::DoubleProfile((mut queries, _)) => {
             run_pipeline_profile_to_sequence(&mut queries, &target_map, pipeline);
         }
     }

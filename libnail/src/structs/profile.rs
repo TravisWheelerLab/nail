@@ -20,6 +20,12 @@ use std::fmt::Formatter;
 
 use super::Sequence;
 
+impl AsRef<Profile> for Profile {
+    fn as_ref(&self) -> &Profile {
+        self
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct Profile {
     /// The name of the profile
@@ -88,6 +94,23 @@ impl Profile {
     pub const MATCH_TO_INSERT_IDX: usize = 6;
     pub const INSERT_TO_INSERT_IDX: usize = 7;
 
+    pub fn relative_entropy(&self) -> f32 {
+        let probs: Vec<Vec<f32>> = self
+            .match_scores
+            .iter()
+            .map(|scores| {
+                scores
+                    .iter()
+                    .take(20)
+                    .enumerate()
+                    .map(|(idx, score)| score.exp() * AMINO_BACKGROUND_FREQUENCIES[idx])
+                    .collect::<Vec<f32>>()
+            })
+            .collect();
+
+        avg_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
+    }
+
     pub fn tune_relative_entropy(&mut self, target: f32) {
         const TOLERANCE: f32 = 1e-3;
 
@@ -116,7 +139,7 @@ impl Profile {
         let mut upper_bound = 0.0;
         let mut lower_bound = 0.0;
         let mut relative_entropy =
-            avg_relative_entropy(&new_probs_by_pos, &AMINO_BACKGROUND_FREQUENCIES);
+            avg_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
 
         while (relative_entropy - target).abs() > TOLERANCE {
             new_probs_by_pos

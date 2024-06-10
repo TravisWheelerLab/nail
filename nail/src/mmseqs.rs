@@ -4,11 +4,11 @@ use std::{
     collections::HashMap,
     fs::{create_dir_all, File},
     io::{BufRead, BufReader, Write},
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use clap::Args;
 
 use libnail::{
@@ -19,23 +19,21 @@ use libnail::{
 
 use crate::{
     pipeline::SeedMap,
-    search::Queries,
     util::{CommandExt, PathBufExt},
 };
 
 pub mod consts {
-    pub const QUERY_DB: &str = "queryDB";
-    pub const TARGET_DB: &str = "targetDB";
-    pub const ALIGN_DB: &str = "alignDB";
-    pub const ALIGN_TSV: &str = "align.tsv";
-
     pub const AMINO_DBTYPE: &[u8] = &[0, 0, 0, 0];
     pub const PROFILE_DBTYPE: &[u8] = &[2, 0, 0, 0];
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct MmseqsArgs {
+    /// The directory where intermediate files will be placed
+    #[arg(long = "prep", value_name = "<PATH>", default_value = "prep/")]
+    pub prep_dir: PathBuf,
+
     /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
     #[arg(long = "mmseqs-k", default_value_t = 0usize)]
     pub k: usize,
@@ -113,7 +111,7 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: &[Profile],
+    profiles: &[impl AsRef<Profile>],
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
@@ -139,7 +137,7 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (profile_count, profile) in profiles.iter().enumerate() {
+    for (profile_count, profile) in profiles.iter().map(|p| p.as_ref()).enumerate() {
         for profile_idx in 1..=profile.length {
             for byte in (0..20)
                 .map(|residue| Nats(profile.match_score(residue, profile_idx)))
@@ -202,38 +200,31 @@ pub fn write_mmseqs_profile_database(
 }
 
 pub fn run_mmseqs_search(
-    queries: &Queries,
-    targets: &[Sequence],
-    prep_dir: impl AsRef<Path>,
+    query_db: impl AsRef<Path>,
+    target_db: impl AsRef<Path>,
+    align_db: impl AsRef<Path>,
+    align_tsv: impl AsRef<Path>,
+    num_targets: usize,
     num_threads: usize,
     args: &MmseqsArgs,
 ) -> anyhow::Result<()> {
-    let prep_dir = prep_dir.as_ref();
+    let effective_e_value = args.pvalue_threshold * num_targets as f64;
 
-    match queries {
-        Queries::Sequence(sequences) => {
-            write_mmseqs_sequence_database(sequences, prep_dir.join("queryDB"))?;
-        }
-        Queries::Profile(profiles) => {
-            write_mmseqs_profile_database(profiles, prep_dir.join("queryDB"))?;
-        }
-        _ => bail!("unsupported query format"),
-    }
+    let query_db = query_db.as_ref();
+    let target_db = target_db.as_ref();
+    let align_db = align_db.as_ref().to_path_buf();
+    let align_tsv = align_tsv.as_ref();
 
-    write_mmseqs_sequence_database(targets, prep_dir.join("targetDB"))?;
-
-    let effective_e_value = args.pvalue_threshold * targets.len() as f64;
-
-    let _ = prep_dir.join(ALIGN_DB).remove();
-    let _ = prep_dir.join(ALIGN_DB).with_extension("dbtype").remove();
-    let _ = prep_dir.join(ALIGN_DB).with_extension("index").remove();
+    let _ = align_db.remove();
+    let _ = align_db.with_extension("dbtype").remove();
+    let _ = align_db.with_extension("index").remove();
 
     Command::new("mmseqs")
         .arg("search")
-        .arg(prep_dir.join(QUERY_DB))
-        .arg(prep_dir.join(TARGET_DB))
-        .arg(prep_dir.join(ALIGN_DB))
-        .arg(prep_dir)
+        .arg(query_db)
+        .arg(target_db)
+        .arg(&align_db)
+        .arg(&args.prep_dir)
         .args(["--threads", &num_threads.to_string()])
         .args(["-k", &args.k.to_string()])
         .args(["--k-score", &args.k_score.to_string()])
@@ -247,10 +238,10 @@ pub fn run_mmseqs_search(
 
     Command::new("mmseqs")
         .arg("convertalis")
-        .arg(prep_dir.join(QUERY_DB))
-        .arg(prep_dir.join(TARGET_DB))
-        .arg(prep_dir.join(ALIGN_DB))
-        .arg(prep_dir.join(ALIGN_TSV))
+        .arg(query_db)
+        .arg(target_db)
+        .arg(align_db)
+        .arg(align_tsv)
         .args(["--threads", &num_threads.to_string()])
         .args([
             "--format-output",
