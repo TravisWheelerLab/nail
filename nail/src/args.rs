@@ -128,7 +128,7 @@ pub struct AlignOutputArgs {
     #[arg(
         short = 'T',
         long = "tab-output",
-        default_value = "results.tsv",
+        default_value = "results.tbl",
         value_name = "path"
     )]
     pub tsv_results_path: PathBuf,
