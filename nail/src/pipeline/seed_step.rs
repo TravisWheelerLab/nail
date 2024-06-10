@@ -91,17 +91,17 @@ impl ProfileSeedStep {
 
         let seed_map_a = seeds_from_mmseqs_align_tsv(&align_tsv)?;
 
-        let other_queries: Vec<_> = queries
+        let queries_b: Vec<_> = queries
             .iter()
             .filter(|p| p.relative_entropy() < 1.0)
             .map(|p| {
                 let mut p2 = p.clone();
-                p2.tune_relative_entropy(1.0);
+                p2.raise_relative_entropy(1.0);
                 p2
             })
             .collect();
 
-        write_mmseqs_profile_database(&other_queries, &query_db)?;
+        write_mmseqs_profile_database(&queries_b, &query_db)?;
 
         run_mmseqs_search(
             query_db,

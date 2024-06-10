@@ -74,7 +74,7 @@ pub fn run_pipeline_profile_to_sequence(
     queries
         .par_iter_mut()
         .for_each_with((pipeline, targets), |(pipeline, targets), profile| {
-            pipeline.run(profile, targets).unwrap();
+            pipeline.run(profile, targets);
         })
 }
 

@@ -111,8 +111,12 @@ impl Profile {
         avg_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
     }
 
-    pub fn tune_relative_entropy(&mut self, target: f32) {
-        const TOLERANCE: f32 = 1e-3;
+    pub fn raise_relative_entropy(&mut self, target: f32) {
+        const LOWER_PROB_LIMIT: f32 = 1e-3;
+        const TARGET_TOLERANCE: f32 = 1e-3;
+        const NUM_SATURATED_RESIDUE_LIMIT: usize = 10;
+        const PCT_SATURATED_COL_LIMIT: f32 = 0.5;
+        const MAX_ITER: usize = 100;
 
         let start_probs_by_pos: Vec<Vec<f32>> = self
             .match_scores
@@ -132,16 +136,21 @@ impl Profile {
             Binary,
         }
 
+        enum Status {
+            Iterating,
+            Success,
+            Failure,
+        }
+
         let mut search_mode = Mode::Growing;
+        let mut status = Status::Iterating;
 
         let mut new_probs_by_pos = start_probs_by_pos.clone();
         let mut factor = 0.1;
         let mut upper_bound = 0.0;
         let mut lower_bound = 0.0;
-        let mut relative_entropy =
-            avg_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
 
-        while (relative_entropy - target).abs() > TOLERANCE {
+        for _ in 0..MAX_ITER {
             new_probs_by_pos
                 .iter_mut()
                 .zip(&start_probs_by_pos)
@@ -157,12 +166,37 @@ impl Profile {
                             *p_new = p_start - factor * AMINO_BACKGROUND_FREQUENCIES[idx]
                         });
 
-                    new_probs.saturate_lower(1e-3);
-                    new_probs.normalize();
+                    new_probs.saturate_lower(LOWER_PROB_LIMIT);
                 });
 
-            relative_entropy =
+            let percent_ruined_columns = new_probs_by_pos
+                .iter()
+                .skip(1)
+                .filter(|probs| {
+                    probs.iter().filter(|&&p| p == LOWER_PROB_LIMIT).count()
+                        > NUM_SATURATED_RESIDUE_LIMIT
+                })
+                .count() as f32
+                / self.length as f32;
+
+            if percent_ruined_columns >= PCT_SATURATED_COL_LIMIT {
+                status = Status::Failure;
+                break;
+            }
+
+            new_probs_by_pos
+                .iter_mut()
+                // skip model position 0
+                .skip(1)
+                .for_each(|probs| probs.normalize());
+
+            let relative_entropy =
                 avg_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
+
+            if (relative_entropy - target).abs() < TARGET_TOLERANCE {
+                status = Status::Success;
+                break;
+            }
 
             match search_mode {
                 Mode::Growing => {
@@ -186,19 +220,21 @@ impl Profile {
             }
         }
 
-        self.match_scores
-            .iter_mut()
-            .zip(new_probs_by_pos)
-            // skip model position 0
-            .skip(1)
-            .for_each(|(scores, probs)| {
-                scores
-                    .iter_mut()
-                    .zip(probs)
-                    .enumerate()
-                    .take(Profile::MAX_ALPHABET_SIZE)
-                    .for_each(|(idx, (s, p))| *s = (p / AMINO_BACKGROUND_FREQUENCIES[idx]).ln())
-            });
+        if let Status::Success = status {
+            self.match_scores
+                .iter_mut()
+                .zip(new_probs_by_pos)
+                // skip model position 0
+                .skip(1)
+                .for_each(|(scores, probs)| {
+                    scores
+                        .iter_mut()
+                        .zip(probs)
+                        .enumerate()
+                        .take(Profile::MAX_ALPHABET_SIZE)
+                        .for_each(|(idx, (s, p))| *s = (p / AMINO_BACKGROUND_FREQUENCIES[idx]).ln())
+                });
+        }
     }
 
     pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {
