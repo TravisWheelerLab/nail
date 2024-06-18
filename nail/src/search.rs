@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::args::{AlignArgs, SearchArgs};
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DefaultAlignStep,
-    DefaultCloudSearchStep, FullDpCloudSearchStep, OutputStep, Pipeline, ProfileSeedStep,
-    SequenceSeedStep,
+    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DebugCloudSearchStep,
+    DefaultAlignStep, DefaultCloudSearchStep, FullDpCloudSearchStep, OutputStep, Pipeline,
+    ProfileSeedStep, SequenceSeedStep,
 };
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
@@ -80,7 +80,7 @@ pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
                 &args.mmseqs_args,
             )?),
         },
-
+        // cloud_search: Box::new(DebugCloudSearchStep::new(194, 1, 343, 173)),
         cloud_search: match args.nail_args.full_dp {
             true => Box::<FullDpCloudSearchStep>::default(),
             false => Box::new(DefaultCloudSearchStep::new(&align_args)),

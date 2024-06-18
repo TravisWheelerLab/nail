@@ -202,6 +202,7 @@ pub fn write_mmseqs_profile_database(
 pub fn run_mmseqs_search(
     query_db: impl AsRef<Path>,
     target_db: impl AsRef<Path>,
+    prefilter_db: impl AsRef<Path>,
     align_db: impl AsRef<Path>,
     align_tsv: impl AsRef<Path>,
     num_targets: usize,
@@ -212,6 +213,7 @@ pub fn run_mmseqs_search(
 
     let query_db = query_db.as_ref();
     let target_db = target_db.as_ref();
+    let prefilter_db = prefilter_db.as_ref();
     let align_db = align_db.as_ref().to_path_buf();
     let align_tsv = align_tsv.as_ref();
 
@@ -220,16 +222,23 @@ pub fn run_mmseqs_search(
     let _ = align_db.with_extension("index").remove();
 
     Command::new("mmseqs")
-        .arg("search")
+        .arg("prefilter")
         .arg(query_db)
         .arg(target_db)
-        .arg(&align_db)
-        .arg(&args.prep_dir)
+        .arg(prefilter_db)
         .args(["--threads", &num_threads.to_string()])
         .args(["-k", &args.k.to_string()])
         .args(["--k-score", &args.k_score.to_string()])
         .args(["--min-ungapped-score", &args.min_ungapped_score.to_string()])
         .args(["--max-seqs", &args.max_seqs.to_string()])
+        .run()?;
+
+    Command::new("mmseqs")
+        .arg("align")
+        .arg(query_db)
+        .arg(target_db)
+        .arg(prefilter_db)
+        .arg(&align_db)
         .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
         // it is required to get start positions for alignments

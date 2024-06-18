@@ -72,6 +72,7 @@ impl ProfileSeedStep {
     ) -> anyhow::Result<Self> {
         let query_db = mmseqs_args.prep_dir.join("queryDB");
         let target_db = mmseqs_args.prep_dir.join("targetDB");
+        let prefilter_db = mmseqs_args.prep_dir.join("prefilterDB");
         let align_db = mmseqs_args.prep_dir.join("alignDB");
         let align_tsv = mmseqs_args.prep_dir.join("align.tsv");
 
@@ -83,6 +84,7 @@ impl ProfileSeedStep {
             &query_db,
             &target_db,
             &align_db,
+            &prefilter_db,
             &align_tsv,
             targets.len(),
             num_threads,
@@ -107,6 +109,7 @@ impl ProfileSeedStep {
             query_db,
             target_db,
             align_db,
+            prefilter_db,
             &align_tsv,
             targets.len(),
             num_threads,
@@ -149,6 +152,7 @@ impl SequenceSeedStep {
     ) -> anyhow::Result<Self> {
         let query_db = mmseqs_args.prep_dir.join("queryDB");
         let target_db = mmseqs_args.prep_dir.join("targetDB");
+        let prefilter_db = mmseqs_args.prep_dir.join("prefilterDB");
         let align_db = mmseqs_args.prep_dir.join("alignDB");
         let align_tsv = mmseqs_args.prep_dir.join("align.tsv");
 
@@ -158,6 +162,7 @@ impl SequenceSeedStep {
         run_mmseqs_search(
             query_db,
             target_db,
+            prefilter_db,
             align_db,
             &align_tsv,
             targets.len(),

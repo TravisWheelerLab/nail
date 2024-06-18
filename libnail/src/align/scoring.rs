@@ -1,7 +1,7 @@
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
-use crate::util::{log_add, LogAbuse};
+use crate::util::log_add;
 
 use super::CloudSearchScores;
 
@@ -183,78 +183,96 @@ pub fn null_two_score(
     target: &Sequence,
     row_bounds: &RowBounds,
 ) -> Nats {
-    let sub_target_length = (row_bounds.target_end - row_bounds.target_start + 1) as f32;
+    // TODO: prevent these allocations?
+    let mut expected_prob_ratios: Vec<f32> = vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
+    let mut match_sums: Vec<f32> = vec![0.0; profile.length + 1];
+    let mut insert_sums: Vec<f32> = vec![0.0; profile.length + 1];
+    let mut core_posteriors: Vec<f32> = vec![0.0; target.length + 1];
+    let mut core_state_sum: f32 = 0.0;
 
-    // TODO: need to prevent these allocations
-    //       the strategy used in hmmer (using the first row in the PP-DP matrix)
-    //       won't work here, since we have a sparse matrix
-    let mut match_values: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut insert_values: Vec<f32> = vec![0.0; profile.length + 1];
-
-    let mut n_value: f32 = 0.0;
-    let mut j_value: f32 = 0.0;
-    let mut c_value: f32 = 0.0;
-
-    // calculate the expected number of times that each emitting
-    // state was used in generating the residues in this domain
+    // what: for each position in the model, take the sum of
+    //       the posteriors in the match and insert state
+    //
+    // why: this gives us the expected number of times that
+    //      each state was used in generating the target sequence
+    //
+    //      for example:
+    //
+    //              P_1   P_2   P_3    N     C
+    //
+    //    T_1   M   0.05  0.05  0.00  0.80  0.00
+    //          I   0.10  0.00  0.00
+    //          D   0.00  0.00  0.00
+    //
+    //    T_2   M   0.30  0.20  0.10  0.40  0.00
+    //          I   0.00  0.00  0.00
+    //          D   0.00  0.00  0.00
+    //
+    //    T_3   M   0.25  0.50  0.25  0.00  0.00
+    //          I   0.00  0.00  0.00
+    //          D   0.00  0.00  0.00
+    //
+    //    T_4   M   0.10  0.20  0.30  0.00  0.40
+    //          I   0.00  0.00  0.00
+    //          D   0.00  0.00  0.00
+    //
+    //    T_5   M   0.00  0.05  0.05  0.00  0.80
+    //          I   0.00  0.00  0.10
+    //          D   0.00  0.00  0.00
+    //
+    //        ----------------------------------
+    //          M   0.70  1.00  0.70  1.20  1.20
+    //          I   0.10  0.00  0.10
+    //
+    //                ^     ^     ^     ^     ^
+    //              these are the expected numbers
+    //              of times each state is used
+    //
     for target_idx in row_bounds.target_start..=row_bounds.target_end {
         let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];
         let profile_end_in_current_row = row_bounds.right_row_bounds[target_idx];
 
         for profile_idx in profile_start_in_current_row..profile_end_in_current_row {
-            // for profile_idx in 1..=profile.length {
-            match_values[profile_idx] += posterior_matrix.get_match(target_idx, profile_idx);
-            insert_values[profile_idx] += posterior_matrix.get_insert(target_idx, profile_idx);
+            match_sums[profile_idx] += posterior_matrix.get_match(target_idx, profile_idx);
+            insert_sums[profile_idx] += posterior_matrix.get_insert(target_idx, profile_idx);
         }
 
-        n_value += posterior_matrix.get_special(target_idx, Profile::SPECIAL_N_IDX);
-        j_value += posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX);
-        c_value += posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX);
+        // the posterior probability of being in a special
+        // state at this target position is the sum of
+        // the individual posteriors of each special state
+        let special_posterior = posterior_matrix.get_special(target_idx, Profile::SPECIAL_N_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX);
+
+        let core_posterior = 1.0 - special_posterior;
+        core_posteriors[target_idx] = core_posterior;
+        core_state_sum += core_posterior;
     }
 
-    // convert the expected numbers to log frequencies where:
-    //    the numerator is the expected number
-    //    the denominator is the length of the part of the target that was aligned
-    match_values
+    // now that we have the expected number of state usages,
+    // we are going to compute the expected probability
+    // ratios that we use to determine our composition
+    // bias score adjustment (i.e. null two score)
+    expected_prob_ratios
         .iter_mut()
-        .for_each(|v| *v = v.ln_or_max() - sub_target_length.ln());
+        .enumerate()
+        .take(Profile::MAX_ALPHABET_SIZE)
+        .for_each(|(residue, ratio)| {
+            for profile_idx in 1..profile.length {
+                let match_contribution =
+                    match_sums[profile_idx] * profile.match_score(residue, profile_idx).exp();
 
-    insert_values
-        .iter_mut()
-        .for_each(|v| *v = v.ln_or_max() - sub_target_length.ln());
+                let insert_contribution =
+                    insert_sums[profile_idx] * profile.insert_score(residue, profile_idx).exp();
 
-    n_value = n_value.ln_or_max() - sub_target_length.ln();
-    j_value = j_value.ln_or_max() - sub_target_length.ln();
-    c_value = c_value.ln_or_max() - sub_target_length.ln();
+                *ratio += match_contribution + insert_contribution;
+            }
+            let match_contribution =
+                match_sums[profile.length] * profile.match_score(residue, profile.length).exp();
 
-    // from hmmer:
-    //   Calculate null2's log odds emission probabilities, by taking
-    //   posterior weighted sum over all emission vectors used in paths
-    //   explaining the domain.
-    let mut null2: Vec<f32> = vec![-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
-    let x_factor = log_sum!(n_value, j_value, c_value);
-
-    for alphabet_idx in 0..Profile::MAX_ALPHABET_SIZE {
-        for profile_idx in 1..profile.length {
-            null2[alphabet_idx] = log_sum!(
-                null2[alphabet_idx],
-                match_values[profile_idx] + profile.match_score(alphabet_idx, profile_idx),
-                insert_values[profile_idx] + profile.insert_score(alphabet_idx, profile_idx)
-            );
-        }
-        null2[alphabet_idx] = log_sum!(
-            null2[alphabet_idx],
-            match_values[profile.length] + profile.match_score(alphabet_idx, profile.length),
-            x_factor
-        );
-    }
-
-    null2[0..20].iter_mut().for_each(|v| *v = v.exp());
-
-    // from hmmer:
-    //   now null2[x] = \frac{f_d(x)}{f_0(x)} for all x in alphabet,
-    //   0..K-1, where f_d(x) are the ad hoc "null2" residue frequencies
-    //   for this envelope.
+            *ratio += match_contribution;
+            *ratio /= core_state_sum;
+        });
 
     // we set the scores for the degenerate characters to the
     // average of the scores of residues that they may represent
@@ -264,39 +282,50 @@ pub fn null_two_score(
 
     // B ->  [D, N]
     // 21 -> [2, 11]
-    null2[21] = (null2[2] + null2[11]) / 2.0;
+    expected_prob_ratios[21] = (expected_prob_ratios[2] + expected_prob_ratios[11]) / 2.0;
     // J ->  [I, L]
     // 22 -> [7, 9]
-    null2[22] = (null2[7] + null2[9]) / 2.0;
+    expected_prob_ratios[22] = (expected_prob_ratios[7] + expected_prob_ratios[9]) / 2.0;
     // Z ->  [E, Q]
     // 23 -> [3, 13]
-    null2[23] = (null2[3] + null2[13]) / 2.0;
+    expected_prob_ratios[23] = (expected_prob_ratios[3] + expected_prob_ratios[13]) / 2.0;
     // U ->  [C]
     // 24 -> [1]
-    null2[24] = null2[1];
+    expected_prob_ratios[24] = expected_prob_ratios[1];
     // O ->  [K]
     // 25 -> [8]
-    null2[25] = null2[8];
+    expected_prob_ratios[25] = expected_prob_ratios[8];
     // X ->  [any]
     // 26 -> [0..19]
-    null2[26] = null2[0..20].iter().sum::<f32>() / 20.0;
+    expected_prob_ratios[26] = expected_prob_ratios[0..20].iter().sum::<f32>() / 20.0;
 
-    null2[Profile::GAP_INDEX] = 1.0;
-    null2[Profile::NON_RESIDUE_IDX] = 1.0;
-    null2[Profile::MISSING_DATA_IDX] = 1.0;
+    expected_prob_ratios[Profile::GAP_INDEX] = 1.0;
+    expected_prob_ratios[Profile::NON_RESIDUE_IDX] = 1.0;
+    expected_prob_ratios[Profile::MISSING_DATA_IDX] = 1.0;
 
-    let mut null2_score = 0.0;
-    for residue in &target.digital_bytes[row_bounds.target_start..=row_bounds.target_end] {
-        null2_score += null2[*residue as usize].ln();
-    }
+    let expected_scores: Vec<_> = expected_prob_ratios.into_iter().map(|r| r.ln()).collect();
+
+    let mut null_two_score = 0.0;
+    (row_bounds.target_start..=row_bounds.target_end)
+        .map(|idx| {
+            (
+                core_posteriors[idx],
+                expected_scores[target.digital_bytes[idx] as usize],
+            )
+        })
+        .for_each(|(core_posterior, expected_score)| {
+            // we weight each residue's contribution to the
+            // bias by the posterior probability that
+            // the residue was emitted by a core model state
+            null_two_score += core_posterior * expected_score;
+        });
 
     // this is "omega" in hmmer
-    // TODO: figure out more about this
-    // TODO: also, do we really want to do this omega business here?
-    let null2_prior = 1.0 / 256.0;
-    null2_score = log_sum!(0.0, null2_prior + null2_score);
-
-    Nats(null2_score)
+    //   essentially, we have a strong prior expecation that
+    //   the sequence does not have a composition bias
+    let null_two_prior = (1.0f32 / 256.0).ln();
+    null_two_score = log_sum!(0.0, null_two_prior + null_two_score);
+    Nats(null_two_score)
 }
 
 #[cfg(test)]

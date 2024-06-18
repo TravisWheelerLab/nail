@@ -29,6 +29,30 @@ impl CloudSearchStep for FullDpCloudSearchStep {
 }
 
 #[derive(Default, Clone)]
+pub struct DebugCloudSearchStep {
+    row_bounds: RowBounds,
+}
+
+impl DebugCloudSearchStep {
+    pub fn new(
+        target_start: usize,
+        profile_start: usize,
+        target_end: usize,
+        profile_end: usize,
+    ) -> Self {
+        let mut row_bounds = RowBounds::new(target_end);
+        row_bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
+        Self { row_bounds }
+    }
+}
+
+impl CloudSearchStep for DebugCloudSearchStep {
+    fn run(&mut self, _profile: &Profile, _target: &Sequence, _seed: &Seed) -> Option<&RowBounds> {
+        Some(&self.row_bounds)
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct DefaultCloudSearchStep {
     cloud_matrix: CloudMatrixLinear,
     forward_bounds: AntiDiagonalBounds,
@@ -122,7 +146,6 @@ impl CloudSearchStep for DefaultCloudSearchStep {
                 seed.profile_end,
             );
         }
-
         Some(&self.row_bounds)
     }
 }

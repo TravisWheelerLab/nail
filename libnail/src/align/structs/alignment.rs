@@ -252,7 +252,9 @@ impl<'a> AlignmentBuilder<'a> {
                                 profile_bytes.push(profile_byte);
                                 target_bytes.push(target_byte);
 
-                                if profile_byte == target_byte {
+                                if profile_byte.to_ascii_lowercase()
+                                    == target_byte.to_ascii_lowercase()
+                                {
                                     middle_bytes.push(profile_byte);
                                 } else if profile
                                     .match_score(target_byte_digital as usize, step.profile_idx)

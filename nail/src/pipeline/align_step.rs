@@ -102,6 +102,7 @@ impl AlignStep for DefaultAlignStep {
         );
 
         let null_one = null_one_score(target.length);
+
         let null_two = null_two_score(&self.posterior_matrix, profile, target, bounds);
 
         let cell_fraction = bounds.num_cells() as f32 / (profile.length * target.length) as f32;
