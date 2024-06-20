@@ -239,6 +239,7 @@ pub fn run_mmseqs_search(
         .arg(target_db)
         .arg(prefilter_db)
         .arg(&align_db)
+        .args(["--threads", &num_threads.to_string()])
         .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
         // it is required to get start positions for alignments
