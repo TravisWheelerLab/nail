@@ -7,7 +7,7 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use crate::args::AlignArgs;
+use crate::args::SearchArgs;
 
 pub trait AlignStep: dyn_clone::DynClone {
     fn run(
@@ -32,11 +32,11 @@ pub struct DefaultAlignStep {
 }
 
 impl DefaultAlignStep {
-    pub fn new(args: &AlignArgs, target_count: usize) -> Self {
+    pub fn new(args: &SearchArgs) -> Self {
         Self {
             target_count: match args.nail_args.target_database_size {
                 Some(size) => size,
-                None => target_count,
+                None => panic!(),
             },
             forward_pvalue_threshold: args.nail_args.forward_pvalue_threshold,
             e_value_threshold: args.output_args.evalue_threshold,

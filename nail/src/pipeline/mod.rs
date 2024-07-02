@@ -71,11 +71,12 @@ pub fn run_pipeline_profile_to_sequence(
     targets: &HashMap<String, Sequence>,
     pipeline: Pipeline,
 ) {
-    queries
-        .par_iter_mut()
-        .for_each_with((pipeline, targets), |(pipeline, targets), profile| {
+    queries.par_iter_mut().panic_fuse().for_each_with(
+        (pipeline, targets),
+        |(pipeline, targets), profile| {
             pipeline.run(profile, targets);
-        })
+        },
+    )
 }
 
 pub fn run_pipeline_sequence_to_sequence(
@@ -83,9 +84,9 @@ pub fn run_pipeline_sequence_to_sequence(
     targets: &HashMap<String, Sequence>,
     pipeline: Pipeline,
 ) {
-    queries
-        .par_iter()
-        .for_each_with((pipeline, targets), |(pipeline, targets), sequence| {
+    queries.par_iter().panic_fuse().for_each_with(
+        (pipeline, targets),
+        |(pipeline, targets), sequence| {
             let mut profile = Hmm::from_blosum_62_and_sequence(sequence)
                 .map(|h| Profile::new(&h))
                 .expect("failed to build profile from sequence");
@@ -93,5 +94,6 @@ pub fn run_pipeline_sequence_to_sequence(
             profile.calibrate_tau(200, 100, 0.04);
 
             pipeline.run(&mut profile, targets).unwrap();
-        })
+        },
+    )
 }

@@ -9,7 +9,6 @@ use std::{
 };
 
 use anyhow::Context;
-use clap::Args;
 
 use libnail::{
     align::{structs::Seed, Nats},
@@ -18,6 +17,7 @@ use libnail::{
 };
 
 use crate::{
+    args::MmseqsArgs,
     pipeline::SeedMap,
     util::{CommandExt, PathBufExt},
 };
@@ -28,35 +28,25 @@ pub mod consts {
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
 }
 
-#[derive(Args, Debug, Clone, Default)]
-pub struct MmseqsArgs {
-    /// The directory where intermediate files will be placed
-    #[arg(long = "prep", value_name = "<PATH>", default_value = "prep/")]
-    pub prep_dir: PathBuf,
+pub struct MmseqsDbPaths {
+    pub query_db: PathBuf,
+    pub target_db: PathBuf,
+    pub prefilter_db: PathBuf,
+    pub align_db: PathBuf,
+    pub align_tsv: PathBuf,
+}
 
-    /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
-    #[arg(long = "mmseqs-k", default_value_t = 0usize)]
-    pub k: usize,
-
-    /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
-    #[arg(long = "mmseqs-k-score", default_value_t = 80usize)]
-    pub k_score: usize,
-
-    /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
-    #[arg(long = "mmseqs-min-ungapped_score", default_value_t = 15usize)]
-    pub min_ungapped_score: usize,
-
-    /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
-    #[arg(long = "mmseqs-max-seqs", default_value_t = 1000usize)]
-    pub max_seqs: usize,
-
-    /// MMseqs2 align: Include matches below this P-value as seeds.
-    ///
-    /// Note: the MMseqs2 align tool only allows thresholding by E-value, so the P-value supplied
-    /// here is multiplied by the size of the target database (i.e. number of sequences) to achieve
-    /// an E-value threshold that is effectively the same as the chosen P-value threshold.
-    #[arg(long = "mmseqs-pvalue-threshold", default_value_t = 0.01f64)]
-    pub pvalue_threshold: f64,
+impl MmseqsDbPaths {
+    pub fn new(dir: impl AsRef<Path>) -> Self {
+        let dir = dir.as_ref().to_path_buf();
+        Self {
+            query_db: dir.join("queryDB"),
+            target_db: dir.join("targetDB"),
+            prefilter_db: dir.join("prefilterDB"),
+            align_db: dir.join("alignDB"),
+            align_tsv: dir.join("align.tsv"),
+        }
+    }
 }
 
 pub fn write_mmseqs_sequence_database(
@@ -200,32 +190,22 @@ pub fn write_mmseqs_profile_database(
 }
 
 pub fn run_mmseqs_search(
-    query_db: impl AsRef<Path>,
-    target_db: impl AsRef<Path>,
-    prefilter_db: impl AsRef<Path>,
-    align_db: impl AsRef<Path>,
-    align_tsv: impl AsRef<Path>,
+    paths: &MmseqsDbPaths,
     num_targets: usize,
     num_threads: usize,
     args: &MmseqsArgs,
 ) -> anyhow::Result<()> {
     let effective_e_value = args.pvalue_threshold * num_targets as f64;
 
-    let query_db = query_db.as_ref();
-    let target_db = target_db.as_ref();
-    let prefilter_db = prefilter_db.as_ref();
-    let align_db = align_db.as_ref().to_path_buf();
-    let align_tsv = align_tsv.as_ref();
-
-    let _ = align_db.remove();
-    let _ = align_db.with_extension("dbtype").remove();
-    let _ = align_db.with_extension("index").remove();
+    let _ = paths.align_db.remove();
+    let _ = paths.align_db.with_extension("dbtype").remove();
+    let _ = paths.align_db.with_extension("index").remove();
 
     Command::new("mmseqs")
         .arg("prefilter")
-        .arg(query_db)
-        .arg(target_db)
-        .arg(prefilter_db)
+        .arg(&paths.query_db)
+        .arg(&paths.target_db)
+        .arg(&paths.prefilter_db)
         .args(["--threads", &num_threads.to_string()])
         .args(["-k", &args.k.to_string()])
         .args(["--k-score", &args.k_score.to_string()])
@@ -235,10 +215,10 @@ pub fn run_mmseqs_search(
 
     Command::new("mmseqs")
         .arg("align")
-        .arg(query_db)
-        .arg(target_db)
-        .arg(prefilter_db)
-        .arg(&align_db)
+        .arg(&paths.query_db)
+        .arg(&paths.target_db)
+        .arg(&paths.prefilter_db)
+        .arg(&paths.align_db)
         .args(["--threads", &num_threads.to_string()])
         .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
@@ -248,14 +228,14 @@ pub fn run_mmseqs_search(
 
     Command::new("mmseqs")
         .arg("convertalis")
-        .arg(query_db)
-        .arg(target_db)
-        .arg(align_db)
-        .arg(align_tsv)
+        .arg(&paths.query_db)
+        .arg(&paths.target_db)
+        .arg(&paths.align_db)
+        .arg(&paths.align_tsv)
         .args(["--threads", &num_threads.to_string()])
         .args([
             "--format-output",
-            "qheader,theader,qstart,qend,tstart,tend,evalue",
+            "qheader,theader,qstart,qend,tstart,tend,bits",
         ])
         .run()?;
 
@@ -288,6 +268,7 @@ pub fn seeds_from_mmseqs_align_tsv(path: impl AsRef<Path>) -> anyhow::Result<See
         let profile_name = query_header_tokens[0].to_string();
         let profile_start = line_tokens[2].parse::<usize>()?;
         let profile_end = line_tokens[3].parse::<usize>()?;
+        let score = line_tokens[6].parse::<f32>()?;
 
         let profile_map = seed_map.entry(profile_name).or_default();
         profile_map.insert(
@@ -297,6 +278,7 @@ pub fn seeds_from_mmseqs_align_tsv(path: impl AsRef<Path>) -> anyhow::Result<See
                 target_end,
                 profile_start,
                 profile_end,
+                score,
             },
         );
     }

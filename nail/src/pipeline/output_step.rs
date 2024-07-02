@@ -5,7 +5,7 @@ use libnail::{
     output::output_tabular::{Field, TableFormat},
 };
 
-use crate::{args::AlignOutputArgs, util::PathBufExt};
+use crate::{args::OutputArgs, util::PathBufExt};
 
 pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::Target,
@@ -33,13 +33,13 @@ pub struct OutputStep {
 }
 
 impl OutputStep {
-    pub fn new(args: &AlignOutputArgs) -> anyhow::Result<Self> {
+    pub fn new(args: &OutputArgs) -> anyhow::Result<Self> {
         Ok(Self {
             alignment_writer: match &args.ali_results_path {
                 Some(path) => Box::new(path.open(true)?),
                 None => Box::new(stdout()),
             },
-            table_writer: Box::new(args.tsv_results_path.open(true)?),
+            table_writer: Box::new(args.tbl_results_path.open(true)?),
             table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
             header_status: HeaderStatus::Unwritten,
         })

@@ -5,7 +5,7 @@ mod search;
 mod util;
 
 use args::{Cli, SubCommands};
-use search::search;
+use search::{search, seed};
 use util::{check_mmseqs_installed, set_threads};
 
 use clap::Parser;
@@ -15,9 +15,13 @@ fn main() -> anyhow::Result<()> {
         SubCommands::Search(args) => {
             check_mmseqs_installed()?;
             set_threads(args.common_args.num_threads)?;
-            search(&args)?;
+            search(args)?;
         }
-        SubCommands::Seed(_) => todo!(),
+        SubCommands::Seed(args) => {
+            check_mmseqs_installed()?;
+            set_threads(args.common_args.num_threads)?;
+            seed(args)?;
+        }
     }
     Ok(())
 }

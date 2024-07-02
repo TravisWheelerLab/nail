@@ -7,7 +7,10 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use crate::args::AlignArgs;
+use crate::{
+    args::SearchArgs,
+    util::{cloud_image, Image},
+};
 
 pub trait CloudSearchStep: dyn_clone::DynClone {
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds>;
@@ -63,7 +66,7 @@ pub struct DefaultCloudSearchStep {
 }
 
 impl DefaultCloudSearchStep {
-    pub fn new(args: &AlignArgs) -> Self {
+    pub fn new(args: &SearchArgs) -> Self {
         Self {
             params: CloudSearchParams {
                 gamma: args.nail_args.gamma,
@@ -109,34 +112,26 @@ impl CloudSearchStep for DefaultCloudSearchStep {
             return None;
         }
 
-        let bounds_intersect =
-            self.forward_bounds.max_anti_diagonal_idx >= self.reverse_bounds.min_anti_diagonal_idx;
+        let intersection =
+            AntiDiagonalBounds::intersection(&self.forward_bounds, &self.reverse_bounds);
 
-        // TODO: clean up this mess
-        if bounds_intersect {
+        if intersection.is_some() {
             AntiDiagonalBounds::join_merge(&mut self.forward_bounds, &self.reverse_bounds);
-            if !self.forward_bounds.valid() {
-                self.forward_bounds.fill_rectangle(
-                    seed.target_start,
-                    seed.profile_start,
-                    seed.target_end,
-                    seed.profile_end,
-                );
-            }
-
             self.forward_bounds.square_corners();
-            self.forward_bounds.trim_wings();
 
-            self.row_bounds
-                .fill_from_anti_diagonal_bounds(&self.forward_bounds);
-
-            if !self.row_bounds.valid() {
-                self.row_bounds.fill_rectangle(
-                    seed.target_start,
-                    seed.profile_start,
-                    seed.target_end,
-                    seed.profile_end,
-                );
+            match self.forward_bounds.trim_wings() {
+                Ok(_) => {
+                    self.row_bounds
+                        .fill_from_anti_diagonal_bounds(&self.forward_bounds);
+                }
+                Err(_) => {
+                    self.row_bounds.fill_rectangle(
+                        seed.target_start,
+                        seed.profile_start,
+                        seed.target_end,
+                        seed.profile_end,
+                    );
+                }
             }
         } else {
             self.row_bounds.fill_rectangle(
@@ -146,6 +141,7 @@ impl CloudSearchStep for DefaultCloudSearchStep {
                 seed.profile_end,
             );
         }
+
         Some(&self.row_bounds)
     }
 }

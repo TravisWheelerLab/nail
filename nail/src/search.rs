@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::args::{AlignArgs, SearchArgs};
+use crate::args::{SearchArgs, SeedArgs};
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, DebugCloudSearchStep,
-    DefaultAlignStep, DefaultCloudSearchStep, FullDpCloudSearchStep, OutputStep, Pipeline,
-    ProfileSeedStep, SequenceSeedStep,
+    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
+    seed_sequence_to_sequence, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
+    FullDpCloudSearchStep, OutputStep, Pipeline, SeedMap,
 };
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
@@ -13,79 +15,120 @@ use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
 use libnail::structs::{Profile, Sequence};
 
 use anyhow::Context;
+use serde::Serialize;
 
 pub enum Queries {
     Sequence(Vec<Sequence>),
     Profile(Vec<Profile>),
 }
 
-pub fn search(args: &SearchArgs) -> anyhow::Result<()> {
-    {
-        // quickly make sure we can write the results
-        args.output_args.tsv_results_path.open(true)?;
-        if let Some(path) = &args.output_args.ali_results_path {
-            path.open(true)?;
-        }
-    }
+fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
+    let query_format = guess_query_format_from_query_file(&path)?;
 
-    let seeds_path = args.mmseqs_args.prep_dir.join("./seeds.json");
-
-    let align_args = AlignArgs {
-        query_path: args.query_path.clone(),
-        target_path: args.target_path.clone(),
-        seeds_path,
-        nail_args: args.nail_args.clone(),
-        output_args: args.output_args.clone(),
-        common_args: args.common_args.clone(),
-    };
-
-    let query_format = guess_query_format_from_query_file(&args.query_path)?;
-
-    let queries = match query_format {
+    match query_format {
         FileFormat::Fasta => {
-            let queries = Sequence::amino_from_fasta(&args.query_path)
-                .context("failed to read query fasta")?;
+            let queries =
+                Sequence::amino_from_fasta(&path).context("failed to read query fasta")?;
 
-            Queries::Sequence(queries)
+            Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries: Vec<Profile> = parse_hmms_from_p7hmm_file(&args.query_path)
+            let queries: Vec<Profile> = parse_hmms_from_p7hmm_file(&path)
                 .context("failed to read query hmm")?
                 .iter()
                 .map(Profile::new)
                 .collect();
 
-            Queries::Profile(queries)
+            Ok(Queries::Profile(queries))
         }
         _ => {
             panic!()
         }
+    }
+}
+
+pub fn seed(args: SeedArgs) -> anyhow::Result<()> {
+    let queries = read_queries(&args.query_path)?;
+    let targets =
+        Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
+
+    let seeds = match queries {
+        Queries::Sequence(ref queries) => seed_sequence_to_sequence(
+            queries,
+            &targets,
+            args.common_args.num_threads,
+            &args.mmseqs_args,
+        )?,
+        Queries::Profile(ref queries) => seed_profile_to_sequence(
+            queries,
+            &targets,
+            args.common_args.num_threads,
+            &args.mmseqs_args,
+        )?,
     };
 
-    let targets = Sequence::amino_from_fasta(&align_args.target_path)
-        .context("failed to read target fasta")?;
+    let writer = BufWriter::new(args.seeds_path.open(true)?);
+    let mut serializer = serde_json::Serializer::new(writer);
+    seeds.serialize(&mut serializer)?;
+
+    Ok(())
+}
+
+pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
+    {
+        // quickly make sure we can write the results
+        args.output_args.tbl_results_path.open(true)?;
+        if let Some(path) = &args.output_args.ali_results_path {
+            path.open(true)?;
+        }
+    }
+
+    let queries = read_queries(&args.query_path)?;
+    let targets =
+        Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
+
+    match args.nail_args.target_database_size {
+        Some(_) => {}
+        None => args.nail_args.target_database_size = Some(targets.len()),
+    }
+
+    let seeds = match args.seeds_path {
+        Some(ref path) => {
+            let mut seeds: SeedMap = HashMap::new();
+
+            let reader = BufReader::new(std::fs::File::open(path)?);
+            let stream = serde_json::Deserializer::from_reader(reader);
+
+            for entry in stream.into_iter::<SeedMap>() {
+                let entry = entry?;
+                seeds.extend(entry);
+            }
+
+            seeds
+        }
+        None => match queries {
+            Queries::Sequence(ref queries) => seed_sequence_to_sequence(
+                queries,
+                &targets,
+                args.common_args.num_threads,
+                &args.mmseqs_args,
+            )?,
+            Queries::Profile(ref queries) => seed_profile_to_sequence(
+                queries,
+                &targets,
+                args.common_args.num_threads,
+                &args.mmseqs_args,
+            )?,
+        },
+    };
 
     let pipeline = Pipeline {
-        seed: match queries {
-            Queries::Sequence(ref queries) => Box::new(SequenceSeedStep::new(
-                queries,
-                &targets,
-                args.common_args.num_threads,
-                &args.mmseqs_args,
-            )?),
-            Queries::Profile(ref queries) => Box::new(ProfileSeedStep::new(
-                queries,
-                &targets,
-                args.common_args.num_threads,
-                &args.mmseqs_args,
-            )?),
-        },
-        // cloud_search: Box::new(DebugCloudSearchStep::new(194, 1, 343, 173)),
+        seed: Box::new(DefaultSeedStep::new(seeds)),
         cloud_search: match args.nail_args.full_dp {
             true => Box::<FullDpCloudSearchStep>::default(),
-            false => Box::new(DefaultCloudSearchStep::new(&align_args)),
+            false => Box::new(DefaultCloudSearchStep::new(&args)),
         },
-        align: Box::new(DefaultAlignStep::new(&align_args, targets.len())),
+        align: Box::new(DefaultAlignStep::new(&args)),
         output: Arc::new(Mutex::new(OutputStep::new(&args.output_args)?)),
     };
 

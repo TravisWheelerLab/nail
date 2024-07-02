@@ -6,4 +6,5 @@ pub struct Seed {
     pub target_end: usize,
     pub profile_start: usize,
     pub profile_end: usize,
+    pub score: f32,
 }

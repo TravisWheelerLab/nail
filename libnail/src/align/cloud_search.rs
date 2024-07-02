@@ -93,6 +93,7 @@ pub fn prune_and_scrub(
     }
 
     if bound.was_pruned() {
+        bound.reset();
         PruneStatus::FullyPruned
     } else {
         PruneStatus::PartiallyPruned
@@ -255,6 +256,7 @@ pub fn cloud_search_backward(
     cloud_matrix.set_delete(first_cloud_matrix_row_idx, profile_end, 0.0);
 
     // the first bound is the ending position
+    bounds.max_anti_diagonal_idx = first_anti_diagonal_idx;
     bounds.set(
         first_anti_diagonal_idx,
         target_end,
@@ -380,10 +382,11 @@ pub fn cloud_search_backward(
 
         match prune_status {
             PruneStatus::FullyPruned => {
-                bounds.min_anti_diagonal_idx += 1;
+                bounds.min_anti_diagonal_idx = anti_diagonal_idx + 1;
                 break;
             }
             PruneStatus::PartiallyPruned => {
+                bounds.min_anti_diagonal_idx = anti_diagonal_idx;
                 continue;
             }
         }
@@ -519,6 +522,7 @@ pub fn cloud_search_forward(
     cloud_matrix.set_delete(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
 
     // the first bound is just the starting cell
+    bounds.min_anti_diagonal_idx = first_anti_diagonal_idx;
     bounds.set(
         first_anti_diagonal_idx,
         seed.target_start,
@@ -645,10 +649,11 @@ pub fn cloud_search_forward(
 
         match prune_status {
             PruneStatus::FullyPruned => {
-                bounds.max_anti_diagonal_idx -= 1;
+                bounds.max_anti_diagonal_idx = anti_diagonal_idx - 1;
                 break;
             }
             PruneStatus::PartiallyPruned => {
+                bounds.max_anti_diagonal_idx = anti_diagonal_idx;
                 continue;
             }
         }

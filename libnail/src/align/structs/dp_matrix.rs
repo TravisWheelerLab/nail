@@ -532,6 +532,8 @@ mod tests {
         let mut d = [[-f32::INFINITY; 6]; 6];
 
         let bounds = RowBounds {
+            target_length: 1,
+            profile_length: 5,
             target_start: 1,
             target_end: 5,
             row_capacity: 0,
