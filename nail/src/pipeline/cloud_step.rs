@@ -7,10 +7,7 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use crate::{
-    args::SearchArgs,
-    util::{cloud_image, Image},
-};
+use crate::args::SearchArgs;
 
 pub trait CloudSearchStep: dyn_clone::DynClone {
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds>;
@@ -112,34 +109,23 @@ impl CloudSearchStep for DefaultCloudSearchStep {
             return None;
         }
 
-        let intersection =
-            AntiDiagonalBounds::intersection(&self.forward_bounds, &self.reverse_bounds);
+        self.forward_bounds.merge(&self.reverse_bounds);
 
-        if intersection.is_some() {
-            AntiDiagonalBounds::join_merge(&mut self.forward_bounds, &self.reverse_bounds);
-            self.forward_bounds.square_corners();
+        self.forward_bounds.square_corners();
 
-            match self.forward_bounds.trim_wings() {
-                Ok(_) => {
-                    self.row_bounds
-                        .fill_from_anti_diagonal_bounds(&self.forward_bounds);
-                }
-                Err(_) => {
-                    self.row_bounds.fill_rectangle(
-                        seed.target_start,
-                        seed.profile_start,
-                        seed.target_end,
-                        seed.profile_end,
-                    );
-                }
+        match self.forward_bounds.trim_wings() {
+            Ok(_) => {
+                self.row_bounds
+                    .fill_from_anti_diagonal_bounds(&self.forward_bounds);
             }
-        } else {
-            self.row_bounds.fill_rectangle(
-                seed.target_start,
-                seed.profile_start,
-                seed.target_end,
-                seed.profile_end,
-            );
+            Err(_) => {
+                self.row_bounds.fill_rectangle(
+                    seed.target_start,
+                    seed.profile_start,
+                    seed.target_end,
+                    seed.profile_end,
+                );
+            }
         }
 
         Some(&self.row_bounds)

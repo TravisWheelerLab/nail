@@ -2,7 +2,7 @@ mod alignment;
 pub use alignment::{Alignment, AlignmentBuilder, ScoreParams};
 
 mod anti_diagonal_bounds;
-pub use anti_diagonal_bounds::{AntiDiagonal, AntiDiagonalBounds};
+pub use anti_diagonal_bounds::{AntiDiagonal, AntiDiagonalBounds, Relationship};
 
 mod cloud_matrix;
 pub use cloud_matrix::CloudMatrixLinear;

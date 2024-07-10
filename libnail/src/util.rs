@@ -232,3 +232,40 @@ macro_rules! max_f32 {
         $x.max(max_f32!($($y),+))
     )
 }
+
+#[cfg(feature = "debug")]
+pub mod debug {
+    use std::{env, fs, path::PathBuf};
+
+    use anyhow::anyhow;
+
+    #[allow(dead_code)]
+    pub fn workspace_root() -> anyhow::Result<PathBuf> {
+        let mut dir = env::current_dir().unwrap();
+
+        while dir.join("Cargo.toml").exists() {
+            if dir.join("Cargo.toml").exists() {
+                let content = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
+                if content.contains("[workspace]") {
+                    return Ok(dir);
+                }
+            }
+            dir = dir
+                .parent()
+                .ok_or(anyhow!("failed to find workspace root"))?
+                .to_path_buf();
+        }
+
+        Err(anyhow!("failed to find workspace root"))
+    }
+
+    #[allow(dead_code)]
+    pub fn debug_dir() -> anyhow::Result<PathBuf> {
+        let dir = env::current_dir()?.join("debug/");
+
+        if !dir.exists() {
+            fs::create_dir(&dir)?;
+        }
+        Ok(dir)
+    }
+}
