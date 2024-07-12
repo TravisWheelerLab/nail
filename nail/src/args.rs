@@ -1,103 +1,183 @@
-use std::fmt::{Display, Formatter};
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
+use std::path::PathBuf;
 
-use anyhow::Context;
-use thiserror::Error;
+use clap::{Args, Parser, Subcommand};
 
-#[derive(Default, Debug, Clone)]
-pub enum FileFormat {
-    Fasta,
-    Stockholm,
-    Hmm,
-    #[default]
-    Unset,
+#[derive(Subcommand)]
+pub enum SubCommands {
+    #[command(about = "")]
+    Search(SearchArgs),
+    #[command(about = "")]
+    Seed(SeedArgs),
 }
 
-impl Display for FileFormat {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FileFormat::Fasta => write!(f, "Fasta"),
-            FileFormat::Stockholm => write!(f, "Stockholm"),
-            FileFormat::Hmm => write!(f, "HMM"),
-            FileFormat::Unset => write!(f, "Unset"),
-        }
-    }
+#[derive(Parser)]
+#[command(name = "nail")]
+#[command(
+    about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: SubCommands,
 }
 
-#[derive(Error, Debug)]
-#[error("can't guess file format of: {path}")]
-pub struct UnrecognizedFileFormatError {
-    path: String,
+#[derive(Args, Debug, Clone)]
+pub struct CommonArgs {
+    /// The number of threads that nail will use
+    #[arg(
+        short = 't',
+        long = "threads",
+        default_value_t = 8usize,
+        value_name = "n"
+    )]
+    pub num_threads: usize,
+
+    /// Allow nail to overwrite files
+    #[arg(short = 'q', long = "allow-overwrite", default_value_t = false)]
+    pub allow_overwrite: bool,
 }
 
-pub fn guess_query_format_from_query_file(
-    query_path: &impl AsRef<Path>,
-) -> anyhow::Result<FileFormat> {
-    let file = File::open(query_path).context(format!(
-        "failed to open query file: {}",
-        query_path.as_ref().to_string_lossy()
-    ))?;
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// Query file
+    #[arg(value_name = "QUERY.[fasta:hmm]")]
+    pub query_path: PathBuf,
 
-    let mut reader = BufReader::new(file);
-    let mut first_line = String::new();
-    reader.read_line(&mut first_line)?;
+    /// Target file
+    #[arg(value_name = "TARGET.fasta")]
+    pub target_path: PathBuf,
 
-    if &first_line[0..1] == ">" {
-        Ok(FileFormat::Fasta)
-    } else if &first_line[0..11] == "# STOCKHOLM" {
-        Ok(FileFormat::Stockholm)
-    } else if &first_line[0..5] == "HMMER" {
-        Ok(FileFormat::Hmm)
-    } else {
-        Err(UnrecognizedFileFormatError {
-            path: query_path.as_ref().to_string_lossy().to_string(),
-        }
-        .into())
-    }
+    /// The path to pre-computed alignment seeds
+    #[arg(short = 's', long = "seeds")]
+    pub seeds_path: Option<PathBuf>,
+
+    /// Arguments that control output options
+    #[command(flatten)]
+    pub output_args: OutputArgs,
+
+    /// Arguments that are passed to libnail functions
+    #[command(flatten)]
+    pub nail_args: NailArgs,
+
+    /// Arguments that are passed to MMseqs2
+    #[command(flatten)]
+    pub mmseqs_args: MmseqsArgs,
+
+    /// Arguments that are common across all nail subcommands
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
-#[derive(Error, Debug)]
-#[error("unsupported MMseqs2 database type: {code}")]
-pub struct UnsupportedMmseqsDbError {
-    code: u8,
+#[derive(Args, Debug, Clone)]
+pub struct SeedArgs {
+    /// Query file
+    #[arg(value_name = "QUERY.[fasta:hmm]")]
+    pub query_path: PathBuf,
+
+    /// Target file
+    #[arg(value_name = "TARGET.fasta")]
+    pub target_path: PathBuf,
+
+    /// Where to place the seeds output file
+    #[arg(short = 's', long = "seeds", default_value = "seeds.json")]
+    pub seeds_path: PathBuf,
+
+    /// Arguments that are passed to MMseqs2
+    #[command(flatten)]
+    pub mmseqs_args: MmseqsArgs,
+
+    /// Arguments that are common across all nail subcommands
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
-pub fn read_query_format_from_mmseqs_query_db(
-    query_db_path: &impl AsRef<Path>,
-) -> anyhow::Result<FileFormat> {
-    let mut file = File::open(query_db_path)?;
-    let mut dbtype_buf: Vec<u8> = vec![];
-    file.read_to_end(&mut dbtype_buf)?;
-    //  from mmseqs2: commons/parameters.h
-    //      DBTYPE_AMINO_ACIDS = 0;
-    //      DBTYPE_NUCLEOTIDES = 1;
-    //      DBTYPE_HMM_PROFILE = 2;
-    //      //DBTYPE_PROFILE_STATE_SEQ = 3;
-    //      //DBTYPE_PROFILE_STATE_PROFILE = 4;
-    //      DBTYPE_ALIGNMENT_RES = 5;
-    //      DBTYPE_CLUSTER_RES = 6;
-    //      DBTYPE_PREFILTER_RES = 7;
-    //      DBTYPE_TAXONOMICAL_RESULT = 8;
-    //      DBTYPE_INDEX_DB = 9;
-    //      DBTYPE_CA3M_DB = 10;
-    //      DBTYPE_MSA_DB = 11;
-    //      DBTYPE_GENERIC_DB = 12;
-    //      DBTYPE_OMIT_FILE = 13;
-    //      DBTYPE_PREFILTER_REV_RES = 14;
-    //      DBTYPE_OFFSETDB = 15;
-    //      DBTYPE_DIRECTORY = 16; // needed for verification
-    //      DBTYPE_FLATFILE = 17; // needed for verification
-    //      DBTYPE_SEQTAXDB = 18; // needed for verification
-    //      DBTYPE_STDIN = 19; // needed for verification
-    //      DBTYPE_URI = 20; // needed for verification
-    match dbtype_buf[0] {
-        0u8 => Ok(FileFormat::Fasta),
-        2u8 => Ok(FileFormat::Stockholm),
-        _ => Err(UnsupportedMmseqsDbError {
-            code: dbtype_buf[0],
-        }
-        .into()),
-    }
+#[derive(Args, Debug, Clone, Default)]
+pub struct MmseqsArgs {
+    /// The directory where intermediate files will be placed
+    #[arg(long = "prep", value_name = "PATH", default_value = "prep/")]
+    pub prep_dir: PathBuf,
+
+    /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
+    #[arg(long = "mmseqs-k", default_value_t = 0usize)]
+    pub k: usize,
+
+    /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
+    #[arg(long = "mmseqs-k-score", default_value_t = 80usize)]
+    pub k_score: usize,
+
+    /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
+    #[arg(long = "mmseqs-min-ungapped-score", default_value_t = 15usize)]
+    pub min_ungapped_score: usize,
+
+    /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
+    #[arg(long = "mmseqs-max-seqs", default_value_t = 1000usize)]
+    pub max_seqs: usize,
+
+    /// MMseqs2 align: Include matches below this P-value as seeds.
+    ///
+    // Note: the MMseqs2 align tool only allows thresholding by E-value, so the P-value supplied
+    // here is multiplied by the size of the target database (i.e. number of sequences) to achieve
+    // an E-value threshold that is effectively the same as the chosen P-value threshold.
+    #[arg(long = "mmseqs-pvalue-threshold", default_value_t = 0.01f64)]
+    pub pvalue_threshold: f64,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct NailArgs {
+    /// Override the target database size (number of sequences) used for E-value calculation
+    #[arg(short = 'Z', value_name = "N")]
+    pub target_database_size: Option<usize>,
+
+    /// Pruning parameter alpha
+    #[arg(short = 'A', default_value_t = 12.0, value_name = "F")]
+    pub alpha: f32,
+
+    /// Pruning parameter beta
+    #[arg(short = 'B', default_value_t = 20.0, value_name = "F")]
+    pub beta: f32,
+
+    /// Pruning parameter gamma
+    #[arg(short = 'G', default_value_t = 5, value_name = "N")]
+    pub gamma: usize,
+
+    /// The P-value threshold for promoting hits past cloud search
+    #[arg(
+        short = 'C',
+        long = "cloud-thresh",
+        default_value_t = 1e-3,
+        value_name = "F"
+    )]
+    pub cloud_pvalue_threshold: f64,
+
+    /// The P-value threshold for promoting hits past forward
+    #[arg(
+        short = 'F',
+        long = "forward-thresh",
+        default_value_t = 1e-4,
+        value_name = "F"
+    )]
+    pub forward_pvalue_threshold: f64,
+
+    /// Compute the full dynamic programming matrices during alignment
+    #[arg(long, action)]
+    pub full_dp: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct OutputArgs {
+    /// Only report hits with an E-value below this value
+    #[arg(short = 'E', default_value_t = 10.0, value_name = "F")]
+    pub evalue_threshold: f64,
+
+    /// Where to place tabular output
+    #[arg(
+        short = 'T',
+        long = "tab-output",
+        default_value = "results.tbl",
+        value_name = "path"
+    )]
+    pub tbl_results_path: PathBuf,
+
+    /// Where to place alignment output
+    #[arg(short = 'O', long = "output", value_name = "path")]
+    pub ali_results_path: Option<PathBuf>,
 }

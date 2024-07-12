@@ -5,6 +5,8 @@ use std::io::Write;
 
 #[derive(Clone)]
 pub struct RowBounds {
+    pub target_length: usize,
+    pub profile_length: usize,
     pub target_start: usize,
     pub target_end: usize,
     pub row_capacity: usize,
@@ -15,6 +17,8 @@ pub struct RowBounds {
 impl Default for RowBounds {
     fn default() -> Self {
         Self {
+            target_length: 0,
+            profile_length: 0,
             target_start: 0,
             target_end: 0,
             row_capacity: 1,
@@ -32,9 +36,6 @@ impl RowBounds {
     }
 
     pub fn reuse(&mut self, target_length: usize) {
-        debug_assert_eq!(self.row_capacity, self.left_row_bounds.capacity());
-        debug_assert_eq!(self.row_capacity, self.right_row_bounds.capacity());
-
         for row_idx in self.target_start..=self.target_end {
             self.left_row_bounds[row_idx] = usize::MAX;
             self.right_row_bounds[row_idx] = 0;
@@ -50,8 +51,11 @@ impl RowBounds {
     }
 
     pub fn fill_from_anti_diagonal_bounds(&mut self, anti_diagonal_bounds: &AntiDiagonalBounds) {
-        let first_bound = anti_diagonal_bounds.get_first();
-        let last_bound = anti_diagonal_bounds.get_last();
+        self.target_length = anti_diagonal_bounds.target_length;
+        self.profile_length = anti_diagonal_bounds.profile_length;
+
+        let first_bound = anti_diagonal_bounds.first();
+        let last_bound = anti_diagonal_bounds.last();
 
         self.target_start = first_bound.right_target_idx;
         self.target_end = last_bound.left_target_idx;
@@ -70,11 +74,11 @@ impl RowBounds {
                 self.right_row_bounds[bound.right_target_idx].max(bound.right_profile_idx);
         }
 
-        // if the cloud bounds were set up properly, we should have no 0's
+        // if the cloud bounds were set up properleftly, we should have no 0's
         (self.target_start..=self.target_end).for_each(|row_idx| {
             debug_assert_ne!(self.left_row_bounds[row_idx], usize::MAX);
             debug_assert_ne!(self.right_row_bounds[row_idx], 0);
-        })
+        });
     }
 
     pub fn fill_rectangle(

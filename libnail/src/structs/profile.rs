@@ -1,4 +1,8 @@
-use crate::align::structs::Trace;
+use rand::SeedableRng;
+use rand_pcg::Pcg64;
+
+use crate::align::structs::{DpMatrixSparse, RowBounds, Trace};
+use crate::align::{forward, null_one_score};
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
     AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
@@ -9,12 +13,20 @@ use crate::structs::hmm::constants::{
 };
 use crate::structs::hmm::Alphabet;
 use crate::structs::Hmm;
-use crate::util::{f32_vec_argmax, LogAbuse};
+use crate::util::{avg_relative_entropy, f32_vec_argmax, LogAbuse, VecUtils};
 
 use std::fmt;
 use std::fmt::Formatter;
 
-#[derive(Clone)]
+use super::Sequence;
+
+impl AsRef<Profile> for Profile {
+    fn as_ref(&self) -> &Profile {
+        self
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,
@@ -37,7 +49,7 @@ pub struct Profile {
     /// The expected number of times that the J state is used
     pub expected_j_uses: f32,
     /// The profile's consensus sequence
-    pub consensus_sequence: Vec<u8>,
+    pub consensus_sequence_bytes_utf8: Vec<u8>,
     /// The sequence alphabet
     pub alphabet: Alphabet,
     pub forward_tau: f32,
@@ -82,6 +94,264 @@ impl Profile {
     pub const MATCH_TO_INSERT_IDX: usize = 6;
     pub const INSERT_TO_INSERT_IDX: usize = 7;
 
+    pub fn relative_entropy(&self) -> f32 {
+        let probs: Vec<Vec<f32>> = self
+            .match_scores
+            .iter()
+            .map(|scores| {
+                scores
+                    .iter()
+                    .take(20)
+                    .enumerate()
+                    .map(|(idx, score)| score.exp() * AMINO_BACKGROUND_FREQUENCIES[idx])
+                    .collect::<Vec<f32>>()
+            })
+            .collect();
+
+        avg_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
+    }
+
+    pub fn raise_relative_entropy(&mut self, target: f32) {
+        const LOWER_PROB_LIMIT: f32 = 1e-3;
+        const TARGET_TOLERANCE: f32 = 1e-3;
+        const NUM_SATURATED_RESIDUE_LIMIT: usize = 10;
+        const PCT_SATURATED_COL_LIMIT: f32 = 0.5;
+        const MAX_ITER: usize = 100;
+
+        let start_probs_by_pos: Vec<Vec<f32>> = self
+            .match_scores
+            .iter()
+            .map(|scores| {
+                scores
+                    .iter()
+                    .take(20)
+                    .enumerate()
+                    .map(|(idx, score)| score.exp() * AMINO_BACKGROUND_FREQUENCIES[idx])
+                    .collect::<Vec<f32>>()
+            })
+            .collect();
+
+        enum Mode {
+            Growing,
+            Binary,
+        }
+
+        enum Status {
+            Iterating,
+            Success,
+            Failure,
+        }
+
+        let mut search_mode = Mode::Growing;
+        let mut status = Status::Iterating;
+
+        let mut new_probs_by_pos = start_probs_by_pos.clone();
+        let mut factor = 0.1;
+        let mut upper_bound = 0.0;
+        let mut lower_bound = 0.0;
+
+        for _ in 0..MAX_ITER {
+            new_probs_by_pos
+                .iter_mut()
+                .zip(&start_probs_by_pos)
+                // skip model position 0
+                .skip(1)
+                .for_each(|(new_probs, start_probs)| {
+                    new_probs
+                        .iter_mut()
+                        .zip(start_probs)
+                        .enumerate()
+                        .take(Profile::MAX_ALPHABET_SIZE)
+                        .for_each(|(idx, (p_new, p_start))| {
+                            *p_new = p_start - factor * AMINO_BACKGROUND_FREQUENCIES[idx]
+                        });
+
+                    new_probs.saturate_lower(LOWER_PROB_LIMIT);
+                });
+
+            let percent_ruined_columns = new_probs_by_pos
+                .iter()
+                .skip(1)
+                .filter(|probs| {
+                    probs.iter().filter(|&&p| p == LOWER_PROB_LIMIT).count()
+                        > NUM_SATURATED_RESIDUE_LIMIT
+                })
+                .count() as f32
+                / self.length as f32;
+
+            if percent_ruined_columns >= PCT_SATURATED_COL_LIMIT {
+                status = Status::Failure;
+                break;
+            }
+
+            new_probs_by_pos
+                .iter_mut()
+                // skip model position 0
+                .skip(1)
+                .for_each(|probs| probs.normalize());
+
+            let relative_entropy =
+                avg_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
+
+            if (relative_entropy - target).abs() < TARGET_TOLERANCE {
+                status = Status::Success;
+                break;
+            }
+
+            match search_mode {
+                Mode::Growing => {
+                    if relative_entropy > target {
+                        upper_bound = factor;
+                        factor = (lower_bound + upper_bound) / 2.0;
+                        search_mode = Mode::Binary;
+                    } else {
+                        lower_bound = factor;
+                        factor += 0.1;
+                    }
+                }
+                Mode::Binary => {
+                    if relative_entropy > target {
+                        upper_bound = factor;
+                    } else {
+                        lower_bound = factor;
+                    }
+                    factor = (lower_bound + upper_bound) / 2.0;
+                }
+            }
+        }
+
+        if let Status::Success = status {
+            self.match_scores
+                .iter_mut()
+                .zip(new_probs_by_pos)
+                // skip model position 0
+                .skip(1)
+                .for_each(|(scores, probs)| {
+                    scores
+                        .iter_mut()
+                        .zip(probs)
+                        .enumerate()
+                        .take(Profile::MAX_ALPHABET_SIZE)
+                        .for_each(|(idx, (s, p))| *s = (p / AMINO_BACKGROUND_FREQUENCIES[idx]).ln())
+                });
+        }
+    }
+
+    pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {
+        self.configure_for_target_length(target_length);
+
+        let mut row_bounds = RowBounds::new(target_length);
+        row_bounds.fill_rectangle(1, 1, target_length, self.length);
+        let mut forward_matrix = DpMatrixSparse::new(target_length, self.length, &row_bounds);
+
+        // first we are going to generate n random
+        // sequences drawn from the background
+        // distribution and compute their forward scores
+        let mut scores = vec![0.0; n];
+        let mut rng = Pcg64::seed_from_u64(0);
+        (0..n).for_each(|seq_idx| {
+            forward_matrix.reuse(target_length, self.length, &row_bounds);
+            let seq = Sequence::random_amino(target_length, &mut rng);
+
+            // **NOTE: HMMER uses multi-hit mode to calibrate
+            //         Tau, but we are using uni-hit mode
+            let forward_score_nats = forward(self, &seq, &mut forward_matrix, &row_bounds);
+
+            let null_score_nats = null_one_score(target_length);
+
+            scores[seq_idx] = (forward_score_nats - null_score_nats).to_bits().value();
+        });
+
+        /// This is some black magic from a textbook:
+        ///   Statistical Models and Methods for
+        ///   Lifetime Data by Joseph F. Lawless
+        ///   
+        /// From HMMER:
+        ///   Equation 4.1.6 from [Lawless82], pg. 143, and
+        ///   its first derivative with respect to lambda,
+        ///   for finding the ML fit to Gumbel lambda parameter.
+        ///   This equation gives a result of zero for the maximum
+        ///   likelihood lambda.
+        fn lawless416(samples: &[f32], lambda: f32) -> (f32, f32) {
+            // e_sum is the sum of e^(-lambda x_i)
+            let mut e_sum = 0.0f32;
+            // x_sum is the sum of x_i
+            let mut x_sum = 0.0f32;
+            // xe_sum is the sum of x_i * e^(-lambda x_i)
+            let mut xe_sum = 0.0f32;
+            // xe_sum is the sum of x_i^2 * e^(-lambda x_i)
+            let mut xxe_sum = 0.0f32;
+
+            samples.iter().for_each(|x| {
+                e_sum += (-lambda * x).exp();
+                x_sum += x;
+                xe_sum += x * (-lambda * x).exp();
+                xxe_sum += x.powi(2) * (-lambda * x).exp();
+            });
+
+            let fx = (1.0 / lambda) - (x_sum / samples.len() as f32) + (xe_sum / e_sum);
+            let dfx = (xe_sum / e_sum).powi(2) - (xxe_sum / e_sum) - (1.0 / (lambda.powi(2)));
+
+            (fx, dfx)
+        }
+
+        // now make an initial guess at lambda
+        //
+        // from hmmer:
+        //   (Evans/Hastings/Peacock, Statistical Distributions, 2000, p.86)
+        let sum: f32 = scores.iter().sum();
+        let squared_sum: f32 = scores.iter().map(|s| s.powi(2)).sum();
+        let sample_variance: f32 =
+            (squared_sum - sum * sum / scores.len() as f32) / (scores.len() as f32 - 1.0);
+        let mut gumbel_lambda: f32 = std::f32::consts::PI / (6.0 / sample_variance).sqrt();
+
+        // now we do this Newton/Raphson root finding
+        // thing until we have converged on lambda
+        let tolerance: f32 = 1e-5;
+        let mut newton_raphson_success = false;
+        for _ in 0..=100 {
+            let (fx, dfx) = lawless416(&scores, gumbel_lambda);
+            if fx.abs() < tolerance {
+                newton_raphson_success = true;
+                break;
+            }
+            gumbel_lambda -= fx / dfx;
+
+            if gumbel_lambda <= 0.0 {
+                gumbel_lambda = 0.001;
+            }
+        }
+
+        if !newton_raphson_success {
+            panic!("newton/raphson failed");
+        }
+
+        // this is apparently substituting into equation 4.1.5
+        // from Lawless[82] to solve for the mu parameter
+        let e_sum: f32 = scores.iter().map(|s| (-gumbel_lambda * s).exp()).sum();
+        let gumbel_mu = -(e_sum / scores.len() as f32).ln() / gumbel_lambda;
+
+        // now that we've fit the gumbel lambda, we are going to find our tau
+
+        /// Calculates the inverse CDF for a Gumbel distribution
+        /// with parameters <mu> and <lambda>. That is, returns
+        /// the quantile <x> at which the CDF is <p>.
+        fn gumbel_inverse_cdf(p: f32, mu: f32, lambda: f32) -> f32 {
+            mu - ((-p.ln()).ln() / lambda)
+        }
+
+        // basically, there is (maybe?) no good method for fitting an exponential,
+        // so instead we have fit a Gumbel that we are going to use to pick our tau
+        //
+        // from hmmer:
+        //   Explanation of the eqn below: first find the x at which the Gumbel tail
+        //   mass is predicted to be equal to tailp. Then back up from that x
+        //   by log(tailp)/lambda to set the origin of the exponential tail to 1.0
+        //   instead of tailp.
+        self.forward_tau = gumbel_inverse_cdf(1.0 - tail_probability, gumbel_mu, gumbel_lambda)
+            + (tail_probability.ln() / self.forward_lambda);
+    }
+
     pub fn new(hmm: &Hmm) -> Self {
         let mut profile = Profile {
             name: hmm.header.name.clone(),
@@ -101,7 +371,7 @@ impl Profile {
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
             // buffered with a space so that indexing starts at 1
-            consensus_sequence: vec![UTF8_SPACE],
+            consensus_sequence_bytes_utf8: vec![UTF8_SPACE],
             alphabet: Alphabet::Amino,
             forward_tau: hmm.stats.forward_tau,
             forward_lambda: hmm.stats.forward_lambda,
@@ -175,7 +445,7 @@ impl Profile {
                 hmm.model.match_probabilities[model_position_idx][match_probabilities_argmax];
 
             profile
-                .consensus_sequence
+                .consensus_sequence_bytes_utf8
                 .push(if match_probabilities_max > 0.5 {
                     // if the match emission probability for the residue is greater
                     // than 0.50 (amino), we want to display it as a capital letter
@@ -416,6 +686,38 @@ impl fmt::Debug for Profile {
             writeln!(f)?;
             writeln!(f)?;
         }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::structs::Sequence;
+
+    #[test]
+    fn test_calibrate_tau() -> anyhow::Result<()> {
+        let mut seq = Sequence::from_utf8(
+            concat!(
+                "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
+                "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
+                "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
+                "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
+                "ALLITLLLAYVNSCLNPIIY"
+            )
+            .as_bytes(),
+        )?;
+        seq.name = ">7tm_1-consensus".to_string();
+
+        let hmm = Hmm::from_blosum_62_and_sequence(&seq)?;
+        let mut profile = Profile::new(&hmm);
+
+        profile.calibrate_tau(200, 100, 0.04);
+
+        let correct_tau = -4.193134f32;
+        let diff = (correct_tau - profile.forward_tau).abs();
+        assert!(diff <= 1e-5);
 
         Ok(())
     }

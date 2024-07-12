@@ -1,50 +1,26 @@
 mod args;
-mod cli;
-mod extension_traits;
+mod mmseqs;
 mod pipeline;
-mod viz;
+mod search;
+mod util;
 
-use cli::Cli;
-use extension_traits::CommandExt;
-use pipeline::{align, prep, search, seed};
+use args::{Cli, SubCommands};
+use search::{search, seed};
+use util::{check_mmseqs_installed, set_threads};
 
-use crate::cli::SubCommands;
-use anyhow::{Context, Result};
 use clap::Parser;
 
-fn check_hmmer_installed() -> Result<()> {
-    std::process::Command::new("hmmbuild")
-        .arg("-h")
-        .run()
-        .context("hmmbuild does not appear to be in the system path")
-}
-
-fn check_mmseqs_installed() -> Result<()> {
-    std::process::Command::new("mmseqs")
-        .arg("-h")
-        .run()
-        .context("mmseqs2 does not appear to be in the system path")
-}
-
-fn main() -> Result<()> {
-    check_hmmer_installed()?;
-    check_mmseqs_installed()?;
-
+fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         SubCommands::Search(args) => {
-            search(&args)?;
+            check_mmseqs_installed()?;
+            set_threads(args.common_args.num_threads)?;
+            search(args)?;
         }
-        SubCommands::Prep(args) => {
-            prep(&args)?;
-        }
-        SubCommands::Seed(mut args) => {
-            // TODO: I'd like to think of a way to remove this nonsense
-            args.prep_dir.path = args.prep_dir_path.clone();
-
-            seed(&args)?;
-        }
-        SubCommands::Align(args) => {
-            align(&args, None, None)?;
+        SubCommands::Seed(args) => {
+            check_mmseqs_installed()?;
+            set_threads(args.common_args.num_threads)?;
+            seed(args)?;
         }
     }
     Ok(())
