@@ -13,13 +13,13 @@ There are two sub-projects in the nail workspace:
 
 ## Dependencies
 
-The `nail search` pipeline uses `mmseqs search` from the MMseqs2 suite and the `hmmbuild` tool from the HMMER3 suite.
-In the future, we plan to replace both dependencies with our own alternatives that will be internal to nail.
+The `nail search` pipeline uses the `mmseqs search` tool as an alignment prefilter.
+In the future, we will replace this with our own prefiltering strategies.
 
-nail has been tested with [MMseqs2 Release 15-6f452](https://github.com/soedinglab/MMseqs2/releases/tag/15-6f452) and [HMMER v3.4](http://hmmer.org/download.html).
-We have not tested nail against other versions of these tools, but they may work.
+nail has been tested with [MMseqs2 Release 15-6f452](https://github.com/soedinglab/MMseqs2/releases/tag/15-6f452).
+We have not tested nail against other versions of MMseqs2, but they may work.
 
-To run the `nail search` pipeline, `mmseqs search` and `hmmbuild` must be available in your system path.
+To run the `nail search` pipeline, `mmseqs search` must be available in your system path.
 
 ## Installation
 
@@ -46,149 +46,109 @@ For example, try running:
 
 ## Usage
 
-The nail command line interface has four subcommands: `search`, `prep`, `seed`, and `align`.
+The nail command line interface has two subcommands: `search` and `seed`.
 
-### Running the nail pipeline with nail search
+### nail search
 
-`nail search` runs each step of the nail pipeline in succession: `prep`, `seed`, and `align`.
+The `nail search` command runs the entire nail pipeline, including running MMseqs2 to find alignment seeds.
 
-The input to `nail search` is a query multiple sequence alignment (MSA) file in the Stockholm format and a target sequence database file in the FASTA format.
+The input to `nail search` is a query file (.hmm|.fasta) and a target sequence database file (.fasta).
 
-For example, running
+By default, the search results will be written to `./results.tbl` in a tabular format, and alignment output is written to stdout.
+In addition, a collection of temporary files required to run `mmseqs search`, will be written to the `./prep/` directory.
 
-    $ nail search query.sto target.fa
+For example, when running nail search, you'll see something like:
 
-By default, the search results will be written to `./results.tsv` in a tabular format, and alignment output is written to stdout.
-In addition, a collection of temporary files required to run `mmseqs search`, along with a pHMM built from `query.sto`, will be written to the `./prep/` directory.
+    $ nail search query.hmm target.fa
 
-### Running individual pipeline steps
+    ==  score: 257.1 bits;  E-value: 9.7e-79
+                                  7tm_1     2 NllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltaisi 81   
+                                              N +Vi++++r++kl+tp+n+++ +La++Dllv++lv+p+s++y++ +g+w++g++lC+++ + d++++tasi++l++i++
+    O08892|reviewed|5-hydroxytryptamine    66 NAFVIATVYRTRKLHTPANYLIASLAFTDLLVSILVMPISTMYTV-TGRWTLGQALCDFWLSSDITCCTASIMHLCVIAL 145  
+                                              9********************************************06*********************************
+    
+                                  7tm_1    82 DRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesaekeetvClidfpeeestwevsytlllsvlg 161  
+                                              DRY+aI+ ++ y+++rt+rra+ +i++vWv+++++slpp+++++ k e   +e+  Cl+++++      v yt++++ ++
+    O08892|reviewed|5-hydroxytryptamine   146 DRYWAITDAVGYSAKRTPRRAAGMIALVWVFSICISLPPFFWRQAKAE---EEVLDCLVNTDH------VLYTVYSTGGA 225  
+                                              *****************************************777666500099******99990000009**********
+    
+                                  7tm_1   162 fllpllvilvcyvrilrtlrksakkeks.................................................... 241  
+                                              f+lp+l+++ +y ri+ ++r++  k++                                                     
+    O08892|reviewed|5-hydroxytryptamine   226 FYLPTLLLIALYGRIYVEARSRILKQTPNKTGKRLTRAQLITDSPGSTSSVTSINSRAPEVPCDSGSPVYVNQVKVRVSD 305  
+                                              ***********************9999899999999999999999999********************************
+    
+                                  7tm_1   242 ....rkkksarkerkalktllvvvvvfvlcwlPyfilllldsllkeceseklve.tallitlllayvnsclNPiiY 317  
+                                                  +kk +a++erka+ktl+v++++f++cwlP+fi++l++ +   c++ +  + ++++++++l+y+ns++NPiiY
+    O08892|reviewed|5-hydroxytryptamine   306 ALLEKKKLMAARERKATKTLGVILGAFIVCWLPFFIISLVMPI---CKDACWFHMAIFDFFTWLGYLNSLINPIIY 381  
+                                          ***9999************************************000777666551666******************
+    ...
+    ...
+    ...
 
-nail also supports running each pipeline step in isolation.
-This may be particularly useful if:
-- you'd like to cache the results of either `prep` or `seed` and experiment with parameters on a successive step, or
-- you'd like to experiment with alignment seeds produced by a source other than MMseqs2
+Checking the `results.tbl` might look something like:
 
-#### nail prep
+    $ head -n 15 results.bl
 
-Running
+    #                                                                         target target query query       comp         cell  
+    # target                                                  query           start  end    start end   score bias evalue  frac  
+    # ------------------------------------------------------- --------------- ------ ------ ----- ----- ----- ---- ------- ----- 
+    F1MV99|reviewed|Somatostatin                              7tm_1-consensus 58     306    1     260   175.8 7.5  1.0e-53 0.066
+    O08858|reviewed|Somatostatin                              7tm_1-consensus 54     303    1     260   173.0 7.8  7.7e-53 0.069
+    C3ZQF9|reviewed|QRFP-like                                 7tm_1-consensus 64     326    1     260   149.3 8.6  1.3e-45 0.070
+    O02813|reviewed|Neuropeptide                              7tm_1-consensus 56     319    1     260   147.9 5.4  3.5e-45 0.070
+    O08565|reviewed|C-X-C                                     7tm_1-consensus 52     299    1     260   145.8 5.3  1.5e-44 0.076
+    O02835|reviewed|Neuropeptide                              7tm_1-consensus 57     320    1     260   145.7 6.8  1.6e-44 0.071
+    A0T2N3|reviewed|Apelin                                    7tm_1-consensus 51     316    1     260   145.0 4.3  2.6e-44 0.077
+    O08726|reviewed|Galanin                                   7tm_1-consensus 42     292    1     260   144.9 4.2  2.8e-44 0.073
+    O08556|reviewed|C-C                                       7tm_1-consensus 49     299    1     260   144.3 5.3  4.4e-44 0.073
+    F1R332|reviewed|Galanin                                   7tm_1-consensus 35     286    1     260   143.3 3.8  8.9e-44 0.077
+    D4A7K7|reviewed|G-protein                                 7tm_1-consensus 44     304    1     260   142.7 4.3  1.3e-43 0.073
+    E7F7V7|reviewed|Galanin                                   7tm_1-consensus 43     294    1     260   142.6 1.7  1.4e-43 0.073
 
-    $ nail prep query.sto target.fa
 
-will create a `./prep` directory including the files that are used in `nail seed`.
+### nail seed
 
-The prep directory is full of the *many* custom format input files used by the `MMseqs2 search` tool and the query pHMM created with HMMER3's `hmmbuild` tool.
+The `nail seed` command runs MMseqs2 and produces a `seeds.json` file.
 
 For example:
 
-```
-$ tree prep/
-prep/
-├── msaDB
-├── msaDB.dbtype
-├── msaDB.index
-├── query.hmm
-├── queryDB
-├── queryDB.dbtype
-├── queryDB.index
-├── queryDB_h
-├── queryDB_h.dbtype
-├── queryDB_h.index
-├── targetDB
-├── targetDB.dbtype
-├── targetDB.index
-├── targetDB.lookup
-├── targetDB.source
-├── targetDB_h
-├── targetDB_h.dbtype
-└── targetDB_h.index
-```
-#### nail seed
+    $ nail seed query.hmm target.fa
 
-Running 
+Seeds can be provided to `nail search` using the `--seeds <seeds.json>` flag, which will skip the seed step in the search pipeline.
 
-    $ nail seed prep/
+    $ nail search --seeds seeds.json query.hmm target.fa
 
-where `prep/` is a directory created as result of running `nail prep`, will produce the file `./seeds.json`, which has the following structure:
+In practice, these seeds may be produced from any source as long as they are formatted in the following way:
 
 ```
 {
-  "7tm_1": [
-    {
-      "target_name": "P07700|reviewed|Beta-1",
-      "target_start": 58,
+  "query1": {
+    "target1": {
+      "target_start": 48,
+      "target_end": 287,
+      "profile_start": 1,
+      "profile_end": 259,
+      "score": 168.0
+    },
+    "target2": {
+      "target_start": 72,
       "target_end": 343,
-      "profile_start": 1,
-      "profile_end": 260
+      "profile_start": 23,
+      "profile_end": 259,
+      "score": 106.0
     },
-    {
-      "target_name": "P34971|reviewed|Beta-1",
-      "target_start": 75,
-      "target_end": 366,
+  "query2": {
+    "target3": {
+      "target_start": 56,
+      "target_end": 303,
       "profile_start": 1,
-      "profile_end": 260
+      "profile_end": 259,
+      "score": 125.0
     },
-    ...
+  }
+  ...
 }
 ```
-
-#### nail align
-
-Running 
-
-    $ nail align query.hmm target.fa seeds.json
-
-will run nail's sparse Forward/Backward alignment algorithm, producing optimal-scoring alignments.
-By default, alignment output will be written to stdout, e.g:
-
-```
-==  score: 255.1 bits;  E-value: 7.5e-77
-                 7tm_1     1 gNllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltais 80   
-                             gN+lVi++i r+++l+t tn+f+++La+aDl+++llv+pf ++  + +g+w +g++lC+++t+ldv+++tasi +l++i+
-P07700|reviewed|Beta-1    58 GNVLVIAAIGRTQRLQTLTNLFITSLACADLVMGLLVVPFGATLVV-RGTWLWGSFLCECWTSLDVLCVTASIETLCVIA 137  
-                             0000000000000000000000000000000000*************************08*******************
-
-                 7tm_1    81 iDRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesae.....keetvClidfpeeestwevsytl 160  
-                             iDRYlaI+ p++y++++t+ ra+v+i+ vW++++l+s++p+++ ++++e+++     ++   C++ ++       + y++
-P07700|reviewed|Beta-1   138 IDRYLAITSPFRYQSLMTRARAKVIICTVWAISALVSFLPIMMHWWRDEDPQALKCYQDPGCCDFVTN-------RAYAI 217  
-                             **********************776608****************************************************
-
-                 7tm_1   161 llsvlgfllpllvilvcyvrilrtlrksakkeks.................................rkkksarkerkal 240  
-                              +s+++f++pll+++++y r++r+++++ +k ++                                 +++ +a +e+kal
-P07700|reviewed|Beta-1   218 ASSIISFYIPLLIMIFVYLRVYREAKEQIRKIDRCEGRFYGSQEQPQPPPLPQHQPILGNGRASKRKTSRVMAMREHKAL 297  
-                             ***************************99866666655555555555500000005************************
-
-                 7tm_1   241 ktllvvvvvfvlcwlPyfilllldsllkeceseklvetallitlllayvnsclNPii 297  
-                             ktl+++++vf+lcwlP+f++++++++    +++ ++++++ ++++l+y+ns++NPii
-P07700|reviewed|Beta-1   298 KTLGIIMGVFTLCWLPFFLVNIVNVF----NRDLVPDWLFVFFNWLGYANSAFNPII 354  
-                             *************9*************************999998777777788888
-```
-
-By default, tabular results will be placed in `results.tsv`.
-The default column order is:
-
-1. target name
-2. query name
-3. target start
-4. target end
-5. query start
-6. query end
-7. bit score
-8. composition bias score
-9. E-value
-10. cell fraction (the fraction of cells computed by sparse F/B)
-
-For example:
-```
-$ head -n 5 results.tsv
-
-P07700|reviewed|Beta-1 7tm_1 58 342 1 259 255.08 17.60 7.5e-77 6.4e-2
-P34971|reviewed|Beta-1 7tm_1 75 365 1 259 254.19 12.99 1.4e-76 7.1e-2
-P18090|reviewed|Beta-1 7tm_1 75 365 1 259 251.74 14.10 7.8e-76 7.1e-2
-Q28927|reviewed|Beta-1 7tm_1 75 363 1 259 250.06 16.87 2.5e-75 7.0e-2
-```
-
-In principle, the seeds used by `nail align` could come from any source.
-If you'd like to test out your own prefilter & seeding methods using nail's sparse F/B alignment stage, you simply need to produce a `seeds.json` file that conforms the structure described above.
 
 ## License
 
