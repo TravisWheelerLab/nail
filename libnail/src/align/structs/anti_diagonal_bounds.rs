@@ -790,7 +790,7 @@ impl AntiDiagonalBounds {
         }
     }
 
-    pub fn ascii(&self, other: Option<&Self>) -> anyhow::Result<()> {
+    pub fn vec_image(&self, other: Option<&Self>) -> anyhow::Result<Vec<Vec<u8>>> {
         let mut img = vec![vec![0; self.profile_length + 1]; self.target_length + 1];
 
         self.bounds().iter().for_each(|b| {
@@ -805,15 +805,20 @@ impl AntiDiagonalBounds {
             }
 
             other.bounds().iter().for_each(|b| {
-                b.cell_zip().for_each(|(t, p)| img[t][p] += 1);
+                b.cell_zip().for_each(|(t, p)| img[t][p] += 2);
             });
-        }
+        };
+        Ok(img)
+    }
+
+    pub fn ascii(&self, other: Option<&Self>) -> anyhow::Result<()> {
+        let vec_img = self.vec_image(other)?;
 
         print!("/// `     ");
         (0..=self.profile_length).for_each(|p| print!("{p}  "));
         println!("\x08`");
         println!("/// `    {} `", "---".repeat(self.profile_length + 1));
-        for (row_idx, row) in img.iter().enumerate() {
+        for (row_idx, row) in vec_img.iter().enumerate() {
             print!("/// ` {row_idx:2} |");
             for &v in row.iter() {
                 if v == 0 {
@@ -822,6 +827,8 @@ impl AntiDiagonalBounds {
                     print!("x  ");
                 } else if v == 2 {
                     print!("*  ")
+                } else if v == 3 {
+                    print!("o  ")
                 } else {
                     bail!("cloud cell error")
                 }
@@ -838,35 +845,45 @@ impl AntiDiagonalBounds {
 pub mod debug {
     use std::path::Path;
 
-    use anyhow::Context;
-    use image::{Rgb, RgbImage};
+    use anyhow::{bail, Context};
+    use image::RgbImage;
 
-    use super::{AntiDiagonal, AntiDiagonalBounds};
+    use super::AntiDiagonalBounds;
+    use consts::*;
 
-    #[allow(dead_code)]
-    pub fn cloud_image(
-        bounds_a: &AntiDiagonalBounds,
-        bounds_b: &AntiDiagonalBounds,
-        path: impl AsRef<Path>,
-    ) -> anyhow::Result<()> {
-        let red = Rgb([255, 0, 0]);
-        let blue = Rgb([0, 0, 255]);
+    mod consts {
+        use image::Rgb;
 
-        let width = bounds_a.profile_length;
-        let height = bounds_a.target_length;
+        pub const RED: Rgb<u8> = Rgb([255, 0, 0]);
+        pub const GREEN: Rgb<u8> = Rgb([0, 255, 0]);
+        pub const BLUE: Rgb<u8> = Rgb([0, 0, 255]);
+    }
 
-        let mut img = RgbImage::new(width as u32 + 1, height as u32 + 1);
+    impl AntiDiagonalBounds {
+        #[allow(dead_code)]
+        pub fn image(&self, other: Option<&Self>, path: impl AsRef<Path>) -> anyhow::Result<()> {
+            let vec_img = self.vec_image(other)?;
 
-        let mut draw = |bound: &AntiDiagonal, color: Rgb<u8>| {
-            bound.cell_zip().for_each(|(y, x)| {
-                img.put_pixel(x as u32, y as u32, color);
-            });
-        };
+            let mut img = RgbImage::new(vec_img[0].len() as u32, vec_img.len() as u32);
 
-        bounds_a.bounds().iter().for_each(|b| draw(b, red));
-        bounds_b.bounds().iter().for_each(|b| draw(b, blue));
+            for (y, row) in vec_img.iter().enumerate() {
+                for (x, &val) in row.iter().enumerate() {
+                    if val == 0 {
+                        // nothing
+                    } else if val == 1 {
+                        img.put_pixel(x as u32, y as u32, BLUE)
+                    } else if val == 2 {
+                        img.put_pixel(x as u32, y as u32, RED)
+                    } else if val == 3 {
+                        img.put_pixel(x as u32, y as u32, GREEN)
+                    } else {
+                        bail!("cloud cell error")
+                    }
+                }
+            }
 
-        img.save(path).context("failed to write image")
+            img.save(path).context("failed to write image")
+        }
     }
 }
 

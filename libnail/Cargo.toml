@@ -8,7 +8,7 @@ repository = "https://github.com/TravisWheelerLab/nail"
 description = "Libnail is a library that performs profile Hidden Markov Model (PHMM) biological sequence alignment."
 
 [features]
-default = ["debug"]
+default = []
 debug = ["dep:image"]
 
 [lib]
