@@ -19,7 +19,7 @@ debug = ["libnail/debug"]
 
 [dependencies]
 clap = { version = "4.0.32", features = ["derive"] }
-libnail = { path = "../libnail", version = "0.1.0" }
+libnail = { path = "../libnail", version = "0.2.0" }
 anyhow = "1.0.66"
 thiserror = "1.0.37"
 serde = { version = "1.0", features = ["derive"] }

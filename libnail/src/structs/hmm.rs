@@ -226,12 +226,6 @@ enum ModelParserState {
     StateTransitions,
 }
 
-/// An Error that is thrown when an unknown header is found
-/// when parsing the header of a P7HMM
-#[derive(Error, Debug)]
-#[error("unknown header flag")]
-struct UnknownHeaderFlagError;
-
 /// An Error that is thrown when a token parsing function
 /// recognizes that the token vector index is out of bounds.
 #[derive(Error, Debug)]

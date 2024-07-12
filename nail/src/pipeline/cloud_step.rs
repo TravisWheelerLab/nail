@@ -33,6 +33,7 @@ pub struct DebugCloudSearchStep {
     row_bounds: RowBounds,
 }
 
+#[allow(dead_code)]
 impl DebugCloudSearchStep {
     pub fn new(
         target_start: usize,
