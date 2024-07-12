@@ -13,6 +13,13 @@ There are two sub-projects in the nail workspace:
 1. `nail`: this is the command line tool
 2. `libnail`: this is a Rust library that contains the implementation of nail's sparse alignment algorithms
 
+### Example input files
+
+A few example input files may be found under the `fixtures/` directory at the root of this repository.
+    
+    $ ls fixtures/
+    query.fa  target.fa  query.hmm
+
 ## Dependencies
 
 The `nail search` pipeline uses the `mmseqs search` tool as an alignment prefilter.
@@ -54,7 +61,7 @@ The nail command line interface has two subcommands: `search` and `seed`.
 
 The `nail search` command runs the entire nail pipeline, including running MMseqs2 to find alignment seeds.
 
-The input to `nail search` is a query file (.hmm|.fasta) and a target sequence database file (.fasta).
+The input to `nail search` is a query file (p7HMM or FASTA) and a target sequence database file (FASTA).
 
 By default, the search results will be written to `./results.tbl` in a tabular format, and alignment output is written to stdout.
 In addition, a collection of temporary files required to run `mmseqs search`, will be written to the `./prep/` directory.
