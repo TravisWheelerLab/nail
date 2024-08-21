@@ -152,7 +152,7 @@ where
     }
 }
 
-pub fn avg_relative_entropy(a: &[Vec<f32>], b: &[f32]) -> f32 {
+pub fn mean_relative_entropy(a: &[Vec<f32>], b: &[f32]) -> f32 {
     a.iter()
         .map(|p| relative_entropy(p, b))
         .collect::<Vec<f32>>()

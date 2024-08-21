@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- Profile::raise_relative_entropy() is now adjust_mean_relative_entropy()
+    - the mean relative entropy (MRE) can now be raised or lowered
+    - the algorithm for raising (MRE) has been improved
+- util::avg_relative_entropy() is now mean_relative_entropy()
+- parse_hmms_from_p7hmm_file(path) is now Hmm::from_p7hmm(buf)
 
 ### Deprecated
 

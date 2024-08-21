@@ -62,7 +62,7 @@ pub fn seed_profile_to_sequence(
         .filter(|p| p.relative_entropy() < 1.0)
         .map(|p| {
             let mut p2 = p.clone();
-            p2.raise_relative_entropy(1.0);
+            p2.adjust_mean_relative_entropy(1.0);
             p2
         })
         .collect();

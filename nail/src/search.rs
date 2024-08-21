@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -11,8 +12,7 @@ use crate::pipeline::{
 };
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
-use libnail::structs::hmm::parse_hmms_from_p7hmm_file;
-use libnail::structs::{Profile, Sequence};
+use libnail::structs::{Hmm, Profile, Sequence};
 
 use anyhow::Context;
 use serde::Serialize;
@@ -33,7 +33,8 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries: Vec<Profile> = parse_hmms_from_p7hmm_file(&path)
+            let hmm_file = File::open(&path)?;
+            let queries: Vec<Profile> = Hmm::from_p7hmm(hmm_file)
                 .context("failed to read query hmm")?
                 .iter()
                 .map(Profile::new)
