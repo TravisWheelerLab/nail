@@ -2,6 +2,7 @@ mod args;
 mod mmseqs;
 mod pipeline;
 mod search;
+mod stats;
 mod util;
 
 use args::{Cli, SubCommands};
