@@ -1,106 +1,114 @@
-use std::time::Duration;
+use std::{
+    fmt::Display,
+    io::Write,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 #[derive(Clone)]
 pub struct Timing {
-    num_samples: u32,
-    total: Duration,
-    mean: Duration,
-    min: Duration,
-    max: Duration,
+    total_time_ms: Arc<AtomicUsize>,
+    num_samples: Arc<AtomicUsize>,
 }
 
 impl Timing {
-    pub fn new(time: Duration) -> Self {
+    pub fn new(duration: Duration) -> Self {
+        let time_ms = Self::millis_u8(duration);
         Self {
-            num_samples: 1,
-            total: time,
-            mean: time,
-            min: time,
-            max: time,
+            total_time_ms: Arc::new(AtomicUsize::new(time_ms)),
+            num_samples: Arc::new(AtomicUsize::new(time_ms)),
         }
     }
 
-    pub fn update(&mut self, time: Duration) {
-        self.total += time;
-        self.min = self.min.min(time);
-        self.max = self.max.max(time);
-        self.mean = ((self.mean * self.num_samples) + time) / (self.num_samples + 1);
-        self.num_samples += 1;
+    pub fn get_ms(&self) -> f64 {
+        self.total_time_ms.load(Ordering::SeqCst) as f64
     }
 
-    pub fn merge(&mut self, other: &Self) -> Self {
-        let num_samples = self.num_samples + other.num_samples;
-        Self {
-            num_samples,
-            total: self.total + other.total,
-            mean: (self.total * self.num_samples + other.total * other.num_samples) / num_samples,
-            min: self.min.min(other.min),
-            max: self.max.max(other.max),
-        }
+    pub fn get_seconds(&self) -> f64 {
+        self.total_time_ms.load(Ordering::SeqCst) as f64 / 1000.0
+    }
+
+    pub fn update(&mut self, duration: Duration) {
+        let time_ms = Self::millis_u8(duration);
+        self.total_time_ms.fetch_add(time_ms, Ordering::SeqCst);
+        self.num_samples.fetch_add(time_ms, Ordering::SeqCst);
+    }
+
+    pub fn millis_u8(duration: Duration) -> usize {
+        duration.as_millis().min(u64::MAX as u128) as usize
+    }
+}
+
+impl Display for Timing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.3}s", self.get_seconds())
     }
 }
 
 impl Default for Timing {
     fn default() -> Self {
         Self {
-            num_samples: 0,
-            total: Duration::new(0, 0),
-            mean: Duration::new(0, 0),
-            min: Duration::new(u64::MAX, u32::MAX),
-            max: Duration::new(0, 0),
+            total_time_ms: Arc::new(AtomicUsize::new(0)),
+            num_samples: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Timings {
+    input: Timing,
+    output: Timing,
     mmseqs: Timing,
     hmm_build: Timing,
     cloud_search: Timing,
     forward: Timing,
-    traceback: Timing,
 }
 
 impl Timings {
-    pub fn merge(&mut self, other: &Self) -> Self {
-        Self {
-            mmseqs: self.mmseqs.merge(&other.mmseqs),
-            hmm_build: self.hmm_build.merge(&other.hmm_build),
-            cloud_search: self.cloud_search.merge(&other.cloud_search),
-            forward: self.forward.merge(&other.forward),
-            traceback: self.traceback.merge(&other.traceback),
-        }
+    pub fn total_seconds(&self) -> f64 {
+        self.input.get_seconds()
+            + self.output.get_seconds()
+            + self.mmseqs.get_seconds()
+            + self.hmm_build.get_seconds()
+            + self.cloud_search.get_seconds()
+            + self.forward.get_seconds()
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Stats {
-    num_samples: usize,
-    num_passed_cloud: usize,
-    num_passed_forward: usize,
+    num_samples: Arc<AtomicUsize>,
+    num_passed_cloud: Arc<AtomicUsize>,
+    num_passed_forward: Arc<AtomicUsize>,
     timings: Timings,
 }
 
 impl Stats {
-    pub fn merge(&mut self, other: &Stats) -> Self {
-        Stats {
-            num_samples: self.num_samples + other.num_samples,
-            num_passed_cloud: self.num_passed_cloud + other.num_passed_cloud,
-            num_passed_forward: self.num_passed_forward + other.num_passed_forward,
-            timings: self.timings.merge(&other.timings),
-        }
+    pub fn increment_samples(&mut self) {
+        self.num_samples.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn increment_passed_cloud(&mut self) {
-        self.num_passed_cloud += 1;
+        self.num_samples.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn increment_passed_forward(&mut self) {
-        self.num_passed_forward += 1;
+        self.num_samples.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn set_mmseqs_time(&mut self, time: Duration) {
         self.timings.mmseqs = Timing::new(time);
+    }
+
+    pub fn add_input_time(&mut self, time: Duration) {
+        self.timings.input.update(time);
+    }
+
+    pub fn add_output_time(&mut self, time: Duration) {
+        self.timings.output.update(time);
     }
 
     pub fn add_hmm_build_time(&mut self, time: Duration) {
@@ -115,7 +123,52 @@ impl Stats {
         self.timings.forward.update(time);
     }
 
-    pub fn add_traceback_time(&mut self, time: Duration) {
-        self.timings.traceback.update(time);
+    pub fn write(&mut self, out: &mut impl Write) -> anyhow::Result<()> {
+        let total = self.timings.total_seconds();
+        let input = self.timings.input.get_seconds();
+        let output = self.timings.output.get_seconds();
+        let mmseqs = self.timings.mmseqs.get_seconds();
+        let cloud = self.timings.cloud_search.get_seconds();
+        let forward = self.timings.forward.get_seconds();
+
+        let width = format!("{total:.2}").len();
+        writeln!(
+            out,
+            "input:  {:w$.2}s\t{:5.2}%",
+            input,
+            input / total * 100.0,
+            w = width
+        )?;
+        writeln!(
+            out,
+            "output: {:w$.2}s\t{:5.2}%",
+            output,
+            output / total * 100.0,
+            w = width
+        )?;
+        writeln!(
+            out,
+            "mmseqs: {:w$.2}s\t{:5.2}%",
+            mmseqs,
+            mmseqs / total * 100.0,
+            w = width
+        )?;
+        writeln!(
+            out,
+            "cloud:  {:w$.2}s\t{:5.2}%",
+            cloud,
+            cloud / total * 100.0,
+            w = width
+        )?;
+        writeln!(
+            out,
+            "fwd:    {:w$.2}s\t{:5.2}%",
+            forward,
+            forward / total * 100.0,
+            w = width
+        )?;
+        writeln!(out, "total:  {:w$.2}s", total, w = width)?;
+
+        Ok(())
     }
 }
