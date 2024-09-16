@@ -49,7 +49,7 @@ impl OutputStep {
         self.table_format.reset_widths();
         self.table_format.update_widths(alignments);
 
-        alignments.sort_by(|a, b| a.e_value.partial_cmp(&b.e_value).unwrap());
+        alignments.sort_by(|a, b| a.scores.e_value.partial_cmp(&b.scores.e_value).unwrap());
 
         if let HeaderStatus::Unwritten = self.header_status {
             let header = TableFormat::header(&self.table_format)?;

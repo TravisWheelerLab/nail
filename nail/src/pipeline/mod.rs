@@ -11,17 +11,16 @@ mod output_step;
 pub use output_step::*;
 
 use std::collections::HashMap;
-use std::io::stdout;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 
-use libnail::align::structs::{Alignment, RowBounds, Seed};
+use libnail::align::structs::Alignment;
 use libnail::structs::{Hmm, Profile, Sequence};
 
-use crate::stats::Stats;
+use crate::stats::{FilterStage, Stats, ThreadTimed};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -35,8 +34,16 @@ pub struct TargetNotFoundError {
     target_name: String,
 }
 
+#[derive(Default, Clone)]
+pub struct PipelineConfig {
+    pub cloud_threshold: f64,
+    pub forward_threshold: f64,
+    pub e_value_threshold: f64,
+}
+
 #[derive(Clone)]
 pub struct Pipeline {
+    pub config: PipelineConfig,
     pub seed: Box<dyn SeedStep + Send + Sync>,
     pub cloud_search: Box<dyn CloudSearchStep + Send + Sync>,
     pub align: Box<dyn AlignStep + Send + Sync>,
@@ -49,49 +56,69 @@ impl Pipeline {
         &mut self,
         profile: &mut Profile,
         targets: &HashMap<String, Sequence>,
-    ) -> Option<Vec<Alignment>> {
-        let seeds = self.seed.run(profile, targets)?;
+    ) -> anyhow::Result<Vec<Alignment>> {
+        let seeds = self.seed.run(profile, targets);
 
-        let mut alignments: Vec<Alignment> = seeds
-            .iter()
-            .filter_map(|(target_name, seed)| {
-                let target = targets.get(target_name)?;
-                self.stats.increment_samples();
+        let alignments: Vec<Alignment> = match seeds {
+            None => vec![],
+            Some(seeds) => seeds
+                .iter()
+                .filter_map(|(target_name, seed)| {
+                    self.stats.increment_passed(FilterStage::Seed);
 
-                let now = Instant::now();
-                let maybe_bounds = self.cloud_search.run(profile, target, seed);
-                self.stats.add_cloud_search_time(now.elapsed());
+                    let target = targets.get(target_name)?;
 
-                let bounds = match maybe_bounds {
-                    Some(bounds) => {
-                        self.stats.increment_passed_cloud();
-                        bounds
-                    }
-                    None => return None,
-                };
+                    let now = Instant::now();
+                    let maybe_bounds = self.cloud_search.run(profile, target, seed);
+                    self.stats
+                        .add_threaded_time(ThreadTimed::CloudSearch, now.elapsed());
 
-                let now = Instant::now();
-                let maybe_ali = self.align.run(profile, target, bounds);
-                self.stats.add_forward_time(now.elapsed());
+                    maybe_bounds.map(|bounds| {
+                        self.stats.increment_passed(FilterStage::Cloud);
+                        self.align.run(profile, target, bounds).unwrap()
+                    })
+                })
+                .collect(),
+        };
 
-                match maybe_ali {
-                    Some(ali) => {
-                        self.stats.increment_passed_forward();
-                        Some(ali)
-                    }
-                    None => None,
-                }
-            })
+        alignments.iter().for_each(|ali| {
+            self.stats
+                .add_threaded_time(ThreadTimed::MemoryInit, ali.times.init);
+            self.stats
+                .add_threaded_time(ThreadTimed::Forward, ali.times.forward);
+        });
+
+        let passed_forward: Vec<_> = alignments
+            .into_iter()
+            .filter(|ali| ali.boundaries.is_some())
+            .collect();
+
+        passed_forward.iter().for_each(|ali| {
+            self.stats.increment_passed(FilterStage::Forward);
+            self.stats
+                .add_threaded_time(ThreadTimed::Backward, ali.times.backward);
+            self.stats
+                .add_threaded_time(ThreadTimed::Posterior, ali.times.posterior);
+            self.stats
+                .add_threaded_time(ThreadTimed::Traceback, ali.times.traceback);
+            self.stats
+                .add_threaded_time(ThreadTimed::NullTwo, ali.times.null_two);
+        });
+
+        let mut passed_e_value: Vec<_> = passed_forward
+            .into_iter()
+            .filter(|ali| ali.scores.e_value <= self.config.e_value_threshold)
             .collect();
 
         let now = Instant::now();
         match self.output.lock() {
-            Ok(mut guard) => guard.write(&mut alignments).unwrap(),
+            Ok(mut guard) => guard.write(&mut passed_e_value).unwrap(),
             Err(_) => panic!(),
         };
-        self.stats.add_output_time(now.elapsed());
+        self.stats
+            .add_threaded_time(ThreadTimed::Output, now.elapsed());
 
-        Some(alignments)
+        Ok(passed_e_value)
     }
 }
 
@@ -103,28 +130,38 @@ pub fn run_pipeline_profile_to_sequence(
     queries.par_iter_mut().panic_fuse().for_each_with(
         (pipeline.clone(), targets),
         |(pipeline, targets), profile| {
-            pipeline.run(profile, targets);
+            let now = Instant::now();
+            let _ = pipeline.run(profile, targets);
+            pipeline
+                .stats
+                .add_threaded_time(ThreadTimed::Total, now.elapsed())
         },
     );
-
-    pipeline.stats.write(&mut stdout());
 }
 
 pub fn run_pipeline_sequence_to_sequence(
     queries: &[Sequence],
     targets: &HashMap<String, Sequence>,
-    pipeline: Pipeline,
+    pipeline: &mut Pipeline,
 ) {
     queries.par_iter().panic_fuse().for_each_with(
-        (pipeline, targets),
+        (pipeline.clone(), targets),
         |(pipeline, targets), sequence| {
+            let now = Instant::now();
             let mut profile = Hmm::from_blosum_62_and_sequence(sequence)
                 .map(|h| Profile::new(&h))
                 .expect("failed to build profile from sequence");
-
             profile.calibrate_tau(200, 100, 0.04);
 
-            pipeline.run(&mut profile, targets).unwrap();
+            pipeline
+                .stats
+                .add_threaded_time(ThreadTimed::HmmBuild, now.elapsed());
+
+            let _ = pipeline.run(&mut profile, targets);
+
+            pipeline
+                .stats
+                .add_threaded_time(ThreadTimed::Total, now.elapsed())
         },
-    )
+    );
 }

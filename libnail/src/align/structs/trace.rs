@@ -55,20 +55,70 @@ impl Trace {
 
     // bandaid patch for a convenient iter() on traces
     pub fn iter(&self) -> std::vec::IntoIter<TraceStep> {
-        assert!(self.length == self.states.len());
-        assert!(self.length == self.profile_indices.len());
-        assert!(self.length == self.target_indices.len());
-        assert!(self.length == self.posterior_probabilities.len());
-
         (0..self.length)
-            .map(|i| TraceStep {
-                state: self.states[i],
-                profile_idx: self.profile_indices[i],
-                target_idx: self.target_indices[i],
-                posterior: self.posterior_probabilities[i],
-            })
+            .map(|idx| self.get(idx).unwrap())
             .collect::<Vec<TraceStep>>()
             .into_iter()
+    }
+
+    pub fn core_iter(&self) -> std::vec::IntoIter<TraceStep> {
+        let first = self
+            .states
+            .iter()
+            .position(|&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE);
+
+        let last = self
+            .states
+            .iter()
+            .rev()
+            .position(|&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE);
+
+        match (first, last) {
+            (Some(first), Some(last)) => (first..=last)
+                .map(|idx| self.get(idx).unwrap())
+                .collect::<Vec<TraceStep>>()
+                .into_iter(),
+            (_, _) => vec![].into_iter(),
+        }
+    }
+
+    pub fn get(&self, idx: usize) -> Option<TraceStep> {
+        if idx >= self.length {
+            return None;
+        }
+
+        Some(TraceStep {
+            state: self.states[idx],
+            profile_idx: self.profile_indices[idx],
+            target_idx: self.target_indices[idx],
+            posterior: self.posterior_probabilities[idx],
+        })
+    }
+
+    pub fn core_len(&self) -> usize {
+        self.states
+            .iter()
+            .filter(|&&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE)
+            .count()
+    }
+
+    pub fn first_core(&self) -> Option<TraceStep> {
+        let idx = self
+            .states
+            .iter()
+            .position(|&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE)?;
+
+        self.get(idx)
+    }
+
+    pub fn last_core(&self) -> Option<TraceStep> {
+        let idx = self
+            .states
+            .iter()
+            .rev()
+            .position(|&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE)?;
+
+        self.get(idx)
     }
 
     pub fn new(target_length: usize, profile_length: usize) -> Self {

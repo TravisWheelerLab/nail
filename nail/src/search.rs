@@ -9,9 +9,9 @@ use crate::args::{SearchArgs, SeedArgs};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
     seed_sequence_to_sequence, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
-    FullDpCloudSearchStep, OutputStep, Pipeline, SeedMap,
+    FullDpCloudSearchStep, OutputStep, Pipeline, PipelineConfig, SeedMap,
 };
-use crate::stats::Stats;
+use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
 use libnail::structs::{Hmm, Profile, Sequence};
@@ -78,6 +78,7 @@ pub fn seed(args: SeedArgs) -> anyhow::Result<()> {
 }
 
 pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
+    let start_time = Instant::now();
     {
         // quickly make sure we can write the results
         args.output_args.tbl_results_path.open(true)?;
@@ -88,14 +89,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let mut stats = Stats::default();
 
-    let now = Instant::now();
     let queries = read_queries(&args.query_path)?;
-    stats.add_input_time(now.elapsed());
 
-    let now = Instant::now();
     let targets =
         Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
-    stats.add_input_time(now.elapsed());
 
     match args.nail_args.target_database_size {
         Some(_) => {}
@@ -109,12 +106,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
             let reader = BufReader::new(std::fs::File::open(path)?);
             let stream = serde_json::Deserializer::from_reader(reader);
 
-            let now = Instant::now();
             for entry in stream.into_iter::<SeedMap>() {
                 let entry = entry?;
                 seeds.extend(entry);
             }
-            stats.add_input_time(now.elapsed());
 
             seeds
         }
@@ -134,13 +129,18 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                     &args.mmseqs_args,
                 )?,
             };
-            stats.set_mmseqs_time(now.elapsed());
+            stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
 
             seeds
         }
     };
 
     let mut pipeline = Pipeline {
+        config: PipelineConfig {
+            cloud_threshold: args.nail_args.cloud_pvalue_threshold,
+            forward_threshold: args.nail_args.forward_pvalue_threshold,
+            e_value_threshold: args.output_args.evalue_threshold,
+        },
         seed: Box::new(DefaultSeedStep::new(seeds)),
         cloud_search: match args.nail_args.full_dp {
             true => Box::<FullDpCloudSearchStep>::default(),
@@ -154,14 +154,25 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let target_map: HashMap<String, Sequence> =
         targets.into_iter().map(|t| (t.name.clone(), t)).collect();
 
+    let align_timer = Instant::now();
     match queries {
         Queries::Sequence(queries) => {
-            run_pipeline_sequence_to_sequence(&queries, &target_map, pipeline);
+            run_pipeline_sequence_to_sequence(&queries, &target_map, &mut pipeline);
         }
         Queries::Profile(mut queries) => {
             run_pipeline_profile_to_sequence(&mut queries, &target_map, &mut pipeline);
         }
     }
+
+    pipeline
+        .stats
+        .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
+
+    pipeline
+        .stats
+        .set_serial_time(SerialTimed::Total, start_time.elapsed());
+
+    pipeline.stats.write(&mut stdout())?;
 
     Ok(())
 }

@@ -2,46 +2,25 @@ use crate::align::{structs::Alignment, Bits};
 
 use anyhow::Context;
 
-trait ExtractString {
-    fn extract_string(&self) -> String;
-    fn empty_string(&self) -> String {
-        "-".to_string()
+trait FieldString {
+    fn field_string(&self) -> String;
+}
+
+impl FieldString for f32 {
+    fn field_string(&self) -> String {
+        format!("{self:.3}")
     }
 }
 
-impl ExtractString for Option<String> {
-    fn extract_string(&self) -> String {
-        match self {
-            Some(string) => string.to_string(),
-            None => self.empty_string(),
-        }
+impl FieldString for f64 {
+    fn field_string(&self) -> String {
+        format!("{self:.1e}")
     }
 }
 
-impl ExtractString for Option<f32> {
-    fn extract_string(&self) -> String {
-        match self {
-            Some(f) => format!("{f:.3}"),
-            None => self.empty_string(),
-        }
-    }
-}
-
-impl ExtractString for Option<f64> {
-    fn extract_string(&self) -> String {
-        match self {
-            Some(f) => format!("{f:.1e}"),
-            None => self.empty_string(),
-        }
-    }
-}
-
-impl ExtractString for Option<Bits> {
-    fn extract_string(&self) -> String {
-        match self {
-            Some(f) => format!("{:.1}", f.value()),
-            None => self.empty_string(),
-        }
+impl FieldString for Bits {
+    fn field_string(&self) -> String {
+        format!("{:.1}", self.value())
     }
 }
 
@@ -57,21 +36,30 @@ pub enum Field {
     CompBias,
     Evalue,
     CellFrac,
+    CellCount,
 }
 
 impl Field {
+    fn extract(&self, alignment: &Alignment) -> Option<String> {
+        Some(match self {
+            Field::Target => alignment.target_name.clone()?,
+            Field::Query => alignment.profile_name.clone()?,
+            Field::TargetStart => alignment.boundaries.as_ref()?.target_start.to_string(),
+            Field::TargetEnd => alignment.boundaries.as_ref()?.target_end.to_string(),
+            Field::QueryStart => alignment.boundaries.as_ref()?.profile_start.to_string(),
+            Field::QueryEnd => alignment.boundaries.as_ref()?.profile_end.to_string(),
+            Field::Score => alignment.scores.bit_score.field_string(),
+            Field::CompBias => alignment.scores.null_two_score.as_ref()?.field_string(),
+            Field::Evalue => alignment.scores.e_value.field_string(),
+            Field::CellFrac => alignment.cell_stats.as_ref()?.fraction.field_string(),
+            Field::CellCount => alignment.cell_stats.as_ref()?.count.to_string(),
+        })
+    }
+
     pub fn extract_from(&self, alignment: &Alignment) -> String {
-        match self {
-            Field::Target => alignment.target_name.extract_string(),
-            Field::Query => alignment.profile_name.extract_string(),
-            Field::TargetStart => alignment.target_start.to_string(),
-            Field::TargetEnd => alignment.target_end.to_string(),
-            Field::QueryStart => alignment.profile_start.to_string(),
-            Field::QueryEnd => alignment.profile_end.to_string(),
-            Field::Score => alignment.score_bits.extract_string(),
-            Field::CompBias => alignment.null_two.extract_string(),
-            Field::Evalue => alignment.e_value.extract_string(),
-            Field::CellFrac => alignment.cell_fraction.extract_string(),
+        match self.extract(alignment) {
+            Some(string) => string,
+            None => "-".to_string(),
         }
     }
 }

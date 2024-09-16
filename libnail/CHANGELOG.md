@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- added min() to Score, Nats, and Bits
 
 ### Changed
 - Profile::raise_relative_entropy() is now adjust_mean_relative_entropy()
@@ -24,13 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - the algorithm for raising (MRE) has been improved
 - util::avg_relative_entropy() is now mean_relative_entropy()
 - parse_hmms_from_p7hmm_file(path) is now Hmm::from_p7hmm(buf)
+- refactored Alignment struct
+    - fields are now grouped into sub-structs
+    - now stores relevant timings
+    - refactored AlignmentBuilder for changes
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
-
+- Fixed the score returned from Forward() so that it includes N/C state
+  transitions from outside of the cloud
 
 ## [0.2.0] - 2024-07-12
 

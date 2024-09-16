@@ -112,6 +112,7 @@ pub trait Score {
     fn bits(self) -> Bits;
     fn nats(self) -> Nats;
     fn max(self, other: Self) -> Self;
+    fn min(self, other: Self) -> Self;
 }
 
 impl Score for Nats {
@@ -126,6 +127,10 @@ impl Score for Nats {
     fn max(self, other: Self) -> Self {
         Nats(self.0.max(other.0))
     }
+
+    fn min(self, other: Self) -> Self {
+        Nats(self.0.min(other.0))
+    }
 }
 
 impl Score for Bits {
@@ -139,6 +144,10 @@ impl Score for Bits {
 
     fn max(self, other: Self) -> Self {
         Bits(self.0.max(other.0))
+    }
+
+    fn min(self, other: Self) -> Self {
+        Bits(self.0.min(other.0))
     }
 }
 

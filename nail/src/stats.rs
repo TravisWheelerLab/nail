@@ -1,174 +1,237 @@
 use std::{
-    fmt::Display,
     io::Write,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
 };
 
-#[derive(Clone)]
-pub struct Timing {
-    total_time_ms: Arc<AtomicUsize>,
-    num_samples: Arc<AtomicUsize>,
+#[repr(usize)]
+#[derive(Clone, Copy)]
+pub enum SerialTimed {
+    Total,
+    // Setup,
+    Seeding,
+    Alignment,
+    _SENTINEL,
 }
+const NUM_SERIAL_TIMED: usize = SerialTimed::_SENTINEL as usize;
 
-impl Timing {
-    pub fn new(duration: Duration) -> Self {
-        let time_ms = Self::millis_u8(duration);
-        Self {
-            total_time_ms: Arc::new(AtomicUsize::new(time_ms)),
-            num_samples: Arc::new(AtomicUsize::new(time_ms)),
-        }
-    }
-
-    pub fn get_ms(&self) -> f64 {
-        self.total_time_ms.load(Ordering::SeqCst) as f64
-    }
-
-    pub fn get_seconds(&self) -> f64 {
-        self.total_time_ms.load(Ordering::SeqCst) as f64 / 1000.0
-    }
-
-    pub fn update(&mut self, duration: Duration) {
-        let time_ms = Self::millis_u8(duration);
-        self.total_time_ms.fetch_add(time_ms, Ordering::SeqCst);
-        self.num_samples.fetch_add(time_ms, Ordering::SeqCst);
-    }
-
-    pub fn millis_u8(duration: Duration) -> usize {
-        duration.as_millis().min(u64::MAX as u128) as usize
-    }
+#[repr(usize)]
+#[derive(Clone, Copy)]
+pub enum ThreadTimed {
+    Total,
+    // Input,
+    Output,
+    MemoryInit,
+    HmmBuild,
+    CloudSearch,
+    // BoundsAdjustment,
+    Forward,
+    Backward,
+    Posterior,
+    Traceback,
+    NullTwo,
+    _SENTINEL,
 }
+const NUM_THREAD_TIMED: usize = ThreadTimed::_SENTINEL as usize;
 
-impl Display for Timing {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.3}s", self.get_seconds())
-    }
+#[repr(usize)]
+#[derive(Clone, Copy)]
+pub enum FilterStage {
+    Seed,
+    Cloud,
+    Forward,
+    _SENTINEL,
 }
-
-impl Default for Timing {
-    fn default() -> Self {
-        Self {
-            total_time_ms: Arc::new(AtomicUsize::new(0)),
-            num_samples: Arc::new(AtomicUsize::new(0)),
-        }
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct Timings {
-    input: Timing,
-    output: Timing,
-    mmseqs: Timing,
-    hmm_build: Timing,
-    cloud_search: Timing,
-    forward: Timing,
-}
-
-impl Timings {
-    pub fn total_seconds(&self) -> f64 {
-        self.input.get_seconds()
-            + self.output.get_seconds()
-            + self.mmseqs.get_seconds()
-            + self.hmm_build.get_seconds()
-            + self.cloud_search.get_seconds()
-            + self.forward.get_seconds()
-    }
-}
+const NUM_FILTERS: usize = FilterStage::_SENTINEL as usize;
 
 #[derive(Clone, Default)]
 pub struct Stats {
-    num_samples: Arc<AtomicUsize>,
-    num_passed_cloud: Arc<AtomicUsize>,
-    num_passed_forward: Arc<AtomicUsize>,
-    timings: Timings,
+    serial_times: [Duration; NUM_SERIAL_TIMED],
+    threaded_times: Arc<[AtomicU64; NUM_THREAD_TIMED]>,
+    threaded_counts: Arc<[AtomicU64; NUM_THREAD_TIMED]>,
+    filter_counts: Arc<[AtomicU64; NUM_FILTERS]>,
 }
 
 impl Stats {
-    pub fn increment_samples(&mut self) {
-        self.num_samples.fetch_add(1, Ordering::SeqCst);
+    pub fn set_serial_time(&mut self, step: SerialTimed, time: Duration) {
+        self.serial_times[step as usize] = time;
     }
 
-    pub fn increment_passed_cloud(&mut self) {
-        self.num_samples.fetch_add(1, Ordering::SeqCst);
+    pub fn add_threaded_time(&mut self, step: ThreadTimed, time: Duration) {
+        let time_nanos = Self::nanos(time);
+        self.threaded_times[step as usize].fetch_add(time_nanos, Ordering::SeqCst);
+        self.threaded_counts[step as usize].fetch_add(1, Ordering::SeqCst);
     }
 
-    pub fn increment_passed_forward(&mut self) {
-        self.num_samples.fetch_add(1, Ordering::SeqCst);
+    pub fn serial_time_total(&self, step: SerialTimed) -> Duration {
+        self.serial_times[step as usize]
     }
 
-    pub fn set_mmseqs_time(&mut self, time: Duration) {
-        self.timings.mmseqs = Timing::new(time);
+    pub fn thread_time_total(&self, step: ThreadTimed) -> Duration {
+        match step {
+            ThreadTimed::_SENTINEL => {
+                let total = self.thread_time_total(ThreadTimed::Total);
+
+                let sum = self.threaded_times[1..]
+                    .iter()
+                    .map(|t| Duration::from_nanos(t.load(Ordering::SeqCst)))
+                    .sum();
+
+                total - sum
+            }
+            _ => {
+                let nanos = self.threaded_times[step as usize].load(Ordering::SeqCst);
+                let secs = nanos / 1e9 as u64;
+                let nanos = (nanos - (secs * 1e9 as u64)) as u32;
+                Duration::new(secs, nanos)
+            }
+        }
     }
 
-    pub fn add_input_time(&mut self, time: Duration) {
-        self.timings.input.update(time);
+    pub fn serial_time_pct(&self, step: SerialTimed) -> f64 {
+        let total_nanos = Self::nanos(self.serial_times[ThreadTimed::Total as usize]) as f64;
+        let nanos = Self::nanos(self.serial_times[step as usize]) as f64;
+
+        nanos / total_nanos
     }
 
-    pub fn add_output_time(&mut self, time: Duration) {
-        self.timings.output.update(time);
+    pub fn thread_time_pct(&self, step: ThreadTimed) -> f64 {
+        let total_nanos =
+            self.threaded_times[ThreadTimed::Total as usize].load(Ordering::SeqCst) as f64;
+        let nanos = match step {
+            ThreadTimed::_SENTINEL => Self::nanos(self.thread_time_total(ThreadTimed::_SENTINEL)),
+            _ => self.threaded_times[step as usize].load(Ordering::SeqCst),
+        } as f64;
+
+        nanos / total_nanos
     }
 
-    pub fn add_hmm_build_time(&mut self, time: Duration) {
-        self.timings.hmm_build.update(time);
+    pub fn increment_passed(&mut self, stage: FilterStage) {
+        self.filter_counts[stage as usize].fetch_add(1, Ordering::SeqCst);
     }
 
-    pub fn add_cloud_search_time(&mut self, time: Duration) {
-        self.timings.cloud_search.update(time);
+    pub fn serial_string(&self, step: SerialTimed) -> String {
+        let width = format!(
+            "{:.2}",
+            self.serial_time_total(SerialTimed::Total).as_secs_f64()
+        )
+        .len();
+
+        format!(
+            "{:w$.2}s ({:>5.2}%)",
+            self.serial_time_total(step).as_secs_f64(),
+            self.serial_time_pct(step) * 100.0,
+            w = width,
+        )
     }
 
-    pub fn add_forward_time(&mut self, time: Duration) {
-        self.timings.forward.update(time);
+    pub fn thread_string(&self, step: ThreadTimed) -> String {
+        let width = format!(
+            "{:.2}",
+            self.thread_time_total(ThreadTimed::Total).as_secs_f64()
+        )
+        .len();
+
+        format!(
+            "{:w$.2}s ({:>5.2}%)",
+            self.thread_time_total(step).as_secs_f64(),
+            self.thread_time_pct(step) * 100.0,
+            w = width,
+        )
     }
 
-    pub fn write(&mut self, out: &mut impl Write) -> anyhow::Result<()> {
-        let total = self.timings.total_seconds();
-        let input = self.timings.input.get_seconds();
-        let output = self.timings.output.get_seconds();
-        let mmseqs = self.timings.mmseqs.get_seconds();
-        let cloud = self.timings.cloud_search.get_seconds();
-        let forward = self.timings.forward.get_seconds();
+    pub fn write(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        writeln!(out, "runtime: {}", self.serial_string(SerialTimed::Total),)?;
 
-        let width = format!("{total:.2}").len();
         writeln!(
             out,
-            "input:  {:w$.2}s\t{:5.2}%",
-            input,
-            input / total * 100.0,
-            w = width
+            " ├─ seeding:   {}",
+            self.serial_string(SerialTimed::Seeding)
         )?;
+
         writeln!(
             out,
-            "output: {:w$.2}s\t{:5.2}%",
-            output,
-            output / total * 100.0,
-            w = width
+            " └─ alignment: {}",
+            self.serial_string(SerialTimed::Alignment)
         )?;
+
+        // writeln!(
+        //     out,
+        //     "     ├─ thread total:  {}",
+        //     self.thread_string(ThreadTimed::Total)
+        // )?;
+
         writeln!(
             out,
-            "mmseqs: {:w$.2}s\t{:5.2}%",
-            mmseqs,
-            mmseqs / total * 100.0,
-            w = width
+            "     ├─ memory init:  {}",
+            self.thread_string(ThreadTimed::MemoryInit)
         )?;
+
+        if self.thread_time_total(ThreadTimed::HmmBuild).as_secs_f64() > 0.0 {
+            writeln!(
+                out,
+                "     ├─ hmm build:    {}",
+                self.thread_string(ThreadTimed::HmmBuild)
+            )?;
+        }
+
         writeln!(
             out,
-            "cloud:  {:w$.2}s\t{:5.2}%",
-            cloud,
-            cloud / total * 100.0,
-            w = width
+            "     ├─ cloud search: {}",
+            self.thread_string(ThreadTimed::CloudSearch)
         )?;
+
         writeln!(
             out,
-            "fwd:    {:w$.2}s\t{:5.2}%",
-            forward,
-            forward / total * 100.0,
-            w = width
+            "     ├─ forward:      {}",
+            self.thread_string(ThreadTimed::Forward)
         )?;
-        writeln!(out, "total:  {:w$.2}s", total, w = width)?;
+
+        writeln!(
+            out,
+            "     ├─ backward:     {}",
+            self.thread_string(ThreadTimed::Backward)
+        )?;
+
+        writeln!(
+            out,
+            "     ├─ posterior:    {}",
+            self.thread_string(ThreadTimed::Posterior)
+        )?;
+
+        writeln!(
+            out,
+            "     ├─ traceback:    {}",
+            self.thread_string(ThreadTimed::Traceback)
+        )?;
+
+        writeln!(
+            out,
+            "     ├─ null two:     {}",
+            self.thread_string(ThreadTimed::NullTwo)
+        )?;
+
+        writeln!(
+            out,
+            "     └─ output:       {}",
+            self.thread_string(ThreadTimed::Output)
+        )?;
+
+        writeln!(
+            out,
+            "     └─ [???]         {}",
+            self.thread_string(ThreadTimed::_SENTINEL)
+        )?;
 
         Ok(())
+    }
+
+    pub fn nanos(time: Duration) -> u64 {
+        // u64::MAX nanoseconds is like 5,000,000 hours
+        // or something, so this clamp should be fine.
+        time.as_nanos().min(u64::MAX as u128) as u64
     }
 }

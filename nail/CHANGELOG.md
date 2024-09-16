@@ -18,8 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- added Stats module
-    - added Timing, Timings, and Stats structs
+- added Stats module for keeping track of pipeline summary statistics
 
 ### Changed
 
