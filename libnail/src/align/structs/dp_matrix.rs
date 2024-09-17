@@ -384,13 +384,9 @@ impl DpMatrixSparse {
 
         let new_special_length = 5 * (new_target_length + 1);
 
-        if core_length > self.core_data.len() {
-            self.core_data.resize(core_length, -f32::INFINITY);
-        }
+        self.core_data.resize(core_length, -f32::INFINITY);
 
-        if new_special_length > self.special_data.len() {
-            self.special_data.resize(new_special_length, -f32::INFINITY);
-        }
+        self.special_data.resize(new_special_length, -f32::INFINITY);
 
         self.row_start_offsets = row_offsets;
         self.block_offsets = block_offsets;

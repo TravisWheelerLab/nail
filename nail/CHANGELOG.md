@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - added Stats module for keeping track of pipeline summary statistics
+- search pipeline now uses the thread_local crate instead of letting Rayon
+  clone whenever it wants to
+- added progress bars
 
 ### Changed
 

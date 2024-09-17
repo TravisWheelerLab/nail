@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - fields are now grouped into sub-structs
     - now stores relevant timings
     - refactored AlignmentBuilder for changes
+- DpMatrixSparse should now resize properly
 
 ### Deprecated
 

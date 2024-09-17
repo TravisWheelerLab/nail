@@ -2,6 +2,7 @@ mod cloud_step;
 pub use cloud_step::*;
 
 mod seed_step;
+use indicatif::ProgressBar;
 pub use seed_step::*;
 
 mod align_step;
@@ -9,7 +10,9 @@ pub use align_step::*;
 
 mod output_step;
 pub use output_step::*;
+use thread_local::ThreadLocal;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -112,11 +115,18 @@ impl Pipeline {
 
         let now = Instant::now();
         match self.output.lock() {
-            Ok(mut guard) => guard.write(&mut passed_e_value).unwrap(),
+            Ok(mut guard) => {
+                self.stats
+                    .add_threaded_time(ThreadTimed::OutputMutex, now.elapsed());
+                let now = Instant::now();
+                guard.write(&mut passed_e_value).unwrap();
+                self.stats
+                    .add_threaded_time(ThreadTimed::OutputWrite, now.elapsed());
+            }
             Err(_) => panic!(),
         };
         self.stats
-            .add_threaded_time(ThreadTimed::Output, now.elapsed());
+            .add_threaded_time(ThreadTimed::OutputWrite, now.elapsed());
 
         Ok(passed_e_value)
     }
@@ -127,16 +137,28 @@ pub fn run_pipeline_profile_to_sequence(
     targets: &HashMap<String, Sequence>,
     pipeline: &mut Pipeline,
 ) {
-    queries.par_iter_mut().panic_fuse().for_each_with(
-        (pipeline.clone(), targets),
-        |(pipeline, targets), profile| {
+    let bar = Arc::new(ProgressBar::new(queries.len() as u64));
+    let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
+
+    queries
+        .par_iter_mut()
+        .panic_fuse()
+        .for_each_with(targets, |targets, profile| {
             let now = Instant::now();
+            let mut pipeline = thread_local_pipeline
+                .get_or(|| RefCell::new(pipeline.clone()))
+                .borrow_mut();
+
             let _ = pipeline.run(profile, targets);
+
+            bar.inc(1);
+
             pipeline
                 .stats
                 .add_threaded_time(ThreadTimed::Total, now.elapsed())
-        },
-    );
+        });
+
+    bar.finish();
 }
 
 pub fn run_pipeline_sequence_to_sequence(
@@ -144,10 +166,19 @@ pub fn run_pipeline_sequence_to_sequence(
     targets: &HashMap<String, Sequence>,
     pipeline: &mut Pipeline,
 ) {
-    queries.par_iter().panic_fuse().for_each_with(
-        (pipeline.clone(), targets),
-        |(pipeline, targets), sequence| {
+    let bar = Arc::new(ProgressBar::new(queries.len() as u64));
+    let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
+
+    queries
+        .par_iter()
+        .panic_fuse()
+        .for_each_with(targets, |targets, sequence| {
             let now = Instant::now();
+
+            let mut pipeline = thread_local_pipeline
+                .get_or(|| RefCell::new(pipeline.clone()))
+                .borrow_mut();
+
             let mut profile = Hmm::from_blosum_62_and_sequence(sequence)
                 .map(|h| Profile::new(&h))
                 .expect("failed to build profile from sequence");
@@ -159,9 +190,12 @@ pub fn run_pipeline_sequence_to_sequence(
 
             let _ = pipeline.run(&mut profile, targets);
 
+            bar.inc(1);
+
             pipeline
                 .stats
                 .add_threaded_time(ThreadTimed::Total, now.elapsed())
-        },
-    );
+        });
+
+    bar.finish();
 }

@@ -23,7 +23,8 @@ const NUM_SERIAL_TIMED: usize = SerialTimed::_SENTINEL as usize;
 pub enum ThreadTimed {
     Total,
     // Input,
-    Output,
+    OutputWrite,
+    OutputMutex,
     MemoryInit,
     HmmBuild,
     CloudSearch,
@@ -128,12 +129,29 @@ impl Stats {
         )
     }
 
-    pub fn thread_string(&self, step: ThreadTimed) -> String {
-        let width = format!(
+    pub fn fmt_width(&self) -> usize {
+        format!(
             "{:.2}",
             self.thread_time_total(ThreadTimed::Total).as_secs_f64()
         )
-        .len();
+        .len()
+    }
+
+    pub fn thread_string_combined(&self, steps: &[ThreadTimed]) -> String {
+        let width = self.fmt_width();
+
+        let total_time: f64 = steps
+            .iter()
+            .map(|s| self.thread_time_total(*s).as_secs_f64())
+            .sum();
+
+        let pct_time: f64 = steps.iter().map(|s| self.thread_time_pct(*s) * 100.0).sum();
+
+        format!("{:w$.2}s ({:>5.2}%)", total_time, pct_time, w = width,)
+    }
+
+    pub fn thread_string(&self, step: ThreadTimed) -> String {
+        let width = self.fmt_width();
 
         format!(
             "{:w$.2}s ({:>5.2}%)",
@@ -166,63 +184,69 @@ impl Stats {
 
         writeln!(
             out,
-            "     ├─ memory init:  {}",
+            "     ├─ memory init:   {}",
             self.thread_string(ThreadTimed::MemoryInit)
         )?;
 
         if self.thread_time_total(ThreadTimed::HmmBuild).as_secs_f64() > 0.0 {
             writeln!(
                 out,
-                "     ├─ hmm build:    {}",
+                "     ├─ hmm build:     {}",
                 self.thread_string(ThreadTimed::HmmBuild)
             )?;
         }
 
         writeln!(
             out,
-            "     ├─ cloud search: {}",
+            "     ├─ cloud search:  {}",
             self.thread_string(ThreadTimed::CloudSearch)
         )?;
 
         writeln!(
             out,
-            "     ├─ forward:      {}",
+            "     ├─ forward:       {}",
             self.thread_string(ThreadTimed::Forward)
         )?;
 
         writeln!(
             out,
-            "     ├─ backward:     {}",
+            "     ├─ backward:      {}",
             self.thread_string(ThreadTimed::Backward)
         )?;
 
         writeln!(
             out,
-            "     ├─ posterior:    {}",
+            "     ├─ posterior:     {}",
             self.thread_string(ThreadTimed::Posterior)
         )?;
 
         writeln!(
             out,
-            "     ├─ traceback:    {}",
+            "     ├─ traceback:     {}",
             self.thread_string(ThreadTimed::Traceback)
         )?;
 
         writeln!(
             out,
-            "     ├─ null two:     {}",
+            "     ├─ null two:      {}",
             self.thread_string(ThreadTimed::NullTwo)
         )?;
 
         writeln!(
             out,
-            "     └─ output:       {}",
-            self.thread_string(ThreadTimed::Output)
+            "     ├─ output (mutex): {}",
+            self.thread_string(ThreadTimed::OutputMutex)
         )?;
 
         writeln!(
             out,
-            "     └─ [???]         {}",
+            "     ├─ output (write): {}",
+            self.thread_string(ThreadTimed::OutputWrite)
+        )?;
+
+        writeln!(
+            out,
+            "     └─ [???]          {}",
             self.thread_string(ThreadTimed::_SENTINEL)
         )?;
 
