@@ -8,8 +8,8 @@ use std::time::Instant;
 use crate::args::{SearchArgs, SeedArgs};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, CloudSearchInvestigator, DefaultAlignStep, DefaultCloudSearchStep,
-    DefaultSeedStep, FullDpCloudSearchStep, OutputStep, Pipeline, PipelineConfig, SeedMap,
+    seed_sequence_to_sequence, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
+    FullDpCloudSearchStep, OutputStep, Pipeline, PipelineConfig, SeedMap,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
