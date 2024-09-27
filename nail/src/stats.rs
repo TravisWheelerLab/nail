@@ -208,6 +208,10 @@ impl Stats {
     pub fn write_stats(&self, out: &mut impl Write) -> anyhow::Result<()> {
         let max_width = ComputedValue::iter()
             .map(|c| format!("{c:?}: {}", Self::format_num(self.computed_value(c))).len())
+            .chain(
+                CountedValue::iter()
+                    .map(|c| format!("{c:?}: {}", Self::format_num(self.counted_value(c))).len()),
+            )
             .max()
             .unwrap_or(0);
 
@@ -217,11 +221,6 @@ impl Stats {
             let count = Self::format_num(self.computed_value(c));
             writeln!(out, "{label}: {count:>w$}", w = max_width - label_width)
         })?;
-
-        let max_width = CountedValue::iter()
-            .map(|c| format!("{c:?}: {}", Self::format_num(self.counted_value(c))).len())
-            .max()
-            .unwrap_or(0);
 
         CountedValue::iter().try_for_each(|c| {
             let label = format!("{c:?}");
