@@ -3,7 +3,7 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-use super::CloudSearchScores;
+use super::CloudSearchResults;
 
 /// A wrapper around f32 to describe nats
 #[derive(Clone, Copy)]
@@ -160,7 +160,10 @@ pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
 }
 
 /// Compute the cloud score: the approximation of the forward score of the entire cloud.
-pub fn cloud_score(forward_scores: &CloudSearchScores, reverse_scores: &CloudSearchScores) -> Nats {
+pub fn cloud_score(
+    forward_scores: &CloudSearchResults,
+    reverse_scores: &CloudSearchResults,
+) -> Nats {
     // this approximates the score for the forward
     // cloud that extends past the seed end point
     let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;

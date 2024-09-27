@@ -3,7 +3,7 @@ pub mod structs;
 mod cloud_search;
 pub use cloud_search::{
     cloud_search_backward, cloud_search_forward, prune_and_scrub, scrub_co_located,
-    CloudSearchParams, CloudSearchScores,
+    CloudSearchParams, CloudSearchResults,
 };
 
 mod forward;
