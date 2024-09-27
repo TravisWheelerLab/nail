@@ -535,6 +535,7 @@ mod tests {
             row_capacity: 0,
             left_row_bounds: vec![0, 1, 1, 2, 3, 4],
             right_row_bounds: vec![0, 2, 3, 4, 5, 5],
+            num_cells: 0,
         };
 
         (bounds.target_start..=bounds.target_end).for_each(|row| {

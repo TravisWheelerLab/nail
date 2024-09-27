@@ -151,7 +151,6 @@ pub struct AlignmentBuilder<'a> {
     posterior_time: Option<Duration>,
     traceback_time: Option<Duration>,
     null_two_time: Option<Duration>,
-    cell_count_time: Option<Duration>,
 }
 
 impl<'a> AlignmentBuilder<'a> {
@@ -186,8 +185,8 @@ impl<'a> AlignmentBuilder<'a> {
         self
     }
 
-    pub fn with_cell_count(mut self, cell_count: Option<usize>) -> Self {
-        self.cell_count = cell_count;
+    pub fn with_cell_count(mut self, cell_count: usize) -> Self {
+        self.cell_count = Some(cell_count);
         self
     }
 
@@ -218,11 +217,6 @@ impl<'a> AlignmentBuilder<'a> {
 
     pub fn with_null_two_time(mut self, time: Duration) -> Self {
         self.null_two_time = Some(time);
-        self
-    }
-
-    pub fn with_cell_count_time(mut self, time: Duration) -> Self {
-        self.cell_count_time = Some(time);
         self
     }
 

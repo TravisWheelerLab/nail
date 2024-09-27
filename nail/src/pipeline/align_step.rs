@@ -14,15 +14,11 @@ use crate::args::SearchArgs;
 #[derive(Clone)]
 pub struct AlignConfig {
     pub do_null_two: bool,
-    pub do_cell_stats: bool,
 }
 
 impl Default for AlignConfig {
     fn default() -> Self {
-        Self {
-            do_null_two: true,
-            do_cell_stats: true,
-        }
+        Self { do_null_two: true }
     }
 }
 
@@ -93,6 +89,7 @@ impl AlignStep for DefaultAlignStep {
             .with_profile(profile)
             .with_target(target)
             .with_database_size(self.target_count)
+            .with_cell_count(bounds.num_cells)
             .with_forward_score(forward_score)
             .with_init_time(init_time)
             .with_forward_time(forward_time);
@@ -157,25 +154,15 @@ impl AlignStep for DefaultAlignStep {
         };
         let null_two_time = now.elapsed();
 
-        let now = Instant::now();
-        let cell_count = if self.config.do_cell_stats {
-            Some(bounds.num_cells())
-        } else {
-            None
-        };
-        let cell_count_time = now.elapsed();
-
         alignment
             .with_trace(&trace)
             .with_null_two(null_two)
-            .with_cell_count(cell_count)
             .with_init_time(init_time)
             .with_backward_time(backward_time)
             .with_posterior_time(posterior_time)
             .with_optimal_accuracy_time(optimal_accuracy_time)
             .with_traceback_time(traceback_time)
             .with_null_two_time(null_two_time)
-            .with_cell_count_time(cell_count_time)
             .build()
     }
 }

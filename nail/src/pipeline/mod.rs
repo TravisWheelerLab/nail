@@ -23,7 +23,7 @@ use thiserror::Error;
 use libnail::align::structs::Alignment;
 use libnail::structs::{Hmm, Profile, Sequence};
 
-use crate::stats::{FilterStage, Stats, ThreadTimed};
+use crate::stats::{CountedValue, Stats, ThreadedTimed};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -67,17 +67,22 @@ impl Pipeline {
             Some(seeds) => seeds
                 .iter()
                 .filter_map(|(target_name, seed)| {
-                    self.stats.increment_passed(FilterStage::Seed);
+                    self.stats.increment_count(CountedValue::Seeds);
 
                     let target = targets.get(target_name)?;
+
+                    self.stats
+                        .add_count(CountedValue::SeedCells, profile.length * target.length);
 
                     let now = Instant::now();
                     let maybe_bounds = self.cloud_search.run(profile, target, seed);
                     self.stats
-                        .add_threaded_time(ThreadTimed::CloudSearch, now.elapsed());
+                        .add_threaded_time(ThreadedTimed::CloudSearch, now.elapsed());
 
                     maybe_bounds.map(|bounds| {
-                        self.stats.increment_passed(FilterStage::Cloud);
+                        self.stats.increment_count(CountedValue::PassedCloud);
+                        self.stats
+                            .add_count(CountedValue::CloudCells, bounds.num_cells);
                         self.align.run(profile, target, bounds).unwrap()
                     })
                 })
@@ -85,10 +90,14 @@ impl Pipeline {
         };
 
         alignments.iter().for_each(|ali| {
+            self.stats.add_count(
+                CountedValue::ForwardCells,
+                ali.cell_stats.as_ref().map_or(0, |s| s.count),
+            );
             self.stats
-                .add_threaded_time(ThreadTimed::MemoryInit, ali.times.init);
+                .add_threaded_time(ThreadedTimed::MemoryInit, ali.times.init);
             self.stats
-                .add_threaded_time(ThreadTimed::Forward, ali.times.forward);
+                .add_threaded_time(ThreadedTimed::Forward, ali.times.forward);
         });
 
         let passed_forward: Vec<_> = alignments
@@ -97,15 +106,19 @@ impl Pipeline {
             .collect();
 
         passed_forward.iter().for_each(|ali| {
-            self.stats.increment_passed(FilterStage::Forward);
+            self.stats.add_count(
+                CountedValue::BackwardCells,
+                ali.cell_stats.as_ref().map_or(0, |s| s.count),
+            );
+            self.stats.increment_count(CountedValue::PassedForward);
             self.stats
-                .add_threaded_time(ThreadTimed::Backward, ali.times.backward);
+                .add_threaded_time(ThreadedTimed::Backward, ali.times.backward);
             self.stats
-                .add_threaded_time(ThreadTimed::Posterior, ali.times.posterior);
+                .add_threaded_time(ThreadedTimed::Posterior, ali.times.posterior);
             self.stats
-                .add_threaded_time(ThreadTimed::Traceback, ali.times.traceback);
+                .add_threaded_time(ThreadedTimed::Traceback, ali.times.traceback);
             self.stats
-                .add_threaded_time(ThreadTimed::NullTwo, ali.times.null_two);
+                .add_threaded_time(ThreadedTimed::NullTwo, ali.times.null_two);
         });
 
         let mut passed_e_value: Vec<_> = passed_forward
@@ -117,16 +130,16 @@ impl Pipeline {
         match self.output.lock() {
             Ok(mut guard) => {
                 self.stats
-                    .add_threaded_time(ThreadTimed::OutputMutex, now.elapsed());
+                    .add_threaded_time(ThreadedTimed::OutputMutex, now.elapsed());
                 let now = Instant::now();
                 guard.write(&mut passed_e_value).unwrap();
                 self.stats
-                    .add_threaded_time(ThreadTimed::OutputWrite, now.elapsed());
+                    .add_threaded_time(ThreadedTimed::OutputWrite, now.elapsed());
             }
             Err(_) => panic!(),
         };
         self.stats
-            .add_threaded_time(ThreadTimed::OutputWrite, now.elapsed());
+            .add_threaded_time(ThreadedTimed::OutputWrite, now.elapsed());
 
         Ok(passed_e_value)
     }
@@ -155,7 +168,7 @@ pub fn run_pipeline_profile_to_sequence(
 
             pipeline
                 .stats
-                .add_threaded_time(ThreadTimed::Total, now.elapsed())
+                .add_threaded_time(ThreadedTimed::Total, now.elapsed())
         });
 
     bar.finish();
@@ -186,7 +199,7 @@ pub fn run_pipeline_sequence_to_sequence(
 
             pipeline
                 .stats
-                .add_threaded_time(ThreadTimed::HmmBuild, now.elapsed());
+                .add_threaded_time(ThreadedTimed::HmmBuild, now.elapsed());
 
             let _ = pipeline.run(&mut profile, targets);
 
@@ -194,7 +207,7 @@ pub fn run_pipeline_sequence_to_sequence(
 
             pipeline
                 .stats
-                .add_threaded_time(ThreadTimed::Total, now.elapsed())
+                .add_threaded_time(ThreadedTimed::Total, now.elapsed())
         });
 
     bar.finish();

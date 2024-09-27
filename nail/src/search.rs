@@ -11,7 +11,7 @@ use crate::pipeline::{
     seed_sequence_to_sequence, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
     FullDpCloudSearchStep, OutputStep, Pipeline, PipelineConfig, SeedMap,
 };
-use crate::stats::{SerialTimed, Stats};
+use crate::stats::{ComputedValue, SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
 use libnail::structs::{Hmm, Profile, Sequence};
@@ -22,6 +22,22 @@ use serde::Serialize;
 pub enum Queries {
     Sequence(Vec<Sequence>),
     Profile(Vec<Profile>),
+}
+
+impl Queries {
+    pub fn len(&self) -> usize {
+        match self {
+            Queries::Sequence(q) => q.len(),
+            Queries::Profile(q) => q.len(),
+        }
+    }
+
+    pub fn lengths(&self) -> Vec<usize> {
+        match self {
+            Queries::Sequence(queries) => queries.iter().map(|q| q.length).collect(),
+            Queries::Profile(queries) => queries.iter().map(|q| q.length).collect(),
+        }
+    }
 }
 
 fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
@@ -87,12 +103,27 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         }
     }
 
-    let mut stats = Stats::default();
-
     let queries = read_queries(&args.query_path)?;
 
     let targets =
         Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
+
+    let mut stats = Stats::default();
+
+    stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
+    stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
+    stats.set_computed_value(
+        ComputedValue::Alignments,
+        (queries.len() * targets.len()) as u64,
+    );
+    stats.set_computed_value(
+        ComputedValue::Cells,
+        queries
+            .lengths()
+            .iter()
+            .flat_map(|len| targets.iter().map(move |t| (t.length * len) as u64))
+            .sum(),
+    );
 
     match args.nail_args.target_database_size {
         Some(_) => {}

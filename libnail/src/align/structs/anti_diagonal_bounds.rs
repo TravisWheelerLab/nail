@@ -139,6 +139,15 @@ impl AntiDiagonal {
             && self.left_profile_idx <= self.right_profile_idx
     }
 
+    pub fn len(&self) -> usize {
+        self.right_profile_idx - self.left_profile_idx + 1
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn idx(&self) -> usize {
         self.left_target_idx + self.left_profile_idx
     }
