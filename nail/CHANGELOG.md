@@ -18,12 +18,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- added Stats module for keeping track of pipeline summary statistics
-- search pipeline now uses the thread_local crate instead of letting Rayon
-  clone whenever it wants to
+- added `Stats` module for keeping track of pipeline summary statistics
+- search pipeline now uses the `thread_local` crate instead of letting Rayon clone whenever it wants to
 - added progress bars
+- added `stats_results_path` to `OutputArgs` struct
+- added `StageResult<S, D>` enum where:
+    - `StageResult::Filtered` indicates that the result was filtered, and
+    - `StageResult::Passed` indicates that the result should be passed to the next stage
+- added `PipelineResult` struct, which captures the `StageResult` returned by each pipeline stage
+- added dependency on the `derive_builder` crate
+- added `CloudStageStats`, `AlignStageStats`, and `OutputStageStats` structs, each of which has a derived builder struct from the `derive_builder` crate
+
 
 ### Changed
+
+- `OutputArgs.evalue_threshold` field renamed to `e_value_threshold`
+- refactored `Pipeline` struct:
+    - `output` field is now a clonable `OutputStep` instead of `Arc<Mutex<OutputStep>>`
+    - `run()` now returns `anyhow::Result<()>` instead of `anyhow::Result<Vec<Alignment>>`
+    - `run()` now keeps better track of filtered results and relevant stats using the `PipelineResult` struct
+- refactored pipeline stage structs:
+    - they have been renamed from Step to Stage
+    - each stage now returns a `StageResult<S, D>` where:
+        - S is a struct containing observations for pipeline summary statistics
+        - D is a struct containing the data structure relevant to the stage
+    - `OutputStage` now:
+        - holds an `Arc<Mutex<T>>` for each individual writer
+        - can optionally write any or none of the output categories
+        - can now write summary statistics to the `stats_results_path` data for each call to `Pipeline.run()`
 
 ### Deprecated
 

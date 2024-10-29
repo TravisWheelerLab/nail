@@ -1,3 +1,4 @@
+use libnail::structs::Sequence;
 use std::{
     fmt::Debug,
     io::Write,
@@ -8,6 +9,14 @@ use std::{
     time::Duration,
 };
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
+
+use crate::{
+    pipeline::{
+        OutputStageStats, PipelineResult,
+        StageResult::{Filtered, Passed},
+    },
+    search::Queries,
+};
 
 #[repr(usize)]
 #[derive(Clone, Copy, EnumIter, EnumCount)]
@@ -82,7 +91,8 @@ pub enum CountedValue {
     PassedCloud,
     PassedForward,
     SeedCells,
-    CloudCells,
+    CloudForwardCells,
+    CloudBackwardCells,
     ForwardCells,
     BackwardCells,
 }
@@ -94,7 +104,8 @@ impl Debug for CountedValue {
             CountedValue::PassedCloud => "passed cloud filter",
             CountedValue::PassedForward => "passed forward filter",
             CountedValue::SeedCells => "seed cells",
-            CountedValue::CloudCells => "cloud cells computed",
+            CountedValue::CloudForwardCells => "cloud forward cells computed",
+            CountedValue::CloudBackwardCells => "cloud backward cells computed",
             CountedValue::ForwardCells => "forward cells computed",
             CountedValue::BackwardCells => "backward cells computed",
         };
@@ -113,6 +124,93 @@ pub struct Stats {
 }
 
 impl Stats {
+    pub fn new(queries: &Queries, targets: &[Sequence]) -> Self {
+        let mut stats = Self::default();
+
+        stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
+        stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
+        stats.set_computed_value(
+            ComputedValue::Alignments,
+            (queries.len() * targets.len()) as u64,
+        );
+        stats.set_computed_value(
+            ComputedValue::Cells,
+            queries
+                .lengths()
+                .iter()
+                .flat_map(|len| targets.iter().map(move |t| (t.length * len) as u64))
+                .sum(),
+        );
+
+        stats
+    }
+
+    pub fn add_sample(
+        &mut self,
+        pipeline_results: &[PipelineResult],
+        output_stats: &OutputStageStats,
+    ) {
+        pipeline_results.iter().for_each(|result| {
+            self.increment_count(CountedValue::Seeds);
+            self.add_count(
+                CountedValue::SeedCells,
+                result.profile_length * result.target_length,
+            );
+
+            if let Some(ref result) = result.cloud_result {
+                match result {
+                    Filtered { stats } => {
+                        self.add_count(CountedValue::CloudForwardCells, stats.forward_cells);
+                        self.add_count(CountedValue::CloudBackwardCells, stats.backward_cells);
+
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.memory_init_time);
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.forward_time);
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.backward_time);
+                    }
+                    Passed { stats, .. } => {
+                        self.increment_count(CountedValue::PassedCloud);
+
+                        self.add_count(CountedValue::CloudForwardCells, stats.forward_cells);
+                        self.add_count(CountedValue::CloudBackwardCells, stats.backward_cells);
+
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.memory_init_time);
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.forward_time);
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.backward_time);
+
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.reorient_time);
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.merge_time);
+                        self.add_threaded_time(ThreadedTimed::CloudSearch, stats.trim_time);
+                    }
+                }
+            }
+
+            if let Some(ref result) = result.align_result {
+                match result {
+                    Filtered { stats } => {
+                        self.add_count(CountedValue::ForwardCells, stats.forward_cells);
+
+                        self.add_threaded_time(ThreadedTimed::MemoryInit, stats.memory_init_time);
+                        self.add_threaded_time(ThreadedTimed::Forward, stats.forward_time);
+                    }
+                    Passed { stats, .. } => {
+                        self.increment_count(CountedValue::PassedForward);
+
+                        self.add_count(CountedValue::ForwardCells, stats.forward_cells);
+                        self.add_count(CountedValue::BackwardCells, stats.backward_cells);
+
+                        self.add_threaded_time(ThreadedTimed::MemoryInit, stats.memory_init_time);
+                        self.add_threaded_time(ThreadedTimed::Forward, stats.forward_time);
+
+                        self.add_threaded_time(ThreadedTimed::Backward, stats.backward_time);
+                        self.add_threaded_time(ThreadedTimed::Posterior, stats.posterior_time);
+                        self.add_threaded_time(ThreadedTimed::Traceback, stats.traceback_time);
+                        self.add_threaded_time(ThreadedTimed::NullTwo, stats.null_two_time);
+                    }
+                }
+            }
+        });
+    }
+
     pub fn set_serial_time(&mut self, timed: SerialTimed, time: Duration) {
         self.serial_times[timed as usize] = time;
     }
@@ -123,37 +221,37 @@ impl Stats {
         self.threaded_times_num_samples[timed as usize].fetch_add(1, Ordering::SeqCst);
     }
 
-    pub fn serial_time_total(&self, timed: SerialTimed) -> Duration {
+    fn serial_time_total(&self, timed: SerialTimed) -> Duration {
         self.serial_times[timed as usize]
     }
 
-    pub fn threaded_time_total(&self, timed: ThreadedTimed) -> Duration {
+    fn threaded_time_total(&self, timed: ThreadedTimed) -> Duration {
         let nanos = self.threaded_times[timed as usize].load(Ordering::SeqCst);
         Duration::from_nanos(nanos)
     }
 
-    pub fn serial_time_pct(&self, timed: SerialTimed) -> f64 {
+    fn serial_time_pct(&self, timed: SerialTimed) -> f64 {
         let total_nanos = Self::nanos(self.serial_times[ThreadedTimed::Total as usize]) as f64;
         let nanos = Self::nanos(self.serial_times[timed as usize]) as f64;
 
         nanos / total_nanos
     }
 
-    pub fn threaded_time_pct(&self, timed: ThreadedTimed) -> f64 {
+    fn threaded_time_pct(&self, timed: ThreadedTimed) -> f64 {
         let total_nanos = Self::nanos(self.threaded_time_total(ThreadedTimed::Total)) as f64;
         let nanos = Self::nanos(self.threaded_time_total(timed)) as f64;
 
         nanos / total_nanos
     }
 
-    pub fn threaded_untimed_pct(&self) -> f64 {
+    fn threaded_untimed_pct(&self) -> f64 {
         let total_nanos = Self::nanos(self.threaded_time_total(ThreadedTimed::Total)) as f64;
         let untimed_nanos = Self::nanos(self.threaded_untimed_total()) as f64;
 
         untimed_nanos / total_nanos
     }
 
-    pub fn threaded_untimed_total(&self) -> Duration {
+    fn threaded_untimed_total(&self) -> Duration {
         let total = self.threaded_time_total(ThreadedTimed::Total);
 
         let timed_sum = self.threaded_times[1..]
@@ -164,15 +262,15 @@ impl Stats {
         total - timed_sum
     }
 
-    pub fn computed_value(&self, computed: ComputedValue) -> u64 {
+    fn computed_value(&self, computed: ComputedValue) -> u64 {
         self.computed_values[computed as usize]
     }
 
-    pub fn set_computed_value(&mut self, computed: ComputedValue, value: u64) {
+    fn set_computed_value(&mut self, computed: ComputedValue, value: u64) {
         self.computed_values[computed as usize] = value
     }
 
-    pub fn counted_value(&self, counted: CountedValue) -> u64 {
+    fn counted_value(&self, counted: CountedValue) -> u64 {
         self.counted_values[counted as usize].load(Ordering::SeqCst)
     }
 

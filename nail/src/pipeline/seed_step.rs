@@ -96,7 +96,7 @@ pub fn seed_sequence_to_sequence(
     Ok(seeds)
 }
 
-pub trait SeedStep: dyn_clone::DynClone {
+pub trait SeedStage: dyn_clone::DynClone {
     fn run(
         &mut self,
         profile: &Profile,
@@ -104,22 +104,22 @@ pub trait SeedStep: dyn_clone::DynClone {
     ) -> Option<&HashMap<String, Seed>>;
 }
 
-dyn_clone::clone_trait_object!(SeedStep);
+dyn_clone::clone_trait_object!(SeedStage);
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
 
 #[derive(Default, Clone)]
-pub struct DefaultSeedStep {
+pub struct DefaultSeedStage {
     seeds: SeedMap,
 }
 
-impl DefaultSeedStep {
+impl DefaultSeedStage {
     pub fn new(seeds: SeedMap) -> Self {
-        DefaultSeedStep { seeds }
+        DefaultSeedStage { seeds }
     }
 }
 
-impl SeedStep for DefaultSeedStep {
+impl SeedStage for DefaultSeedStage {
     fn run(
         &mut self,
         profile: &Profile,

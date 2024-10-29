@@ -166,7 +166,7 @@ pub struct NailArgs {
 pub struct OutputArgs {
     /// Only report hits with an E-value below this value
     #[arg(short = 'E', default_value_t = 10.0, value_name = "F")]
-    pub evalue_threshold: f64,
+    pub e_value_threshold: f64,
 
     /// Where to place tabular output
     #[arg(
@@ -180,4 +180,13 @@ pub struct OutputArgs {
     /// Where to place alignment output
     #[arg(short = 'O', long = "output", value_name = "path")]
     pub ali_results_path: Option<PathBuf>,
+
+    /// Where to place stats output
+    #[arg(
+        short = 'S',
+        long = "stats-output",
+        default_value = "stats.tbl",
+        value_name = "path"
+    )]
+    pub stats_results_path: Option<PathBuf>,
 }

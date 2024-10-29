@@ -2,16 +2,15 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{stdout, BufReader, BufWriter};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::args::{SearchArgs, SeedArgs};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, DefaultAlignStep, DefaultCloudSearchStep, DefaultSeedStep,
-    FullDpCloudSearchStep, OutputStep, Pipeline, PipelineConfig, SeedMap,
+    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
+    FullDpCloudSearchStage, OutputStage, Pipeline, SeedMap,
 };
-use crate::stats::{ComputedValue, SerialTimed, Stats};
+use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
 use libnail::structs::{Hmm, Profile, Sequence};
@@ -108,22 +107,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let targets =
         Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
 
-    let mut stats = Stats::default();
-
-    stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
-    stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
-    stats.set_computed_value(
-        ComputedValue::Alignments,
-        (queries.len() * targets.len()) as u64,
-    );
-    stats.set_computed_value(
-        ComputedValue::Cells,
-        queries
-            .lengths()
-            .iter()
-            .flat_map(|len| targets.iter().map(move |t| (t.length * len) as u64))
-            .sum(),
-    );
+    let mut stats = Stats::new(&queries, &targets);
 
     match args.nail_args.target_database_size {
         Some(_) => {}
@@ -167,18 +151,13 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     };
 
     let mut pipeline = Pipeline {
-        config: PipelineConfig {
-            cloud_threshold: args.nail_args.cloud_pvalue_threshold,
-            forward_threshold: args.nail_args.forward_pvalue_threshold,
-            e_value_threshold: args.output_args.evalue_threshold,
-        },
-        seed: Box::new(DefaultSeedStep::new(seeds)),
+        seed: Box::new(DefaultSeedStage::new(seeds)),
         cloud_search: match args.nail_args.full_dp {
-            true => Box::<FullDpCloudSearchStep>::default(),
-            false => Box::new(DefaultCloudSearchStep::new(&args)),
+            true => Box::<FullDpCloudSearchStage>::default(),
+            false => Box::new(DefaultCloudSearchStage::new(&args)),
         },
-        align: Box::new(DefaultAlignStep::new(&args)),
-        output: Arc::new(Mutex::new(OutputStep::new(&args.output_args)?)),
+        align: Box::new(DefaultAlignStage::new(&args)),
+        output: OutputStage::new(&args.output_args)?,
         stats,
     };
 

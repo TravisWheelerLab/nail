@@ -30,3 +30,4 @@ indicatif = "0.17.8"
 dyn-clone = "1.0.17"
 strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
+derive_builder = "0.20.1"

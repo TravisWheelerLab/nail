@@ -1,69 +1,100 @@
+use std::time::{Duration, Instant};
+
+use derive_builder::Builder;
 use libnail::{
     align::{
         cloud_score, cloud_search_backward, cloud_search_forward, p_value,
         structs::{AntiDiagonalBounds, CloudMatrixLinear, RowBounds, Seed},
-        CloudSearchParams,
+        CloudSearchParams, Nats,
     },
     structs::{Profile, Sequence},
 };
 
 use crate::args::SearchArgs;
 
-pub trait CloudSearchStep: dyn_clone::DynClone {
-    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds>;
+use super::StageResult;
+
+pub type CloudStageResult = StageResult<RowBounds, CloudStageStats>;
+
+impl CloudStageResult {
+    pub fn tab_string(&self) -> String {
+        match self {
+            StageResult::Filtered { stats } => {
+                format!(
+                    "F {:.2}n {:.1e} {} {} {} {}",
+                    stats.score.value(),
+                    stats.p_value,
+                    stats.forward_cells,
+                    stats.backward_cells,
+                    stats.forward_time.as_nanos(),
+                    stats.backward_time.as_nanos(),
+                )
+            }
+            StageResult::Passed {
+                stats,
+                data: bounds,
+            } => {
+                format!(
+                    "P {:.2}b {:.1e} {} {} {} {} {}",
+                    stats.score.value(),
+                    stats.p_value,
+                    stats.forward_cells,
+                    stats.backward_cells,
+                    bounds.num_cells,
+                    stats.forward_time.as_nanos(),
+                    stats.backward_time.as_nanos(),
+                )
+            }
+        }
+    }
 }
 
-dyn_clone::clone_trait_object!(CloudSearchStep);
+#[derive(Builder, Default)]
+#[builder(setter(strip_option), default)]
+pub struct CloudStageStats {
+    pub forward_cells: usize,
+    pub backward_cells: usize,
+    pub score: Nats,
+    pub p_value: f64,
+    pub memory_init_time: Duration,
+    pub forward_time: Duration,
+    pub backward_time: Duration,
+    pub merge_time: Duration,
+    pub trim_time: Duration,
+    pub reorient_time: Duration,
+}
+
+pub trait CloudSearchStage: dyn_clone::DynClone {
+    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult;
+}
+
+dyn_clone::clone_trait_object!(CloudSearchStage);
 
 #[derive(Default, Clone)]
-pub struct FullDpCloudSearchStep {
-    row_bounds: RowBounds,
-}
+pub struct FullDpCloudSearchStage {}
 
-impl CloudSearchStep for FullDpCloudSearchStep {
-    fn run(&mut self, profile: &Profile, target: &Sequence, _seed: &Seed) -> Option<&RowBounds> {
-        self.row_bounds
-            .fill_rectangle(1, 1, target.length, profile.length);
-        Some(&self.row_bounds)
+impl CloudSearchStage for FullDpCloudSearchStage {
+    fn run(&mut self, profile: &Profile, target: &Sequence, _seed: &Seed) -> CloudStageResult {
+        let mut row_bounds = RowBounds::default();
+        row_bounds.fill_rectangle(1, 1, target.length, profile.length);
+
+        StageResult::Passed {
+            data: row_bounds,
+            stats: CloudStageStats::default(),
+        }
     }
 }
 
 #[derive(Default, Clone)]
-pub struct DebugCloudSearchStep {
-    row_bounds: RowBounds,
-}
-
-#[allow(dead_code)]
-impl DebugCloudSearchStep {
-    pub fn new(
-        target_start: usize,
-        profile_start: usize,
-        target_end: usize,
-        profile_end: usize,
-    ) -> Self {
-        let mut row_bounds = RowBounds::new(target_end);
-        row_bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
-        Self { row_bounds }
-    }
-}
-
-impl CloudSearchStep for DebugCloudSearchStep {
-    fn run(&mut self, _profile: &Profile, _target: &Sequence, _seed: &Seed) -> Option<&RowBounds> {
-        Some(&self.row_bounds)
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct DefaultCloudSearchStep {
+pub struct DefaultCloudSearchStage {
     cloud_matrix: CloudMatrixLinear,
     forward_bounds: AntiDiagonalBounds,
     reverse_bounds: AntiDiagonalBounds,
-    row_bounds: RowBounds,
     params: CloudSearchParams,
     p_value_threshold: f64,
 }
 
-impl DefaultCloudSearchStep {
+impl DefaultCloudSearchStage {
     pub fn new(args: &SearchArgs) -> Self {
         Self {
             params: CloudSearchParams {
@@ -77,14 +108,19 @@ impl DefaultCloudSearchStep {
     }
 }
 
-impl CloudSearchStep for DefaultCloudSearchStep {
-    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> Option<&RowBounds> {
+impl CloudSearchStage for DefaultCloudSearchStage {
+    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult {
+        let mut stats = CloudStageStatsBuilder::default();
+
+        let now = Instant::now();
         self.cloud_matrix.reuse(profile.length);
         self.forward_bounds.reuse(target.length, profile.length);
         self.reverse_bounds.reuse(target.length, profile.length);
-        self.row_bounds.reuse(target.length);
+        let mut row_bounds = RowBounds::new(target.length);
+        stats.memory_init_time(now.elapsed());
 
-        let forward_scores = cloud_search_forward(
+        let now = Instant::now();
+        let forward_results = cloud_search_forward(
             profile,
             target,
             seed,
@@ -92,8 +128,11 @@ impl CloudSearchStep for DefaultCloudSearchStep {
             &self.params,
             &mut self.forward_bounds,
         );
+        stats.forward_time(now.elapsed());
+        stats.forward_cells(forward_results.num_cells_computed);
 
-        let reverse_scores = cloud_search_backward(
+        let now = Instant::now();
+        let backward_results = cloud_search_backward(
             profile,
             target,
             seed,
@@ -101,26 +140,40 @@ impl CloudSearchStep for DefaultCloudSearchStep {
             &self.params,
             &mut self.reverse_bounds,
         );
+        stats.backward_time(now.elapsed());
+        stats.backward_cells(backward_results.num_cells_computed);
 
-        let cloud_score = cloud_score(&forward_scores, &reverse_scores);
-
+        let cloud_score = cloud_score(&forward_results, &backward_results);
         let cloud_p_value = p_value(cloud_score, profile.forward_lambda, profile.forward_tau);
 
+        stats.score(cloud_score);
+        stats.p_value(cloud_p_value);
+
         if cloud_p_value >= self.p_value_threshold {
-            return None;
+            return StageResult::Filtered {
+                stats: stats.build().unwrap(),
+            };
         }
 
+        let now = Instant::now();
         self.forward_bounds.merge(&self.reverse_bounds);
+        stats.merge_time(now.elapsed());
 
         self.forward_bounds.square_corners();
 
-        match self.forward_bounds.trim_wings() {
+        let now = Instant::now();
+        let trim_result = self.forward_bounds.trim_wings();
+        stats.trim_time(now.elapsed());
+
+        match trim_result {
             Ok(_) => {
-                self.row_bounds
-                    .fill_from_anti_diagonal_bounds(&self.forward_bounds);
+                let now = Instant::now();
+                row_bounds.fill_from_anti_diagonal_bounds(&self.forward_bounds);
+                stats.reorient_time(now.elapsed());
             }
+            // TODO: probably want to do something else/extra here
             Err(_) => {
-                self.row_bounds.fill_rectangle(
+                row_bounds.fill_rectangle(
                     seed.target_start,
                     seed.profile_start,
                     seed.target_end,
@@ -129,6 +182,9 @@ impl CloudSearchStep for DefaultCloudSearchStep {
             }
         }
 
-        Some(&self.row_bounds)
+        StageResult::Passed {
+            data: row_bounds,
+            stats: stats.build().unwrap(),
+        }
     }
 }

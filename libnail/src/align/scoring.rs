@@ -6,7 +6,7 @@ use crate::util::log_add;
 use super::CloudSearchResults;
 
 /// A wrapper around f32 to describe nats
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct Nats(pub f32);
 impl Nats {
     pub fn value(&self) -> f32 {
@@ -57,7 +57,7 @@ impl std::ops::Sub<Bits> for Nats {
 }
 
 /// A wrapper around f32 to describe bits
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct Bits(pub f32);
 impl Bits {
     pub fn value(&self) -> f32 {

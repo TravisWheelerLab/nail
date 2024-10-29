@@ -14,16 +14,15 @@ use thread_local::ThreadLocal;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 
-use libnail::align::structs::Alignment;
 use libnail::structs::{Hmm, Profile, Sequence};
 
-use crate::stats::{CountedValue, Stats, ThreadedTimed};
+use crate::stats::{Stats, ThreadedTimed};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -37,20 +36,55 @@ pub struct TargetNotFoundError {
     target_name: String,
 }
 
-#[derive(Default, Clone)]
-pub struct PipelineConfig {
-    pub cloud_threshold: f64,
-    pub forward_threshold: f64,
-    pub e_value_threshold: f64,
+pub enum StageResult<D, S> {
+    Filtered { stats: S },
+    Passed { data: D, stats: S },
+}
+
+impl<D, S> StageResult<D, S> {
+    pub fn stats(&self) -> &S {
+        match self {
+            StageResult::Passed { data: _, stats } => stats,
+            StageResult::Filtered { stats } => stats,
+        }
+    }
+}
+
+pub struct PipelineResult {
+    pub profile_name: String,
+    pub target_name: String,
+    pub profile_length: usize,
+    pub target_length: usize,
+    pub cloud_result: Option<CloudStageResult>,
+    pub align_result: Option<AlignStageResult>,
+}
+
+impl PipelineResult {
+    pub fn tab_string(&self) -> String {
+        format!(
+            "({} {} {} {}) ({}) ({})",
+            self.profile_name,
+            self.target_name,
+            self.profile_length,
+            self.target_length,
+            match self.cloud_result.as_ref() {
+                Some(result) => result.tab_string(),
+                None => "".to_string(),
+            },
+            match self.align_result.as_ref() {
+                Some(result) => result.tab_string(),
+                None => "".to_string(),
+            },
+        )
+    }
 }
 
 #[derive(Clone)]
 pub struct Pipeline {
-    pub config: PipelineConfig,
-    pub seed: Box<dyn SeedStep + Send + Sync>,
-    pub cloud_search: Box<dyn CloudSearchStep + Send + Sync>,
-    pub align: Box<dyn AlignStep + Send + Sync>,
-    pub output: Arc<Mutex<OutputStep>>,
+    pub seed: Box<dyn SeedStage + Send + Sync>,
+    pub cloud_search: Box<dyn CloudSearchStage + Send + Sync>,
+    pub align: Box<dyn AlignStage + Send + Sync>,
+    pub output: OutputStage,
     pub stats: Stats,
 }
 
@@ -59,89 +93,45 @@ impl Pipeline {
         &mut self,
         profile: &mut Profile,
         targets: &HashMap<String, Sequence>,
-    ) -> anyhow::Result<Vec<Alignment>> {
+    ) -> anyhow::Result<()> {
         let seeds = self.seed.run(profile, targets);
 
-        let alignments: Vec<Alignment> = match seeds {
-            None => vec![],
+        let pipeline_results: Vec<PipelineResult> = match seeds {
+            None => return Ok(()),
             Some(seeds) => seeds
                 .iter()
                 .filter_map(|(target_name, seed)| {
-                    self.stats.increment_count(CountedValue::Seeds);
+                    let target = match targets.get(target_name) {
+                        Some(target) => target,
+                        // TODO: probably return an error here instead
+                        None => return None,
+                    };
 
-                    let target = targets.get(target_name)?;
+                    let cloud_result = self.cloud_search.run(profile, target, seed);
 
-                    self.stats
-                        .add_count(CountedValue::SeedCells, profile.length * target.length);
+                    let align_result = match cloud_result {
+                        StageResult::Passed {
+                            data: ref bounds, ..
+                        } => Some(self.align.run(profile, target, &bounds)),
+                        StageResult::Filtered { .. } => None,
+                    };
 
-                    let now = Instant::now();
-                    let maybe_bounds = self.cloud_search.run(profile, target, seed);
-                    self.stats
-                        .add_threaded_time(ThreadedTimed::CloudSearch, now.elapsed());
-
-                    maybe_bounds.map(|bounds| {
-                        self.stats.increment_count(CountedValue::PassedCloud);
-                        self.stats
-                            .add_count(CountedValue::CloudCells, bounds.num_cells);
-                        self.align.run(profile, target, bounds).unwrap()
+                    Some(PipelineResult {
+                        profile_name: profile.name.clone(),
+                        target_name: target.name.clone(),
+                        profile_length: profile.length,
+                        target_length: target.length,
+                        cloud_result: Some(cloud_result),
+                        align_result,
                     })
                 })
                 .collect(),
         };
 
-        alignments.iter().for_each(|ali| {
-            self.stats.add_count(
-                CountedValue::ForwardCells,
-                ali.cell_stats.as_ref().map_or(0, |s| s.count),
-            );
-            self.stats
-                .add_threaded_time(ThreadedTimed::MemoryInit, ali.times.init);
-            self.stats
-                .add_threaded_time(ThreadedTimed::Forward, ali.times.forward);
-        });
+        let output_stats = self.output.run(&pipeline_results)?;
+        self.stats.add_sample(&pipeline_results, &output_stats);
 
-        let passed_forward: Vec<_> = alignments
-            .into_iter()
-            .filter(|ali| ali.boundaries.is_some())
-            .collect();
-
-        passed_forward.iter().for_each(|ali| {
-            self.stats.add_count(
-                CountedValue::BackwardCells,
-                ali.cell_stats.as_ref().map_or(0, |s| s.count),
-            );
-            self.stats.increment_count(CountedValue::PassedForward);
-            self.stats
-                .add_threaded_time(ThreadedTimed::Backward, ali.times.backward);
-            self.stats
-                .add_threaded_time(ThreadedTimed::Posterior, ali.times.posterior);
-            self.stats
-                .add_threaded_time(ThreadedTimed::Traceback, ali.times.traceback);
-            self.stats
-                .add_threaded_time(ThreadedTimed::NullTwo, ali.times.null_two);
-        });
-
-        let mut passed_e_value: Vec<_> = passed_forward
-            .into_iter()
-            .filter(|ali| ali.scores.e_value <= self.config.e_value_threshold)
-            .collect();
-
-        let now = Instant::now();
-        match self.output.lock() {
-            Ok(mut guard) => {
-                self.stats
-                    .add_threaded_time(ThreadedTimed::OutputMutex, now.elapsed());
-                let now = Instant::now();
-                guard.write(&mut passed_e_value).unwrap();
-                self.stats
-                    .add_threaded_time(ThreadedTimed::OutputWrite, now.elapsed());
-            }
-            Err(_) => panic!(),
-        };
-        self.stats
-            .add_threaded_time(ThreadedTimed::OutputWrite, now.elapsed());
-
-        Ok(passed_e_value)
+        Ok(())
     }
 }
 

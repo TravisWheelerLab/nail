@@ -5,7 +5,6 @@ use crate::alphabet::{UTF8_DASH, UTF8_DOT, UTF8_NUMERIC, UTF8_PLUS, UTF8_SPACE};
 use crate::output::output_tabular::{Field, TableFormat};
 use crate::structs::{Profile, Sequence};
 use std::cmp::{max, min};
-use std::time::Duration;
 
 use super::Trace;
 
@@ -56,17 +55,6 @@ pub struct DisplayStrings {
     pub posterior_string: String,
 }
 
-#[derive(Default)]
-pub struct Times {
-    pub init: Duration,
-    pub forward: Duration,
-    pub backward: Duration,
-    pub posterior: Duration,
-    pub optimal_accuracy: Duration,
-    pub null_two: Duration,
-    pub traceback: Duration,
-}
-
 pub struct Alignment {
     /// The name of the profile/model
     pub profile_name: Option<String>,
@@ -80,8 +68,12 @@ pub struct Alignment {
     pub cell_stats: Option<CellStats>,
     /// The strings used for alignment display
     pub display_strings: Option<DisplayStrings>,
-    /// The timings of the various steps involved in computing the alignment
-    pub times: Times,
+}
+
+impl AsRef<Alignment> for &Alignment {
+    fn as_ref(&self) -> &Alignment {
+        self
+    }
 }
 
 /// This maps a probability to a UTF8 byte (u8) to the set 0..9 or * (which represents 10)
@@ -143,14 +135,6 @@ pub struct AlignmentBuilder<'a> {
     forward_score: Option<Bits>,
     null_two: Option<Bits>,
     cell_count: Option<usize>,
-    // times
-    init_time: Option<Duration>,
-    forward_time: Option<Duration>,
-    backward_time: Option<Duration>,
-    optimal_accuracy_time: Option<Duration>,
-    posterior_time: Option<Duration>,
-    traceback_time: Option<Duration>,
-    null_two_time: Option<Duration>,
 }
 
 impl<'a> AlignmentBuilder<'a> {
@@ -187,41 +171,6 @@ impl<'a> AlignmentBuilder<'a> {
 
     pub fn with_cell_count(mut self, cell_count: usize) -> Self {
         self.cell_count = Some(cell_count);
-        self
-    }
-
-    pub fn with_init_time(mut self, time: Duration) -> Self {
-        self.init_time = Some(time);
-        self
-    }
-
-    pub fn with_forward_time(mut self, time: Duration) -> Self {
-        self.forward_time = Some(time);
-        self
-    }
-
-    pub fn with_backward_time(mut self, time: Duration) -> Self {
-        self.backward_time = Some(time);
-        self
-    }
-
-    pub fn with_posterior_time(mut self, time: Duration) -> Self {
-        self.posterior_time = Some(time);
-        self
-    }
-
-    pub fn with_optimal_accuracy_time(mut self, time: Duration) -> Self {
-        self.optimal_accuracy_time = Some(time);
-        self
-    }
-
-    pub fn with_null_two_time(mut self, time: Duration) -> Self {
-        self.null_two_time = Some(time);
-        self
-    }
-
-    pub fn with_traceback_time(mut self, time: Duration) -> Self {
-        self.traceback_time = Some(time);
         self
     }
 
@@ -361,36 +310,6 @@ impl<'a> AlignmentBuilder<'a> {
             _ => None,
         };
 
-        let mut times = Times::default();
-
-        if let Some(time) = self.init_time {
-            times.init = time;
-        }
-
-        if let Some(time) = self.forward_time {
-            times.forward = time;
-        }
-
-        if let Some(time) = self.backward_time {
-            times.backward = time;
-        }
-
-        if let Some(time) = self.posterior_time {
-            times.posterior = time;
-        }
-
-        if let Some(time) = self.optimal_accuracy_time {
-            times.optimal_accuracy = time;
-        }
-
-        if let Some(time) = self.null_two_time {
-            times.null_two = time;
-        }
-
-        if let Some(time) = self.traceback_time {
-            times.traceback = time;
-        }
-
         Ok(Alignment {
             profile_name: self.profile.map(|profile| profile.name.clone()),
             target_name: self.target.map(|target| target.name.clone()),
@@ -398,7 +317,6 @@ impl<'a> AlignmentBuilder<'a> {
             scores,
             cell_stats,
             display_strings,
-            times,
         })
     }
 }

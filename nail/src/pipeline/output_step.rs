@@ -1,11 +1,19 @@
-use std::io::{stdout, Write};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
+use anyhow::{anyhow, Context};
+use derive_builder::Builder;
 use libnail::{
     align::structs::Alignment,
     output::output_tabular::{Field, TableFormat},
 };
 
 use crate::{args::OutputArgs, util::PathBufExt};
+
+use super::PipelineResult;
 
 pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::Target,
@@ -20,55 +28,149 @@ pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::CellFrac,
 ];
 
+#[derive(Clone)]
 pub enum HeaderStatus {
     Unwritten,
     Written,
 }
 
-pub struct OutputStep {
-    alignment_writer: Box<dyn Write + Send>,
-    table_writer: Box<dyn Write + Send>,
+#[derive(Builder, Default)]
+#[builder(setter(strip_option), default)]
+pub struct OutputStageStats {
+    pub lock_time: Duration,
+    pub write_time: Duration,
+}
+
+impl OutputStageStatsBuilder {
+    fn add_lock_time(&mut self, duration: Duration) {
+        match self.lock_time {
+            Some(ref mut time) => *time += duration,
+            None => {
+                self.lock_time(duration);
+            }
+        }
+    }
+
+    fn add_write_time(&mut self, duration: Duration) {
+        match self.write_time {
+            Some(ref mut time) => *time += duration,
+            None => {
+                self.write_time(duration);
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct OutputStage {
+    alignment_writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
+    table_writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
+    stats_writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
+    e_value_threshold: f64,
     table_format: TableFormat,
     header_status: HeaderStatus,
 }
 
-impl OutputStep {
+impl OutputStage {
     pub fn new(args: &OutputArgs) -> anyhow::Result<Self> {
         Ok(Self {
             alignment_writer: match &args.ali_results_path {
-                Some(path) => Box::new(path.open(true)?),
-                None => Box::new(stdout()),
+                Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
+                None => None,
             },
-            table_writer: Box::new(args.tbl_results_path.open(true)?),
+            table_writer: Some(Arc::new(Mutex::new(Box::new(
+                args.tbl_results_path.open(true)?,
+            )))),
             table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
+            e_value_threshold: args.e_value_threshold,
             header_status: HeaderStatus::Unwritten,
+            stats_writer: match &args.stats_results_path {
+                Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
+                None => None,
+            },
         })
     }
 
-    pub fn write(&mut self, alignments: &mut [Alignment]) -> anyhow::Result<()> {
-        self.table_format.reset_widths();
-        self.table_format.update_widths(alignments);
+    pub fn run(&mut self, pipeline_results: &[PipelineResult]) -> anyhow::Result<OutputStageStats> {
+        let mut stats = OutputStageStatsBuilder::default();
 
-        alignments.sort_by(|a, b| a.scores.e_value.partial_cmp(&b.scores.e_value).unwrap());
+        let mut reported: Vec<&Alignment> = pipeline_results
+            .iter()
+            .filter_map(|r| r.align_result.as_ref())
+            .filter_map(|r| match r {
+                super::StageResult::Filtered { .. } => None,
+                super::StageResult::Passed { data, .. } => Some(data),
+            })
+            .filter(|a| a.scores.e_value <= self.e_value_threshold)
+            .collect();
 
-        if let HeaderStatus::Unwritten = self.header_status {
-            let header = TableFormat::header(&self.table_format)?;
-            writeln!(self.table_writer, "{header}")?;
-            self.header_status = HeaderStatus::Written;
+        reported.sort_by(|a, b| a.scores.e_value.partial_cmp(&b.scores.e_value).unwrap());
+
+        if let Some(writer) = &self.alignment_writer {
+            let now = Instant::now();
+            match writer.lock() {
+                Ok(mut guard) => {
+                    stats.add_lock_time(now.elapsed());
+
+                    let now = Instant::now();
+                    reported
+                        .iter()
+                        .try_for_each(|ali| writeln!(guard, "{}", ali.ali_string()))
+                        .with_context(|| "failed to write to alignment writer")?;
+
+                    stats.add_write_time(now.elapsed());
+                    Ok(())
+                }
+                Err(_) => Err(anyhow!("alignment writer mutex poisoned")),
+            }?;
         }
 
-        alignments.iter().for_each(|ali| {
-            writeln!(
-                self.table_writer,
-                "{}",
-                ali.tab_string_formatted(&self.table_format)
-            )
-            .expect("failed to write tabular output");
+        if let Some(writer) = &self.table_writer {
+            let now = Instant::now();
+            match writer.lock() {
+                Ok(mut guard) => {
+                    stats.add_lock_time(now.elapsed());
 
-            writeln!(self.alignment_writer, "{}", ali.ali_string())
-                .expect("failed to write alignment output");
-        });
+                    self.table_format.reset_widths();
+                    self.table_format.update_widths(&reported);
 
-        Ok(())
+                    if let HeaderStatus::Unwritten = self.header_status {
+                        let header = TableFormat::header(&self.table_format)?;
+                        writeln!(guard, "{header}")?;
+                        self.header_status = HeaderStatus::Written;
+                    }
+
+                    let now = Instant::now();
+                    reported.iter().try_for_each(|ali| {
+                        writeln!(guard, "{}", ali.tab_string_formatted(&self.table_format))
+                            .with_context(|| "failed to write to table writer")
+                    })?;
+
+                    stats.add_write_time(now.elapsed());
+                    Ok(())
+                }
+                Err(_) => Err(anyhow!("table writer mutex poisoned")),
+            }?;
+        }
+
+        if let Some(writer) = &self.stats_writer {
+            let now = Instant::now();
+            match writer.lock() {
+                Ok(mut guard) => {
+                    stats.add_lock_time(now.elapsed());
+
+                    let now = Instant::now();
+                    pipeline_results
+                        .iter()
+                        .try_for_each(|r| writeln!(guard, "{}", r.tab_string()))?;
+
+                    stats.add_write_time(now.elapsed());
+                    Ok(())
+                }
+                Err(_) => Err(anyhow!("stats writer mutex poisoned")),
+            }?;
+        }
+
+        stats.build().map_err(Into::into)
     }
 }

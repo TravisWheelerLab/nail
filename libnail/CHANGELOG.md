@@ -27,10 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - parse_hmms_from_p7hmm_file(path) is now Hmm::from_p7hmm(buf)
 - refactored Alignment struct
     - fields are now grouped into sub-structs
-    - now stores relevant timings
     - refactored AlignmentBuilder for changes
+    - added impl for AsRef\<Alignment\>
 - DpMatrixSparse should now resize properly
 - CloudSearchScores renamed to CloudSearchResults, added num_cells_computed field
+- TableFormat::update_widths() now takes a slice of AsRef\<Alignment\> instead of &\[Alignment\]
 
 ### Deprecated
 

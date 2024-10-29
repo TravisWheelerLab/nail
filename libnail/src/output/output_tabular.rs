@@ -125,10 +125,10 @@ impl TableFormat {
         })
     }
 
-    pub fn update_widths(&mut self, alignments: &[Alignment]) {
+    pub fn update_widths<T: AsRef<Alignment>>(&mut self, alignments: &[T]) {
         self.fields.iter().enumerate().for_each(|(idx, field)| {
             alignments.iter().for_each(|ali| {
-                let width = field.extract_from(ali).len();
+                let width = field.extract_from(ali.as_ref()).len();
                 self.widths[idx] = self.widths[idx].max(width);
             });
         });
