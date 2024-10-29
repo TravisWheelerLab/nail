@@ -1,15 +1,15 @@
-mod cloud_step;
-pub use cloud_step::*;
+mod cloud_stage;
+pub use cloud_stage::*;
 
-mod seed_step;
+mod seed_stage;
 use indicatif::ProgressBar;
-pub use seed_step::*;
+pub use seed_stage::*;
 
-mod align_step;
-pub use align_step::*;
+mod align_stage;
+pub use align_stage::*;
 
-mod output_step;
-pub use output_step::*;
+mod output_stage;
+pub use output_stage::*;
 use thread_local::ThreadLocal;
 
 use std::cell::RefCell;
