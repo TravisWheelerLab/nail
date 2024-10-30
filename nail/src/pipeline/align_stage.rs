@@ -30,16 +30,16 @@ impl AlignStageResult {
             }
             StageResult::Passed { stats, data: ali } => {
                 format!(
-                    "P {:.2}b {:.1e} {:.1e} {} {} {} {} {} {}",
+                    "P {:.2}b {:.1e} {} {} {} {} {} {} {:.1e}",
                     stats.score.value(),
                     stats.p_value,
-                    ali.scores.e_value,
                     stats.forward_cells,
                     stats.forward_time.as_nanos(),
                     stats.backward_time.as_nanos(),
                     stats.posterior_time.as_nanos(),
                     stats.optimal_accuracy_time.as_nanos(),
                     stats.null_two_time.as_nanos(),
+                    ali.scores.e_value,
                 )
             }
         }
