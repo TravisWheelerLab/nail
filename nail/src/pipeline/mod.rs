@@ -112,7 +112,7 @@ impl Pipeline {
                     let align_result = match cloud_result {
                         StageResult::Passed {
                             data: ref bounds, ..
-                        } => Some(self.align.run(profile, target, &bounds)),
+                        } => Some(self.align.run(profile, target, bounds)),
                         StageResult::Filtered { .. } => None,
                     };
 

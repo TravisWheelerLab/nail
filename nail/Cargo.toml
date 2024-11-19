@@ -13,11 +13,12 @@ exclude = [
 [features]
 default = []
 debug = ["libnail/debug"]
-
+jemalloc = ["jemallocator"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+jemallocator = { version = "0.3", optional = true }
 clap = { version = "4.0.32", features = ["derive"] }
 libnail = { path = "../libnail", version = "0.2.0" }
 anyhow = "1.0.66"

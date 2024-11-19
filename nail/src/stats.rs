@@ -1,4 +1,9 @@
-use libnail::structs::Sequence;
+use libnail::{
+    align::structs::{
+        Alignment, Boundaries, CellStats, DisplayStrings, DpMatrixSparse, RowBounds, Scores,
+    },
+    structs::{hmm::Alphabet, Profile, Sequence},
+};
 use std::{
     fmt::Debug,
     io::Write,
@@ -17,6 +22,171 @@ use crate::{
     },
     search::Queries,
 };
+
+pub struct Bytes(usize);
+
+#[allow(dead_code)]
+impl Bytes {
+    pub fn kib(&self) -> f64 {
+        self.0 as f64 / 2.0_f64.powi(10)
+    }
+
+    pub fn mib(&self) -> f64 {
+        self.0 as f64 / 2.0_f64.powi(20)
+    }
+
+    pub fn gib(&self) -> f64 {
+        self.0 as f64 / 2.0_f64.powi(30)
+    }
+}
+
+impl std::ops::Add for Bytes {
+    type Output = Bytes;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Bytes(self.0 + rhs.0)
+    }
+}
+
+impl std::iter::Sum for Bytes {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Bytes(0), std::ops::Add::add)
+    }
+}
+
+pub trait AllocationSize {
+    fn size(&self) -> Bytes;
+}
+
+impl AllocationSize for usize {
+    fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<usize>())
+    }
+}
+
+impl AllocationSize for u8 {
+    fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<u8>())
+    }
+}
+
+impl AllocationSize for f32 {
+    fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<f32>())
+    }
+}
+
+impl AllocationSize for f64 {
+    fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<f64>())
+    }
+}
+
+impl AllocationSize for String {
+    fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<String>() + self.capacity() * std::mem::size_of::<u8>())
+    }
+}
+
+impl<T> AllocationSize for Option<T>
+where
+    T: AllocationSize,
+{
+    fn size(&self) -> Bytes {
+        match self {
+            Some(t) => t.size(),
+            None => Bytes(std::mem::size_of::<T>()),
+        }
+    }
+}
+
+impl AllocationSize for Sequence {
+    fn size(&self) -> Bytes {
+        self.name.size()
+            + self.details.size()
+            + self.length.size()
+            + Bytes(self.digital_bytes.capacity() * std::mem::size_of::<u8>())
+            + Bytes(self.utf8_bytes.capacity() * std::mem::size_of::<u8>())
+    }
+}
+
+impl AllocationSize for Profile {
+    fn size(&self) -> Bytes {
+        self.name.size()
+            + self.accession.size()
+            + self.length.size()
+            + self.target_length.size()
+            + self.max_length.size()
+            + Bytes(self.transitions.capacity() * std::mem::size_of::<[f32; 8]>())
+            + Bytes(
+                self.match_scores.capacity() * std::mem::size_of::<Vec<f32>>()
+                    + self.match_scores
+                        .iter()
+                        .map(|s| s.capacity() * std::mem::size_of::<f32>())
+                        .sum::<usize>(),
+            )
+            + Bytes(
+                self.insert_scores.capacity() * std::mem::size_of::<Vec<f32>>()
+                    + self.insert_scores
+                        .iter()
+                        .map(|s| s.capacity() * std::mem::size_of::<f32>())
+                        .sum::<usize>(),
+            )
+        // self.special_transitions
+        + Bytes(std::mem::size_of::<[[f32;2]; 5]>())
+        + self.expected_j_uses.size()
+        + Bytes(self.consensus_sequence_bytes_utf8.capacity() * std::mem::size_of::<u8>())
+        // + self.alphabet
+        + Bytes(std::mem::size_of::<Alphabet>())
+        + self.forward_tau.size()
+        + self.forward_lambda.size()
+    }
+}
+
+impl AllocationSize for DpMatrixSparse {
+    fn size(&self) -> Bytes {
+        self.target_length.size()
+            + self.profile_length.size()
+            + self.target_start.size()
+            + self.target_end.size()
+            + Bytes(self.block_offsets.capacity() * std::mem::size_of::<usize>())
+            + Bytes(self.row_start_offsets.capacity() * std::mem::size_of::<usize>())
+            + Bytes(self.core_data.capacity() * std::mem::size_of::<f32>())
+            + Bytes(self.special_data.capacity() * std::mem::size_of::<f32>())
+    }
+}
+
+impl AllocationSize for RowBounds {
+    fn size(&self) -> Bytes {
+        self.target_length.size()
+            + self.profile_length.size()
+            + self.target_start.size()
+            + self.target_end.size()
+            + self.row_capacity.size()
+            + Bytes(self.left_row_bounds.capacity() * std::mem::size_of::<usize>())
+            + Bytes(self.right_row_bounds.capacity() * std::mem::size_of::<usize>())
+            + self.num_cells.size()
+    }
+}
+
+impl AllocationSize for Alignment {
+    fn size(&self) -> Bytes {
+        self.profile_name.size()
+            + self.target_name.size()
+            + Bytes(std::mem::size_of::<Boundaries>())
+            + Bytes(std::mem::size_of::<Scores>())
+            + Bytes(std::mem::size_of::<CellStats>())
+            + match &self.display_strings {
+                Some(d) => {
+                    d.target_string.size()
+                        + d.middle_string.size()
+                        + d.profile_string.size()
+                        + d.posterior_string.size()
+                }
+                None => Bytes(std::mem::size_of::<DisplayStrings>()),
+            }
+    }
+}
 
 #[repr(usize)]
 #[derive(Clone, Copy, EnumIter, EnumCount)]
@@ -365,7 +535,7 @@ impl Stats {
                 )
             })?;
 
-        let last_label = "[???]";
+        let last_label = "[misc.]";
         let last_label_width = last_label.len();
 
         writeln!(

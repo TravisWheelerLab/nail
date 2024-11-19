@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added min() to Score, Nats, and Bits
 
 ### Changed
+- Sequence and DpMatrixSparse and now call shrink_to_fit() on internal data
 - Profile::raise_relative_entropy() is now adjust_mean_relative_entropy()
     - the mean relative entropy (MRE) can now be raised or lowered
     - the algorithm for raising (MRE) has been improved

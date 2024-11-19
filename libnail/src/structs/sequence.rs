@@ -126,6 +126,9 @@ impl Sequence {
                 }
             }
 
+            utf8_bytes.shrink_to_fit();
+            digital_bytes.shrink_to_fit();
+
             seqs.push(Sequence {
                 name,
                 details,

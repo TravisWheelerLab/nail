@@ -11,6 +11,13 @@ use util::{check_mmseqs_installed, set_threads};
 
 use clap::Parser;
 
+#[cfg(feature = "jemalloc")]
+use jemallocator::Jemalloc;
+
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 fn main() -> anyhow::Result<()> {
     match Cli::parse().command {
         SubCommands::Search(args) => {
