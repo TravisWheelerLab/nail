@@ -1,4 +1,5 @@
 mod args;
+mod io;
 mod mmseqs;
 mod pipeline;
 mod search;

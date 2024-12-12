@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- added module `io`
+    - `Fasta` struct for `Sequence` retrieval streamed from disk
+    - `SequenceDatabase` trait for generic search databases
 - added jemalloc support with feature flag `jemalloc`
 - added `Stats` module for keeping track of pipeline summary statistics
 - search pipeline now uses the `thread_local` crate instead of letting Rayon clone whenever it wants to

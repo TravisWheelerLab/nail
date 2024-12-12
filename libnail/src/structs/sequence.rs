@@ -24,7 +24,7 @@ pub struct UnknownDigitalSequenceByteError {
 }
 
 /// This holds the both the "digital" data and string data of a biological sequence.
-#[derive(Default)]
+#[derive(Default, PartialEq)]
 pub struct Sequence {
     /// The name of the sequence
     pub name: String,
