@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::args::{SearchArgs, SeedArgs};
+use crate::io::SequenceDatabase;
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
     seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,

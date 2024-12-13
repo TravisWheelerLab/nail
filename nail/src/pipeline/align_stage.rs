@@ -84,7 +84,7 @@ impl Default for AlignConfig {
     }
 }
 
-pub trait AlignStage: dyn_clone::DynClone {
+pub trait AlignStage: dyn_clone::DynClone + Send + Sync {
     fn run(
         &mut self,
         profile: &mut Profile,

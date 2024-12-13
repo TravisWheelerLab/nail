@@ -81,9 +81,9 @@ impl PipelineResult {
 
 #[derive(Clone)]
 pub struct Pipeline {
-    pub seed: Box<dyn SeedStage + Send + Sync>,
-    pub cloud_search: Box<dyn CloudSearchStage + Send + Sync>,
-    pub align: Box<dyn AlignStage + Send + Sync>,
+    pub seed: Box<dyn SeedStage>,
+    pub cloud_search: Box<dyn CloudSearchStage>,
+    pub align: Box<dyn AlignStage>,
     pub output: OutputStage,
     pub stats: Stats,
 }

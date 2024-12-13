@@ -96,7 +96,7 @@ pub fn seed_sequence_to_sequence(
     Ok(seeds)
 }
 
-pub trait SeedStage: dyn_clone::DynClone {
+pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
     fn run(
         &mut self,
         profile: &Profile,

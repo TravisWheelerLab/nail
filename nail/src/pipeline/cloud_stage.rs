@@ -46,7 +46,7 @@ pub struct CloudStageStats {
     pub reorient_time: Duration,
 }
 
-pub trait CloudSearchStage: dyn_clone::DynClone {
+pub trait CloudSearchStage: dyn_clone::DynClone + Send + Sync {
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult;
 }
 
