@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added module `io`
     - `Fasta` struct for `Sequence` retrieval streamed from disk
     - `SequenceDatabase` trait for generic search databases
+    - submodule `io::rayon`, which includes impls for `rayon` parallel iterators over `SequenceDatabase`s
 - added jemalloc support with feature flag `jemalloc`
 - added `Stats` module for keeping track of pipeline summary statistics
 - search pipeline now uses the `thread_local` crate instead of letting Rayon clone whenever it wants to
@@ -32,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added `PipelineResult` struct, which captures the `StageResult` returned by each pipeline stage
 - added dependency on the `derive_builder` crate
 - added `CloudStageStats`, `AlignStageStats`, and `OutputStageStats` structs, each of which has a derived builder struct from the `derive_builder` crate
+- added dependency on `indexmap` crate
 
 
 ### Changed
