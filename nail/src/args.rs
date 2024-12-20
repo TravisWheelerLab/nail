@@ -182,11 +182,6 @@ pub struct OutputArgs {
     pub ali_results_path: Option<PathBuf>,
 
     /// Where to place stats output
-    #[arg(
-        short = 'S',
-        long = "stats-output",
-        default_value = "stats.tbl",
-        value_name = "path"
-    )]
+    #[arg(short = 'S', long = "stats-output", value_name = "path")]
     pub stats_results_path: Option<PathBuf>,
 }

@@ -13,6 +13,8 @@ use std::{
     },
     time::Duration,
 };
+
+use anyhow::anyhow;
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
@@ -247,8 +249,8 @@ impl Debug for ComputedValue {
         let str = match self {
             ComputedValue::Queries => "queries",
             ComputedValue::Targets => "targets",
-            ComputedValue::Alignments => "total alignments",
-            ComputedValue::Cells => "total cells",
+            ComputedValue::Alignments => "total potential alignments",
+            ComputedValue::Cells => "total potential DP cells",
         };
 
         write!(f, "{}", str)
@@ -271,14 +273,14 @@ pub enum CountedValue {
 impl Debug for CountedValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
-            CountedValue::Seeds => "seeds",
+            CountedValue::Seeds => "passed seed filter",
             CountedValue::PassedCloud => "passed cloud filter",
             CountedValue::PassedForward => "passed forward filter",
-            CountedValue::SeedCells => "seed cells",
-            CountedValue::CloudForwardCells => "cloud forward cells computed",
-            CountedValue::CloudBackwardCells => "cloud backward cells computed",
-            CountedValue::ForwardCells => "forward cells computed",
-            CountedValue::BackwardCells => "backward cells computed",
+            CountedValue::SeedCells => "seed DP cells",
+            CountedValue::CloudForwardCells => "cloud forward DP cells computed",
+            CountedValue::CloudBackwardCells => "cloud backward DP cells computed",
+            CountedValue::ForwardCells => "forward DP cells computed",
+            CountedValue::BackwardCells => "backward DP cells computed",
         };
 
         write!(f, "{}", str)
@@ -461,6 +463,7 @@ impl Stats {
     }
 
     pub fn write(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        writeln!(out, "summary statistics:")?;
         self.write_stats(out)?;
         writeln!(out)?;
         self.write_runtime(out)
@@ -480,15 +483,24 @@ impl Stats {
             let label = format!("{c:?}");
             let label_width = label.len();
             let count = Self::format_num(self.computed_value(c));
-            writeln!(out, "{label}: {count:>w$}", w = max_width - label_width)
+            writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
         })?;
 
-        CountedValue::iter().try_for_each(|c| {
+        let values: Vec<_> = CountedValue::iter().collect();
+        values.iter().take(values.len() - 1).try_for_each(|c| {
             let label = format!("{c:?}");
             let label_width = label.len();
-            let count = Self::format_num(self.counted_value(c));
-            writeln!(out, "{label}: {count:>w$}", w = max_width - label_width)
+            let count = Self::format_num(self.counted_value(*c));
+            writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
         })?;
+
+        let last = values
+            .last()
+            .ok_or(anyhow!("no CountedValues in Stats::write_stats()"))?;
+        let label = format!("{last:?}");
+        let label_width = label.len();
+        let count = Self::format_num(self.counted_value(*last));
+        writeln!(out, " └─ {label}: {count:>w$}", w = max_width - label_width)?;
 
         Ok(())
     }
