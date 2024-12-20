@@ -1,5 +1,6 @@
+mod rayon;
+
 use std::{
-    collections::HashMap,
     fs::File,
     io::{Read, Seek},
     path::{Path, PathBuf},
@@ -7,22 +8,17 @@ use std::{
 };
 
 use anyhow::bail;
+use indexmap::IndexMap;
 use libnail::{alphabet::UTF8_TO_DIGITAL_AMINO, structs::Sequence};
 
-pub trait SequenceDatabase: dyn_clone::DynClone + Send + Sync {
-    fn get(&mut self, name: &str) -> anyhow::Result<Sequence>;
-}
-
-dyn_clone::clone_trait_object!(SequenceDatabase);
-
 fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
-    let header_end = match bytes.iter().position(|&b| b == b'\n') {
+    let header_newline_pos = match bytes.iter().position(|&b| b == b'\n') {
         Some(pos) => pos,
         None => bail!("no newline in FASTA record"),
     };
 
-    let header_bytes = &bytes[1..header_end];
-    let sequence_bytes = &bytes[(header_end + 1)..];
+    let header_bytes = &bytes[1..header_newline_pos];
+    let sequence_bytes = &bytes[(header_newline_pos + 1)..];
 
     let name = String::from_utf8(
         header_bytes
@@ -32,7 +28,7 @@ fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
             .collect(),
     )?;
 
-    let details = match name.len().cmp(&header_end) {
+    let details = match name.len().cmp(&(header_newline_pos - 1)) {
         std::cmp::Ordering::Less => Some(String::from_utf8(
             header_bytes[(name.len() + 1)..]
                 .iter()
@@ -41,7 +37,7 @@ fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
                 .collect(),
         )?),
         std::cmp::Ordering::Equal => None,
-        std::cmp::Ordering::Greater => bail!("unexpected"),
+        std::cmp::Ordering::Greater => bail!("fasta name longer than header"),
     };
 
     let mut utf8_bytes = Vec::with_capacity(sequence_bytes.len());
@@ -71,8 +67,53 @@ fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
     })
 }
 
+dyn_clone::clone_trait_object!(SequenceDatabase);
+pub trait SequenceDatabase: dyn_clone::DynClone + Send + Sync {
+    fn get(&mut self, name: &str) -> Option<Sequence>;
+    fn len(&self) -> usize;
+    fn iter(&self) -> SequenceDatabaseIter;
+}
+
+pub struct SequenceDatabaseIter<'a> {
+    inner: Box<dyn SequenceDatabase>,
+    names_iter: Box<dyn DoubleEndedIterator<Item = &'a str> + 'a>,
+}
+
+impl<'a> SequenceDatabaseIter<'a> {
+    pub fn names(self) -> Vec<&'a str> {
+        self.names_iter.collect()
+    }
+}
+
+impl<'a> Iterator for SequenceDatabaseIter<'a> {
+    type Item = Sequence;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.names_iter.next().and_then(|n| self.inner.get(n))
+    }
+
+    // implementing size_hint to always return the
+    // exact size of the iterator is REQUIRED for
+    // the ExactSizerIterator trait to work; the
+    // default impl of size_hint returns (0, None)
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.inner.len();
+        (size, Some(size))
+    }
+}
+
+// rayon expects the the iterators it
+// uses to implement DoubleEndedIterator
+impl<'a> DoubleEndedIterator for SequenceDatabaseIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.names_iter.next_back().and_then(|n| self.inner.get(n))
+    }
+}
+
+impl<'a> ExactSizeIterator for SequenceDatabaseIter<'a> {}
+
 pub struct LexicalFastaIndex {
-    offsets: HashMap<String, FastaOffset>,
+    offsets: IndexMap<String, FastaOffset>,
 }
 
 #[derive(Clone)]
@@ -96,6 +137,7 @@ impl FastaOffset {
 
 impl LexicalFastaIndex {
     fn new<R: Read>(mut data: R) -> Self {
+        let mut offsets = IndexMap::new();
         enum ParseState {
             Name,
             Details,
@@ -114,7 +156,6 @@ impl LexicalFastaIndex {
         }
 
         let mut state = ParseState::Name;
-        let mut offsets = HashMap::new();
         let mut buffer = [0; 8192];
         let mut name = String::new();
         let mut total_bytes_read = 1;
@@ -126,6 +167,7 @@ impl LexicalFastaIndex {
             if bytes_read == 0 {
                 offset.seq_len =
                     total_bytes_read - (offset.start + offset.name_len + offset.details_len);
+                name.shrink_to_fit();
                 offsets.insert(name.clone(), offset);
                 break;
             }
@@ -159,10 +201,11 @@ impl LexicalFastaIndex {
                         }
                     }
                     ParseState::Process => {
+                        name.shrink_to_fit();
                         offsets.insert(name.clone(), offset);
                         // -1 since we found the '>' on the previous byte
                         offset = FastaOffset::new(current_offset - 1);
-                        name.clear();
+                        name = String::new();
                         name.push(byte as char);
                         state = ParseState::Name
                     }
@@ -172,7 +215,12 @@ impl LexicalFastaIndex {
             total_bytes_read += bytes_read;
         }
 
+        offsets.shrink_to_fit();
         Self { offsets }
+    }
+
+    pub fn len(&self) -> usize {
+        self.offsets.len()
     }
 
     fn offset_by_name(&self, name: &str) -> Option<FastaOffset> {
@@ -219,21 +267,45 @@ impl Fasta {
         })
     }
 
-    pub fn get(&mut self, name: &str) -> anyhow::Result<Sequence> {
-        let offset = self.index.offset_by_name(name).unwrap();
+    pub fn len(&self) -> usize {
+        self.index.len()
+    }
+
+    pub fn get(&mut self, name: &str) -> Option<Sequence> {
+        let offset = self.index.offset_by_name(name)?;
 
         self.buffer
             .resize(offset.details_len + offset.name_len + offset.seq_len, 0u8);
-        self.file
-            .seek(std::io::SeekFrom::Start(offset.start as u64))?;
-        self.file.read_exact(&mut self.buffer)?;
 
-        sequence_from_fasta_record_bytes(&self.buffer)
+        self.file
+            .seek(std::io::SeekFrom::Start(offset.start as u64))
+            .expect("failed to seek in Fasta::get()");
+
+        self.file
+            .read_exact(&mut self.buffer)
+            .expect("failed to read in Fasta::get()");
+
+        Some(
+            sequence_from_fasta_record_bytes(&self.buffer).unwrap_or_else(|e| {
+                panic!("failed to produce Sequence in Fasta::get()\nError: {e}");
+            }),
+        )
     }
 }
 
 impl SequenceDatabase for Fasta {
-    fn get(&mut self, name: &str) -> anyhow::Result<Sequence> {
+    fn get(&mut self, name: &str) -> Option<Sequence> {
         self.get(name)
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn iter(&self) -> SequenceDatabaseIter {
+        SequenceDatabaseIter {
+            inner: Box::new(self.clone()),
+            names_iter: Box::new(self.index.offsets.keys().map(|s| s.as_str())),
+        }
     }
 }

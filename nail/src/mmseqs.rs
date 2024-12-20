@@ -13,11 +13,12 @@ use anyhow::Context;
 use libnail::{
     align::{structs::Seed, Nats},
     alphabet::UTF8_TO_DIGITAL_AMINO,
-    structs::{Profile, Sequence},
+    structs::Profile,
 };
 
 use crate::{
     args::MmseqsArgs,
+    io::{Fasta, SequenceDatabase},
     pipeline::SeedMap,
     util::{CommandExt, PathBufExt},
 };
@@ -50,7 +51,7 @@ impl MmseqsDbPaths {
 }
 
 pub fn write_mmseqs_sequence_database(
-    sequences: &[Sequence],
+    sequences: &Fasta,
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();

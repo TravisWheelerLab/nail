@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 
-use libnail::{
-    align::structs::Seed,
-    structs::{Profile, Sequence},
-};
+use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::MmseqsArgs,
+    io::{Fasta, SequenceDatabase},
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths,
@@ -44,7 +42,7 @@ fn merge_seed_maps(
 
 pub fn seed_profile_to_sequence(
     queries: &[Profile],
-    targets: &[Sequence],
+    targets: &Fasta,
     num_threads: usize,
     mmseqs_args: &MmseqsArgs,
 ) -> anyhow::Result<SeedMap> {
@@ -79,8 +77,8 @@ pub fn seed_profile_to_sequence(
 }
 
 pub fn seed_sequence_to_sequence(
-    queries: &[Sequence],
-    targets: &[Sequence],
+    queries: &Fasta,
+    targets: &Fasta,
     num_threads: usize,
     mmseqs_args: &MmseqsArgs,
 ) -> anyhow::Result<SeedMap> {
@@ -96,15 +94,10 @@ pub fn seed_sequence_to_sequence(
     Ok(seeds)
 }
 
-pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
-    fn run(
-        &mut self,
-        profile: &Profile,
-        target: &HashMap<String, Sequence>,
-    ) -> Option<&HashMap<String, Seed>>;
-}
-
 dyn_clone::clone_trait_object!(SeedStage);
+pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
+    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>>;
+}
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
 
@@ -120,11 +113,7 @@ impl DefaultSeedStage {
 }
 
 impl SeedStage for DefaultSeedStage {
-    fn run(
-        &mut self,
-        profile: &Profile,
-        _target: &HashMap<String, Sequence>,
-    ) -> Option<&HashMap<String, Seed>> {
+    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>> {
         self.seeds.get(&profile.name)
     }
 }

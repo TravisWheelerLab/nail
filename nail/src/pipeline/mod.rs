@@ -10,19 +10,21 @@ pub use align_stage::*;
 
 mod output_stage;
 pub use output_stage::*;
-use thread_local::ThreadLocal;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
+use thread_local::ThreadLocal;
 
-use libnail::structs::{Hmm, Profile, Sequence};
+use libnail::structs::{Hmm, Profile};
 
-use crate::stats::{Stats, ThreadedTimed};
+use crate::{
+    io::Fasta,
+    stats::{Stats, ThreadedTimed},
+};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
@@ -81,6 +83,7 @@ impl PipelineResult {
 
 #[derive(Clone)]
 pub struct Pipeline {
+    pub targets: Fasta,
     pub seed: Box<dyn SeedStage>,
     pub cloud_search: Box<dyn CloudSearchStage>,
     pub align: Box<dyn AlignStage>,
@@ -89,30 +92,26 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    fn run(
-        &mut self,
-        profile: &mut Profile,
-        targets: &HashMap<String, Sequence>,
-    ) -> anyhow::Result<()> {
-        let seeds = self.seed.run(profile, targets);
+    fn run(&mut self, profile: &mut Profile) -> anyhow::Result<()> {
+        let seeds = self.seed.run(profile);
 
         let pipeline_results: Vec<PipelineResult> = match seeds {
             None => return Ok(()),
             Some(seeds) => seeds
                 .iter()
                 .filter_map(|(target_name, seed)| {
-                    let target = match targets.get(target_name) {
+                    let target = match self.targets.get(target_name) {
                         Some(target) => target,
                         // TODO: probably return an error here instead
                         None => return None,
                     };
 
-                    let cloud_result = self.cloud_search.run(profile, target, seed);
+                    let cloud_result = self.cloud_search.run(profile, &target, seed);
 
                     let align_result = match cloud_result {
                         StageResult::Passed {
                             data: ref bounds, ..
-                        } => Some(self.align.run(profile, target, bounds)),
+                        } => Some(self.align.run(profile, &target, bounds)),
                         StageResult::Filtered { .. } => None,
                     };
 
@@ -135,70 +134,56 @@ impl Pipeline {
     }
 }
 
-pub fn run_pipeline_profile_to_sequence(
-    queries: &mut [Profile],
-    targets: &HashMap<String, Sequence>,
-    pipeline: &mut Pipeline,
-) {
+pub fn run_pipeline_profile_to_sequence(queries: &mut [Profile], pipeline: &mut Pipeline) {
     let bar = Arc::new(ProgressBar::new(queries.len() as u64));
     let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
-    queries
-        .par_iter_mut()
-        .panic_fuse()
-        .for_each_with(targets, |targets, profile| {
-            let now = Instant::now();
-            let mut pipeline = thread_local_pipeline
-                .get_or(|| RefCell::new(pipeline.clone()))
-                .borrow_mut();
+    queries.par_iter_mut().panic_fuse().for_each(|profile| {
+        let now = Instant::now();
+        let mut pipeline = thread_local_pipeline
+            .get_or(|| RefCell::new(pipeline.clone()))
+            .borrow_mut();
 
-            let _ = pipeline.run(profile, targets);
+        let _ = pipeline.run(profile);
 
-            bar.inc(1);
+        bar.inc(1);
 
-            pipeline
-                .stats
-                .add_threaded_time(ThreadedTimed::Total, now.elapsed())
-        });
+        pipeline
+            .stats
+            .add_threaded_time(ThreadedTimed::Total, now.elapsed())
+    });
 
     bar.finish();
 }
 
-pub fn run_pipeline_sequence_to_sequence(
-    queries: &[Sequence],
-    targets: &HashMap<String, Sequence>,
-    pipeline: &mut Pipeline,
-) {
+pub fn run_pipeline_sequence_to_sequence(queries: &Fasta, pipeline: &mut Pipeline) {
     let bar = Arc::new(ProgressBar::new(queries.len() as u64));
     let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
-    queries
-        .par_iter()
-        .panic_fuse()
-        .for_each_with(targets, |targets, sequence| {
-            let now = Instant::now();
+    queries.par_iter().panic_fuse().for_each(|sequence| {
+        let now = Instant::now();
 
-            let mut pipeline = thread_local_pipeline
-                .get_or(|| RefCell::new(pipeline.clone()))
-                .borrow_mut();
+        let mut pipeline = thread_local_pipeline
+            .get_or(|| RefCell::new(pipeline.clone()))
+            .borrow_mut();
 
-            let mut profile = Hmm::from_blosum_62_and_sequence(sequence)
-                .map(|h| Profile::new(&h))
-                .expect("failed to build profile from sequence");
-            profile.calibrate_tau(200, 100, 0.04);
+        let mut profile = Hmm::from_blosum_62_and_sequence(&sequence)
+            .map(|h| Profile::new(&h))
+            .expect("failed to build profile from sequence");
+        profile.calibrate_tau(200, 100, 0.04);
 
-            pipeline
-                .stats
-                .add_threaded_time(ThreadedTimed::HmmBuild, now.elapsed());
+        pipeline
+            .stats
+            .add_threaded_time(ThreadedTimed::HmmBuild, now.elapsed());
 
-            let _ = pipeline.run(&mut profile, targets);
+        let _ = pipeline.run(&mut profile);
 
-            bar.inc(1);
+        bar.inc(1);
 
-            pipeline
-                .stats
-                .add_threaded_time(ThreadedTimed::Total, now.elapsed())
-        });
+        pipeline
+            .stats
+            .add_threaded_time(ThreadedTimed::Total, now.elapsed())
+    });
 
     bar.finish();
 }

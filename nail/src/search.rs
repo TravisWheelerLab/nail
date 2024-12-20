@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::args::{SearchArgs, SeedArgs};
-use crate::io::SequenceDatabase;
+use crate::io::Fasta;
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
     seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
@@ -14,13 +14,13 @@ use crate::pipeline::{
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
-use libnail::structs::{Hmm, Profile, Sequence};
+use libnail::structs::{Hmm, Profile};
 
 use anyhow::Context;
 use serde::Serialize;
 
 pub enum Queries {
-    Sequence(Vec<Sequence>),
+    Sequence(Fasta),
     Profile(Vec<Profile>),
 }
 
@@ -31,13 +31,6 @@ impl Queries {
             Queries::Profile(q) => q.len(),
         }
     }
-
-    pub fn lengths(&self) -> Vec<usize> {
-        match self {
-            Queries::Sequence(queries) => queries.iter().map(|q| q.length).collect(),
-            Queries::Profile(queries) => queries.iter().map(|q| q.length).collect(),
-        }
-    }
 }
 
 fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
@@ -45,9 +38,7 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
 
     match query_format {
         FileFormat::Fasta => {
-            let queries =
-                Sequence::amino_from_fasta(&path).context("failed to read query fasta")?;
-
+            let queries = Fasta::from_path(&path).context("failed to read query fasta")?;
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
@@ -68,8 +59,7 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
 
 pub fn seed(args: SeedArgs) -> anyhow::Result<()> {
     let queries = read_queries(&args.query_path)?;
-    let targets =
-        Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
+    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
 
     let seeds = match queries {
         Queries::Sequence(ref queries) => seed_sequence_to_sequence(
@@ -105,8 +95,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let queries = read_queries(&args.query_path)?;
 
-    let targets =
-        Sequence::amino_from_fasta(&args.target_path).context("failed to read target fasta")?;
+    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
 
     let mut stats = Stats::new(&queries, &targets);
 
@@ -152,6 +141,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     };
 
     let mut pipeline = Pipeline {
+        targets,
         seed: Box::new(DefaultSeedStage::new(seeds)),
         cloud_search: match args.nail_args.full_dp {
             true => Box::<FullDpCloudSearchStage>::default(),
@@ -162,16 +152,13 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         stats,
     };
 
-    let target_map: HashMap<String, Sequence> =
-        targets.into_iter().map(|t| (t.name.clone(), t)).collect();
-
     let align_timer = Instant::now();
     match queries {
         Queries::Sequence(queries) => {
-            run_pipeline_sequence_to_sequence(&queries, &target_map, &mut pipeline);
+            run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
         }
         Queries::Profile(mut queries) => {
-            run_pipeline_profile_to_sequence(&mut queries, &target_map, &mut pipeline);
+            run_pipeline_profile_to_sequence(&mut queries, &mut pipeline);
         }
     }
 

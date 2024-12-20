@@ -16,6 +16,7 @@ use std::{
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
+    io::{Fasta, SequenceDatabase},
     pipeline::{
         OutputStageStats, PipelineResult,
         StageResult::{Filtered, Passed},
@@ -136,7 +137,7 @@ impl AllocationSize for Profile {
         + Bytes(std::mem::size_of::<[[f32;2]; 5]>())
         + self.expected_j_uses.size()
         + Bytes(self.consensus_sequence_bytes_utf8.capacity() * std::mem::size_of::<u8>())
-        // + self.alphabet
+        // self.alphabet
         + Bytes(std::mem::size_of::<Alphabet>())
         + self.forward_tau.size()
         + self.forward_lambda.size()
@@ -294,7 +295,7 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new(queries: &Queries, targets: &[Sequence]) -> Self {
+    pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let mut stats = Self::default();
 
         stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
@@ -302,14 +303,6 @@ impl Stats {
         stats.set_computed_value(
             ComputedValue::Alignments,
             (queries.len() * targets.len()) as u64,
-        );
-        stats.set_computed_value(
-            ComputedValue::Cells,
-            queries
-                .lengths()
-                .iter()
-                .flat_map(|len| targets.iter().map(move |t| (t.length * len) as u64))
-                .sum(),
         );
 
         stats
