@@ -4,6 +4,7 @@ use libnail::{
     },
     structs::{hmm::Alphabet, Profile, Sequence},
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fmt::Debug,
     io::Write,
@@ -18,7 +19,7 @@ use anyhow::anyhow;
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
-    io::{Fasta, SequenceDatabase},
+    io::Fasta,
     pipeline::{
         OutputStageStats, PipelineResult,
         StageResult::{Filtered, Passed},
@@ -276,7 +277,7 @@ impl Debug for CountedValue {
             CountedValue::Seeds => "passed seed filter",
             CountedValue::PassedCloud => "passed cloud filter",
             CountedValue::PassedForward => "passed forward filter",
-            CountedValue::SeedCells => "seed DP cells",
+            CountedValue::SeedCells => "total potential seed DP cells",
             CountedValue::CloudForwardCells => "cloud forward DP cells computed",
             CountedValue::CloudBackwardCells => "cloud backward DP cells computed",
             CountedValue::ForwardCells => "forward DP cells computed",
@@ -299,6 +300,22 @@ pub struct Stats {
 impl Stats {
     pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let mut stats = Self::default();
+
+        // TODO: doing this here is significantly wasteful
+        let target_lengths: Vec<usize> = targets.par_iter().map(|s| s.length).collect();
+
+        let query_lengths: Vec<usize> = match queries {
+            Queries::Sequence(fasta) => fasta.par_iter().map(|s| s.length).collect(),
+            Queries::Profile(vec) => vec.par_iter().map(|s| s.length).collect(),
+        };
+
+        stats.set_computed_value(
+            ComputedValue::Cells,
+            target_lengths
+                .par_iter()
+                .flat_map(|a| query_lengths.par_iter().map(move |b| a * b))
+                .sum::<usize>() as u64,
+        );
 
         stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
         stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
@@ -374,6 +391,8 @@ impl Stats {
                 }
             }
         });
+        self.add_threaded_time(ThreadedTimed::OutputWrite, output_stats.write_time);
+        self.add_threaded_time(ThreadedTimed::OutputMutex, output_stats.lock_time);
     }
 
     pub fn set_serial_time(&mut self, timed: SerialTimed, time: Duration) {
@@ -463,6 +482,7 @@ impl Stats {
     }
 
     pub fn write(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        writeln!(out)?;
         writeln!(out, "summary statistics:")?;
         self.write_stats(out)?;
         writeln!(out)?;
@@ -510,13 +530,13 @@ impl Stats {
 
         writeln!(
             out,
-            " ├─ seeding:   {}",
+            " ├─ seeding (mmseqs):   {}",
             self.serial_string(SerialTimed::Seeding)
         )?;
 
         writeln!(
             out,
-            " └─ alignment: {}",
+            " └─ alignment:          {}",
             self.serial_string(SerialTimed::Alignment)
         )?;
 

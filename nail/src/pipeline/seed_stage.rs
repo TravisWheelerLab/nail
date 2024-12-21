@@ -4,7 +4,7 @@ use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::MmseqsArgs,
-    io::{Fasta, SequenceDatabase},
+    io::Fasta,
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths,
@@ -60,7 +60,7 @@ pub fn seed_profile_to_sequence(
         .filter(|p| p.relative_entropy() < 1.0)
         .map(|p| {
             let mut p2 = p.clone();
-            p2.adjust_mean_relative_entropy(1.0);
+            p2.adjust_mean_relative_entropy(1.0).unwrap();
             p2
         })
         .collect();

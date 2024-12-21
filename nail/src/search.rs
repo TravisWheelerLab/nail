@@ -93,9 +93,21 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         }
     }
 
+    let now = Instant::now();
+    println!("reading query database...");
     let queries = read_queries(&args.query_path)?;
+    println!(
+        "\x1b[Areading query database...   done ({:.2}s)",
+        now.elapsed().as_secs_f64()
+    );
 
+    let now = Instant::now();
+    println!("indexing target database...");
     let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
+    println!(
+        "\x1b[Aindexing target database... done ({:.2}s)",
+        now.elapsed().as_secs_f64()
+    );
 
     let mut stats = Stats::new(&queries, &targets);
 
@@ -120,6 +132,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         }
         None => {
             let now = Instant::now();
+            println!("running mmseqs...");
             let seeds = match queries {
                 Queries::Sequence(ref queries) => seed_sequence_to_sequence(
                     queries,
@@ -135,7 +148,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                 )?,
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
-
+            println!(
+                "\x1b[Arunning mmseqs...           done ({:.2}s)",
+                now.elapsed().as_secs_f64()
+            );
             seeds
         }
     };
@@ -152,6 +168,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         stats,
     };
 
+    println!("running nail pipeline...");
     let align_timer = Instant::now();
     match queries {
         Queries::Sequence(queries) => {
@@ -166,11 +183,16 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .stats
         .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
 
+    println!(
+        "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
+        align_timer.elapsed().as_secs_f64()
+    );
+
     pipeline
         .stats
         .set_serial_time(SerialTimed::Total, start_time.elapsed());
 
-    pipeline.stats.write(&mut stdout())?;
+    // pipeline.stats.write(&mut stdout())?;
 
     Ok(())
 }

@@ -42,7 +42,7 @@ impl<'a> IndexedParallelIterator for SequenceDatabaseParIter<'a> {
 }
 
 impl Fasta {
-    fn par_iter(&self) -> SequenceDatabaseParIter {
+    pub fn par_iter(&self) -> SequenceDatabaseParIter {
         SequenceDatabaseParIter {
             inner: Box::new(self.clone()),
             names: self.index.offsets.keys().map(|s| s.as_str()).collect(),

@@ -178,7 +178,12 @@ pub struct OutputArgs {
     pub tbl_results_path: PathBuf,
 
     /// Where to place alignment output
-    #[arg(short = 'O', long = "output", value_name = "path")]
+    #[arg(
+        short = 'O',
+        long = "output",
+        default_value = "results.ali",
+        value_name = "path"
+    )]
     pub ali_results_path: Option<PathBuf>,
 
     /// Where to place stats output

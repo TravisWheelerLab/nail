@@ -2,7 +2,6 @@ mod cloud_stage;
 pub use cloud_stage::*;
 
 mod seed_stage;
-use indicatif::ProgressBar;
 pub use seed_stage::*;
 
 mod align_stage;
@@ -12,10 +11,9 @@ mod output_stage;
 pub use output_stage::*;
 
 use std::cell::RefCell;
-use std::sync::Arc;
 use std::time::Instant;
 
-use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use thiserror::Error;
 use thread_local::ThreadLocal;
 
@@ -135,7 +133,6 @@ impl Pipeline {
 }
 
 pub fn run_pipeline_profile_to_sequence(queries: &mut [Profile], pipeline: &mut Pipeline) {
-    let bar = Arc::new(ProgressBar::new(queries.len() as u64));
     let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
     queries.par_iter_mut().panic_fuse().for_each(|profile| {
@@ -146,18 +143,13 @@ pub fn run_pipeline_profile_to_sequence(queries: &mut [Profile], pipeline: &mut 
 
         let _ = pipeline.run(profile);
 
-        bar.inc(1);
-
         pipeline
             .stats
             .add_threaded_time(ThreadedTimed::Total, now.elapsed())
     });
-
-    bar.finish();
 }
 
 pub fn run_pipeline_sequence_to_sequence(queries: &Fasta, pipeline: &mut Pipeline) {
-    let bar = Arc::new(ProgressBar::new(queries.len() as u64));
     let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
     queries.par_iter().panic_fuse().for_each(|sequence| {
@@ -178,12 +170,8 @@ pub fn run_pipeline_sequence_to_sequence(queries: &Fasta, pipeline: &mut Pipelin
 
         let _ = pipeline.run(&mut profile);
 
-        bar.inc(1);
-
         pipeline
             .stats
             .add_threaded_time(ThreadedTimed::Total, now.elapsed())
     });
-
-    bar.finish();
 }
