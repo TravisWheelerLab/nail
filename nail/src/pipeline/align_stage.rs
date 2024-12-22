@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use anyhow::bail;
 use derive_builder::Builder;
 use libnail::{
     align::{
@@ -107,15 +108,17 @@ pub struct DefaultAlignStage {
 }
 
 impl DefaultAlignStage {
-    pub fn new(args: &SearchArgs) -> Self {
-        Self {
-            target_count: match args.nail_args.target_database_size {
+    pub fn new(args: &SearchArgs) -> anyhow::Result<Self> {
+        Ok(Self {
+            target_count: match args.expert_args.target_database_size {
                 Some(size) => size,
-                None => panic!(),
+                None => {
+                    bail!("no target database size")
+                }
             },
-            forward_p_value_threshold: args.nail_args.forward_pvalue_threshold,
+            forward_p_value_threshold: args.pipeline_args.forward_pvalue_threshold,
             ..Default::default()
-        }
+        })
     }
 }
 

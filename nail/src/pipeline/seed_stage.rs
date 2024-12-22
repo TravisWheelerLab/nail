@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
-    args::MmseqsArgs,
+    args::SearchArgs,
     io::Fasta,
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
@@ -43,15 +43,14 @@ fn merge_seed_maps(
 pub fn seed_profile_to_sequence(
     queries: &[Profile],
     targets: &Fasta,
-    num_threads: usize,
-    mmseqs_args: &MmseqsArgs,
+    args: &SearchArgs,
 ) -> anyhow::Result<SeedMap> {
-    let paths = MmseqsDbPaths::new(&mmseqs_args.prep_dir);
+    let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_profile_database(queries, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, targets.len(), num_threads, mmseqs_args)?;
+    run_mmseqs_search(&paths, args)?;
 
     let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
@@ -67,7 +66,7 @@ pub fn seed_profile_to_sequence(
 
     write_mmseqs_profile_database(&queries_b, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, targets.len(), num_threads, mmseqs_args)?;
+    run_mmseqs_search(&paths, args)?;
 
     let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
@@ -79,15 +78,14 @@ pub fn seed_profile_to_sequence(
 pub fn seed_sequence_to_sequence(
     queries: &Fasta,
     targets: &Fasta,
-    num_threads: usize,
-    mmseqs_args: &MmseqsArgs,
+    args: &SearchArgs,
 ) -> anyhow::Result<SeedMap> {
-    let paths = MmseqsDbPaths::new(&mmseqs_args.prep_dir);
+    let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_sequence_database(queries, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, targets.len(), num_threads, mmseqs_args)?;
+    run_mmseqs_search(&paths, args)?;
 
     let seeds = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 

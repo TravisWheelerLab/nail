@@ -80,11 +80,11 @@ impl DefaultCloudSearchStage {
     pub fn new(args: &SearchArgs) -> Self {
         Self {
             params: CloudSearchParams {
-                gamma: args.nail_args.gamma,
-                alpha: args.nail_args.alpha,
-                beta: args.nail_args.beta,
+                gamma: args.pipeline_args.gamma,
+                alpha: args.pipeline_args.alpha,
+                beta: args.pipeline_args.beta,
             },
-            p_value_threshold: args.nail_args.cloud_pvalue_threshold,
+            p_value_threshold: args.pipeline_args.cloud_pvalue_threshold,
             ..Default::default()
         }
     }

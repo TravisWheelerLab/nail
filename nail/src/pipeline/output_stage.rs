@@ -11,7 +11,7 @@ use libnail::{
     output::output_tabular::{Field, TableFormat},
 };
 
-use crate::{args::OutputArgs, util::PathBufExt};
+use crate::{args::SearchArgs, util::PathBufExt};
 
 use super::PipelineResult;
 
@@ -72,19 +72,19 @@ pub struct OutputStage {
 }
 
 impl OutputStage {
-    pub fn new(args: &OutputArgs) -> anyhow::Result<Self> {
+    pub fn new(args: &SearchArgs) -> anyhow::Result<Self> {
         Ok(Self {
-            alignment_writer: match &args.ali_results_path {
+            alignment_writer: match &args.io_args.ali_results_path {
                 Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
                 None => None,
             },
             table_writer: Some(Arc::new(Mutex::new(Box::new(
-                args.tbl_results_path.open(true)?,
+                args.io_args.tbl_results_path.open(true)?,
             )))),
             table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
-            e_value_threshold: args.e_value_threshold,
+            e_value_threshold: args.pipeline_args.e_value_threshold,
             header_status: Arc::new(Mutex::new(HeaderStatus::Unwritten)),
-            stats_writer: match &args.stats_results_path {
+            stats_writer: match &args.dev_args.stats_results_path {
                 Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
                 None => None,
             },

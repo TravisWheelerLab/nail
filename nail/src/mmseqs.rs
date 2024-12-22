@@ -8,7 +8,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 
 use libnail::{
     align::{structs::Seed, Nats},
@@ -17,7 +17,7 @@ use libnail::{
 };
 
 use crate::{
-    args::MmseqsArgs,
+    args::SearchArgs,
     io::{Fasta, SequenceDatabase},
     pipeline::SeedMap,
     util::{CommandExt, PathBufExt},
@@ -190,13 +190,12 @@ pub fn write_mmseqs_profile_database(
     Ok(())
 }
 
-pub fn run_mmseqs_search(
-    paths: &MmseqsDbPaths,
-    num_targets: usize,
-    num_threads: usize,
-    args: &MmseqsArgs,
-) -> anyhow::Result<()> {
-    let effective_e_value = args.pvalue_threshold * num_targets as f64;
+pub fn run_mmseqs_search(paths: &MmseqsDbPaths, args: &SearchArgs) -> anyhow::Result<()> {
+    let effective_e_value = args.pipeline_args.seed_pvalue_threshold
+        * args
+            .expert_args
+            .target_database_size
+            .ok_or(anyhow!("no target database size"))? as f64;
 
     let _ = paths.align_db.remove();
     let _ = paths.align_db.with_extension("dbtype").remove();
@@ -207,11 +206,14 @@ pub fn run_mmseqs_search(
         .arg(&paths.query_db)
         .arg(&paths.target_db)
         .arg(&paths.prefilter_db)
-        .args(["--threads", &num_threads.to_string()])
-        .args(["-k", &args.k.to_string()])
-        .args(["--k-score", &args.k_score.to_string()])
-        .args(["--min-ungapped-score", &args.min_ungapped_score.to_string()])
-        .args(["--max-seqs", &args.max_seqs.to_string()])
+        .args(["--threads", &args.num_threads.to_string()])
+        .args(["-k", &args.mmseqs_args.k.to_string()])
+        .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
+        .args([
+            "--min-ungapped-score",
+            &args.mmseqs_args.min_ungapped_score.to_string(),
+        ])
+        .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
         .run()?;
 
     Command::new("mmseqs")
@@ -220,7 +222,7 @@ pub fn run_mmseqs_search(
         .arg(&paths.target_db)
         .arg(&paths.prefilter_db)
         .arg(&paths.align_db)
-        .args(["--threads", &num_threads.to_string()])
+        .args(["--threads", &args.num_threads.to_string()])
         .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
         // it is required to get start positions for alignments
@@ -233,7 +235,7 @@ pub fn run_mmseqs_search(
         .arg(&paths.target_db)
         .arg(&paths.align_db)
         .arg(&paths.align_tsv)
-        .args(["--threads", &num_threads.to_string()])
+        .args(["--threads", &args.num_threads.to_string()])
         .args([
             "--format-output",
             "qheader,theader,qstart,qend,tstart,tend,bits",
