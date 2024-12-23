@@ -45,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactored pipeline stage structs:
     - they have been renamed from Step to Stage
     - each stage now returns a `StageResult<S, D>` where:
-        - S is a struct containing observations for pipeline summary statistics
-        - D is a struct containing the data structure relevant to the stage
+        - `S` is a struct containing observations for pipeline summary statistics
+        - `D` is a struct containing the data structure relevant to the stage
     - `OutputStage` now:
         - holds an `Arc<Mutex<T>>` for each individual writer
         - can optionally write any or none of the output categories
@@ -66,13 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - added support for sequence to sequence search
 - added support for HMM query files
-- added Pipeline struct
-- added SeedStep, CloudStep, AlignStep, and OutputStep traits
-- added MmseqsArgs struct
-- added write_mmseqs_database() function
-- added write_mmseqs_profile_database() function
-- added run_mmseqs_search() function
-- added seeds_from_mmseqs_align_tsv() function
+- added `Pipeline` struct
+- added `SeedStep`, `CloudStep`, `AlignStep`, and `OutputStep` traits
+- added `MmseqsArgs` struct
+- added `write_mmseqs_database()` function
+- added `write_mmseqs_profile_database()` function
+- added `run_mmseqs_search()` function
+- added `seeds_from_mmseqs_align_tsv()` function
 
 
 ### Changed
@@ -80,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - large scale refactor of file structure
     - all pipeline code was moved around to various files
     - args structs better consolidated in args.rs
-    - extension traits moved to util.rs
+    - extension traits moved to `util.rs`
 - no longer depend on `hmmbuild` at runtime
 - the alignment pipeline is now flexibly configured via the Pipeline struct and step traits
 - the default pipeline now runs `mmseqs search` twice at two profile relative entropy targets
@@ -88,6 +88,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - removed `seed` and `prep` commands from the CLI
-- removed check_hmmer_installed()
-- removed viz.rs
+- removed `check_hmmer_installed()`
+- removed `viz.rs`
 

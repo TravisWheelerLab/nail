@@ -246,13 +246,13 @@ impl<'a> AlignmentBuilder<'a> {
 
                         match step.state {
                             Trace::I_STATE => {
-                                profile_bytes.push(UTF8_DOT);
+                                profile_bytes.push(Alignment::PROFILE_GAP_BYTE);
                                 target_bytes.push(target_byte);
                                 middle_bytes.push(UTF8_SPACE);
                             }
                             Trace::D_STATE => {
                                 profile_bytes.push(profile_byte);
-                                target_bytes.push(UTF8_DASH);
+                                target_bytes.push(Alignment::TARGET_GAP_BYTE);
                                 middle_bytes.push(UTF8_SPACE);
                             }
                             Trace::M_STATE => {
@@ -307,6 +307,8 @@ impl<'a> AlignmentBuilder<'a> {
 }
 
 impl Alignment {
+    pub const PROFILE_GAP_BYTE: u8 = UTF8_DOT;
+    pub const TARGET_GAP_BYTE: u8 = UTF8_DASH;
     pub const TAB_HEADER: &'static str = "#target\tquery\ttarget start\ttarget end\tprofile start\tprofile end\tscore\tcomposition bias\tE-value\tcell fraction";
 
     pub fn tab_string_formatted(&self, format: &TableFormat) -> String {
@@ -327,6 +329,36 @@ impl Alignment {
         tab_string
     }
 
+    pub fn vert_string(&self) -> String {
+        let mut vert_string = String::new();
+
+        // score line
+        vert_string.push_str(&format!(
+            "query:        {}\n\
+             target:       {}\n\
+             query start:  {}\n\
+             query end:    {}\n\
+             target start: {}\n\
+             target end:   {}\n\
+             score:        {}\n\
+             comp bias:    {}\n\
+             E-value:      {}\n\
+             cell frac:    {}\n",
+            Field::Query.extract_from(self),
+            Field::Target.extract_from(self),
+            Field::QueryStart.extract_from(self),
+            Field::QueryEnd.extract_from(self),
+            Field::TargetStart.extract_from(self),
+            Field::TargetEnd.extract_from(self),
+            Field::Score.extract_from(self),
+            Field::CompBias.extract_from(self),
+            Field::Evalue.extract_from(self),
+            Field::CellFrac.extract_from(self),
+        ));
+
+        vert_string
+    }
+
     pub fn ali_string(&self) -> String {
         match (&self.display_strings, &self.boundaries) {
             (Some(display), Some(boundaries)) => {
@@ -339,24 +371,36 @@ impl Alignment {
                     Field::Target.extract_from(self).len(),
                 );
 
-                // score line
-                ali_string.push_str(&format!(
-                    "==  score: {} bits;  E-value: {}\n",
-                    Field::Score.extract_from(self),
-                    Field::Evalue.extract_from(self)
-                ));
+                ali_string.push_str(&self.vert_string());
+                ali_string.push_str("\n==\n\n");
+
+                let mut profile_offset = 0;
+                let mut target_offset = 0;
 
                 while start_offset <= boundaries.length {
                     start_offset = min(start_offset, boundaries.length);
                     end_offset = min(end_offset, boundaries.length);
 
+                    let profile_slice = &display.profile_string[start_offset..end_offset];
+                    let target_slice = &display.target_string[start_offset..end_offset];
+
+                    let profile_count = profile_slice
+                        .bytes()
+                        .filter(|&c| c != Self::PROFILE_GAP_BYTE)
+                        .count();
+
+                    let target_count = target_slice
+                        .bytes()
+                        .filter(|&c| c != Self::TARGET_GAP_BYTE)
+                        .count();
+
                     // profile sequence
                     ali_string.push_str(&format!(
                         "{:>W$} {:5} {} {:<5}\n",
                         Field::Query.extract_from(self),
-                        boundaries.profile_start + start_offset,
-                        &display.profile_string[start_offset..end_offset],
-                        boundaries.profile_start + end_offset - 1,
+                        boundaries.profile_start + profile_offset,
+                        profile_slice,
+                        boundaries.profile_start + profile_offset + profile_count - 1,
                         W = name_width
                     ));
 
@@ -373,11 +417,14 @@ impl Alignment {
                     ali_string.push_str(&format!(
                         "{:>W$} {:5} {} {:<5}\n",
                         Field::Target.extract_from(self),
-                        boundaries.target_start + start_offset,
-                        &display.target_string[start_offset..end_offset],
-                        boundaries.target_start + end_offset - 1,
+                        boundaries.target_start + target_offset,
+                        target_slice,
+                        boundaries.target_start + target_offset + target_count - 1,
                         W = name_width
                     ));
+
+                    profile_offset += profile_count;
+                    target_offset += target_count;
 
                     // position-specific posterior probabilities
                     ali_string.push_str(&format!(
@@ -391,6 +438,7 @@ impl Alignment {
                     start_offset += 80;
                     end_offset += 80;
                 }
+                ali_string.push_str("//");
 
                 ali_string
             }

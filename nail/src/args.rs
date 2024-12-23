@@ -36,6 +36,10 @@ pub struct SearchArgs {
     #[arg(short = 's', action)]
     pub print_summary_stats: bool,
 
+    /// Don't write any tabular results, write alignments to stdout
+    #[arg(short = 'x', action)]
+    pub ali_to_stdout: bool,
+
     #[command(flatten)]
     #[clap(next_help_heading = "File I/O options")]
     pub io_args: IoArgs,
@@ -62,7 +66,7 @@ pub struct SearchArgs {
 pub struct IoArgs {
     /// The file where tabular output will be written
     #[arg(long = "tbl-out", default_value = "results.tbl", value_name = "PATH")]
-    pub tbl_results_path: PathBuf,
+    pub tbl_results_path: Option<PathBuf>,
 
     /// The file where alignment output will be written
     #[arg(long = "ali-out", default_value = None, value_name = "PATH")]

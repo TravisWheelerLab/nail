@@ -9,6 +9,12 @@ pub struct TraceStep {
     pub posterior: f32,
 }
 
+impl TraceStep {
+    pub fn is_core_state(&self) -> bool {
+        self.state == Trace::M_STATE || self.state == Trace::I_STATE || self.state == Trace::D_STATE
+    }
+}
+
 impl std::fmt::Debug for TraceStep {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -30,7 +36,6 @@ pub struct Trace {
     pub profile_indices: Vec<usize>,
     pub target_indices: Vec<usize>,
     pub posterior_probabilities: Vec<f32>,
-    ///
     pub cell_fraction: f32,
 }
 
@@ -96,28 +101,21 @@ impl Trace {
     }
 
     pub fn core_len(&self) -> usize {
-        self.states
-            .iter()
-            .filter(|&&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE)
+        self.iter()
+            .filter(|s| {
+                s.state == Self::M_STATE || s.state == Self::I_STATE || s.state == Self::D_STATE
+            })
             .count()
     }
 
     pub fn first_core(&self) -> Option<TraceStep> {
-        let idx = self
-            .states
-            .iter()
-            .position(|&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE)?;
-
+        let idx = self.iter().position(|s| s.is_core_state())?;
         self.get(idx)
     }
 
     pub fn last_core(&self) -> Option<TraceStep> {
-        let idx = self
-            .states
-            .iter()
-            .rev()
-            .position(|&s| s == Self::M_STATE || s == Self::I_STATE || s == Self::D_STATE)?;
-
+        let rev_idx = self.iter().rev().position(|s| s.is_core_state())?;
+        let idx = self.length - 1 - rev_idx;
         self.get(idx)
     }
 

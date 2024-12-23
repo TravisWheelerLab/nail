@@ -1,5 +1,5 @@
 use std::{
-    io::Write,
+    io::{stdout, Write},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -61,11 +61,12 @@ impl OutputStageStatsBuilder {
     }
 }
 
+type ResultsWriter = Option<Arc<Mutex<Box<dyn Write + Send>>>>;
 #[derive(Clone)]
 pub struct OutputStage {
-    alignment_writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
-    table_writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
-    stats_writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
+    alignment_writer: ResultsWriter,
+    table_writer: ResultsWriter,
+    stats_writer: ResultsWriter,
     e_value_threshold: f64,
     table_format: TableFormat,
     header_status: Arc<Mutex<HeaderStatus>>,
@@ -73,21 +74,32 @@ pub struct OutputStage {
 
 impl OutputStage {
     pub fn new(args: &SearchArgs) -> anyhow::Result<Self> {
-        Ok(Self {
-            alignment_writer: match &args.io_args.ali_results_path {
+        let alignment_writer: ResultsWriter = if args.ali_to_stdout {
+            Some(Arc::new(Mutex::new(Box::new(stdout()))))
+        } else {
+            match &args.io_args.ali_results_path {
                 Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
                 None => None,
-            },
-            table_writer: Some(Arc::new(Mutex::new(Box::new(
-                args.io_args.tbl_results_path.open(true)?,
-            )))),
+            }
+        };
+
+        let table_writer: ResultsWriter = match &args.io_args.tbl_results_path {
+            Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
+            None => None,
+        };
+
+        let stats_writer: ResultsWriter = match &args.dev_args.stats_results_path {
+            Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
+            None => None,
+        };
+
+        Ok(Self {
+            alignment_writer,
+            table_writer,
             table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
             e_value_threshold: args.pipeline_args.e_value_threshold,
             header_status: Arc::new(Mutex::new(HeaderStatus::Unwritten)),
-            stats_writer: match &args.dev_args.stats_results_path {
-                Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
-                None => None,
-            },
+            stats_writer,
         })
     }
 
@@ -115,7 +127,7 @@ impl OutputStage {
                     let now = Instant::now();
                     reported
                         .iter()
-                        .try_for_each(|ali| writeln!(guard, "{}", ali.ali_string()))
+                        .try_for_each(|ali| writeln!(guard, "{}\n", ali.ali_string()))
                         .with_context(|| "failed to write to alignment writer")?;
 
                     stats.add_write_time(now.elapsed());

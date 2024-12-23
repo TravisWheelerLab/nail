@@ -61,15 +61,19 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
 pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let start_time = Instant::now();
 
+    if args.ali_to_stdout {
+        args.io_args.tbl_results_path = None
+    }
+
     if args.pipeline_args.only_seed && args.io_args.seeds_output_path.is_none() {
         args.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.json")?);
     }
 
     {
         // quickly make sure we can write to all of the results paths
-        args.io_args
-            .tbl_results_path
-            .open(args.io_args.allow_overwrite)?;
+        if let Some(path) = &args.io_args.tbl_results_path {
+            path.open(args.io_args.allow_overwrite)?;
+        }
 
         if let Some(path) = &args.io_args.ali_results_path {
             path.open(args.io_args.allow_overwrite)?;
