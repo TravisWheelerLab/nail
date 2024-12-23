@@ -95,6 +95,7 @@ pub trait PathBufExt {
 }
 
 impl PathBufExt for PathBuf {
+    // TODO: flesh this API out more
     fn open(&self, allow_overwrite: bool) -> anyhow::Result<BufWriter<File>> {
         let mut file_options = File::options();
 

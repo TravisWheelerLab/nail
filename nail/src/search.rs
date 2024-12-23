@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
@@ -57,25 +58,13 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
     }
 }
 
-pub fn seed(args: SearchArgs) -> anyhow::Result<()> {
-    let queries = read_queries(&args.query_path)?;
-    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
-
-    let seeds = match queries {
-        Queries::Sequence(ref queries) => seed_sequence_to_sequence(queries, &targets, &args)?,
-        Queries::Profile(ref queries) => seed_profile_to_sequence(queries, &targets, &args)?,
-    };
-
-    todo!();
-    // let writer = BufWriter::new(args.seeds_path.open(true)?);
-    // let mut serializer = serde_json::Serializer::new(writer);
-    // seeds.serialize(&mut serializer)?;
-
-    Ok(())
-}
-
 pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let start_time = Instant::now();
+
+    if args.pipeline_args.only_seed && args.io_args.seeds_output_path.is_none() {
+        args.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.json")?);
+    }
+
     {
         // quickly make sure we can write to all of the results paths
         args.io_args
@@ -151,6 +140,18 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
             seeds
         }
     };
+
+    if let Some(ref path) = args.io_args.seeds_output_path {
+        // TODO: don't open with allow_overwrite = true
+        //       after I've updated the open() API
+        let writer = BufWriter::new(path.open(true)?);
+        let mut serializer = serde_json::Serializer::new(writer);
+        seeds.serialize(&mut serializer)?;
+    }
+
+    if args.pipeline_args.only_seed {
+        return Ok(());
+    }
 
     let mut pipeline = Pipeline {
         targets,

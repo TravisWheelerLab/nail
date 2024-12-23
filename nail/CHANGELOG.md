@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         - holds an `Arc<Mutex<T>>` for each individual writer
         - can optionally write any or none of the output categories
         - can now write summary statistics to the `stats_results_path` data for each call to `Pipeline.run()`
+- refactored CLI
 
 ### Deprecated
 

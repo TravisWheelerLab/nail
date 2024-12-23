@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::bail;
 use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
@@ -54,6 +55,10 @@ pub fn seed_profile_to_sequence(
 
     let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
+    if !args.pipeline_args.double_seed {
+        return Ok(seed_map_a);
+    }
+
     let queries_b: Vec<_> = queries
         .iter()
         .filter(|p| p.relative_entropy() < 1.0)
@@ -88,6 +93,10 @@ pub fn seed_sequence_to_sequence(
     run_mmseqs_search(&paths, args)?;
 
     let seeds = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+
+    if args.pipeline_args.double_seed {
+        bail!("double seeding not implemented for sequence to sequence search")
+    }
 
     Ok(seeds)
 }
