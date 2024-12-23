@@ -117,6 +117,9 @@ impl DefaultAlignStage {
                 }
             },
             forward_p_value_threshold: args.pipeline_args.forward_pvalue_threshold,
+            config: AlignConfig {
+                do_null_two: !args.expert_args.no_null_two,
+            },
             ..Default::default()
         })
     }
