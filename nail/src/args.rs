@@ -89,7 +89,7 @@ pub struct PipelineArgs {
         default_value_t = 12.0,
         value_name = "X",
         help = "Cloud search parameter α:\n  \
-                filter hits with P-value > X"
+                local score pruning threshold"
     )]
     pub alpha: f32,
 
@@ -99,7 +99,7 @@ pub struct PipelineArgs {
         default_value_t = 20.0,
         value_name = "X",
         help = "Cloud search parameter β:\n  \
-                filter hits with P-value > X"
+                global score pruning threshold"
     )]
     pub beta: f32,
 
@@ -149,7 +149,7 @@ pub struct PipelineArgs {
         default_value_t = 10.0,
         value_name = "X",
         help = "Final reporting threshold:\n  \
-                filter hits with E-value <= X"
+                filter hits with E-value > X"
     )]
     pub e_value_threshold: f64,
 
