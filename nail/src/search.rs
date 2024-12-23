@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{stdout, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
@@ -191,7 +191,9 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .stats
         .set_serial_time(SerialTimed::Total, start_time.elapsed());
 
-    // pipeline.stats.write(&mut stdout())?;
+    if args.print_summary_stats {
+        pipeline.stats.write(&mut stdout())?;
+    }
 
     Ok(())
 }

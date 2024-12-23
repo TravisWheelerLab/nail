@@ -32,6 +32,10 @@ pub struct SearchArgs {
     #[arg(short = 't', default_value_t = 8usize, value_name = "N")]
     pub num_threads: usize,
 
+    /// Print out pipeline summary statistics
+    #[arg(short = 's', action)]
+    pub print_summary_stats: bool,
+
     #[command(flatten)]
     #[clap(next_help_heading = "File I/O options")]
     pub io_args: IoArgs,
