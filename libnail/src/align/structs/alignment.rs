@@ -92,21 +92,6 @@ fn map_posterior_probability_to_bin_byte(probability: f32) -> u8 {
     UTF8_NUMERIC[bin as usize]
 }
 
-/// This selects the proper character for the middle line of the alignment reporting.
-fn select_middle_character(profile_byte: u8, target_byte: u8, match_emission_score: f32) -> u8 {
-    if profile_byte.to_ascii_lowercase() == target_byte.to_ascii_lowercase() {
-        // if we have an exact match, we just put place the matched character
-        profile_byte
-    } else if match_emission_score > 0.0 {
-        // if we have a positive match emission score
-        // (the log odds ratio), then we place a plus
-        UTF8_PLUS
-    } else {
-        // otherwise, we just place a space
-        UTF8_SPACE
-    }
-}
-
 #[derive(Default, Clone)]
 pub struct ScoreParams {
     pub forward_score_nats: f32,
