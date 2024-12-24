@@ -35,6 +35,9 @@ To run the `nail search` pipeline, `mmseqs search` must be available in your sys
 To install nail, you'll need the Rust development tooling, which means you'll need to install the Rust compiler and Cargo.
 The easiest way to do that is to use [rustup](https://rustup.rs/).
 
+(*Note: this may seem like a slight barrier to entry, but it's as simple as running a single shell command.
+That being said, we plan to begin releasing pre-compiled binaries for several platforms in the next release.*)
+
 Once Cargo is installed, you can install nail with:
 
     cargo install nail
@@ -55,7 +58,9 @@ For example, try running:
 
 ## Usage
 
-The nail command line interface has two subcommands: `search` and `seed`.
+The nail command line interface uses subcommands. 
+
+Currently, there is only one subcommand: `search` (that may seem a little strange, but we will be adding subcommands in the near future).
 
 ### nail search
 
@@ -64,37 +69,17 @@ The `nail search` command runs the entire nail pipeline, including running MMseq
 The input to `nail search` is a query file (p7HMM or FASTA) and a target sequence database file (FASTA).
 
 By default, the search results will be written to `./results.tbl` in a tabular format, and alignment output is written to stdout.
-In addition, a collection of temporary files required to run `mmseqs search`, will be written to the `./prep/` directory.
+In addition, a collection of temporary files required to run `mmseqs search`, will be written to the `./tmp/` directory.
 
 For example, when running nail search, you'll see something like:
 
-    $ nail search query.hmm target.fa
+    $ nail search query.hmm target.fa 
+    reading query database...   done (0.00s)
+    indexing target database... done (0.00s)
+    running mmseqs...           done (0.44s)
+    running nail pipeline...    done (0.16s)    
 
-    ==  score: 257.1 bits;  E-value: 9.7e-79
-                                  7tm_1     2 NllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltaisi 81   
-                                              N +Vi++++r++kl+tp+n+++ +La++Dllv++lv+p+s++y++ +g+w++g++lC+++ + d++++tasi++l++i++
-    O08892|reviewed|5-hydroxytryptamine    66 NAFVIATVYRTRKLHTPANYLIASLAFTDLLVSILVMPISTMYTV-TGRWTLGQALCDFWLSSDITCCTASIMHLCVIAL 145  
-                                              9********************************************06*********************************
-    
-                                  7tm_1    82 DRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesaekeetvClidfpeeestwevsytlllsvlg 161  
-                                              DRY+aI+ ++ y+++rt+rra+ +i++vWv+++++slpp+++++ k e   +e+  Cl+++++      v yt++++ ++
-    O08892|reviewed|5-hydroxytryptamine   146 DRYWAITDAVGYSAKRTPRRAAGMIALVWVFSICISLPPFFWRQAKAE---EEVLDCLVNTDH------VLYTVYSTGGA 225  
-                                              *****************************************777666500099******99990000009**********
-    
-                                  7tm_1   162 fllpllvilvcyvrilrtlrksakkeks.................................................... 241  
-                                              f+lp+l+++ +y ri+ ++r++  k++                                                     
-    O08892|reviewed|5-hydroxytryptamine   226 FYLPTLLLIALYGRIYVEARSRILKQTPNKTGKRLTRAQLITDSPGSTSSVTSINSRAPEVPCDSGSPVYVNQVKVRVSD 305  
-                                              ***********************9999899999999999999999999********************************
-    
-                                  7tm_1   242 ....rkkksarkerkalktllvvvvvfvlcwlPyfilllldsllkeceseklve.tallitlllayvnsclNPiiY 317  
-                                                  +kk +a++erka+ktl+v++++f++cwlP+fi++l++ +   c++ +  + ++++++++l+y+ns++NPiiY
-    O08892|reviewed|5-hydroxytryptamine   306 ALLEKKKLMAARERKATKTLGVILGAFIVCWLPFFIISLVMPI---CKDACWFHMAIFDFFTWLGYLNSLINPIIY 381  
-                                          ***9999************************************000777666551666******************
-    ...
-    ...
-    ...
-
-Checking the `results.tbl` might look something like:
+Checking the `results.tbl` will look something like:
 
     $ head -n 15 results.bl
 
@@ -115,13 +100,101 @@ Checking the `results.tbl` might look something like:
     E7F7V7|reviewed|Galanin                                   7tm_1-consensus 43     294    1     260   142.6 1.7  1.4e-43 0.073
 
 
-### nail seed
+nail can also produce alignment output if you supply an `--ali-out` argument:
 
-The `nail seed` command runs MMseqs2 and produces a `seeds.json` file.
+    $ nail search --ali-out results.ali query.hmm target.fa 
+
+
+Checking the `results.ali` will look something like:
+
+    $ head -n 70 results.ali
+
+    query:        7tm_1
+    target:       O08892|reviewed|5-hydroxytryptamine
+    query start:  2
+    query end:    260
+    target start: 66
+    target end:   368
+    score:        257.7
+    comp bias:    9.3
+    E-value:      6.3e-79
+    cell frac:    0.094
+    
+    ==
+    
+                                  7tm_1     2 NllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltaisi 81   
+                                              N +Vi++++r++kl+tp+n+++ +La++Dllv++lv+p+s++y++ +g+w++g++lC+++ + d++++tasi++l++i++
+    O08892|reviewed|5-hydroxytryptamine    66 NAFVIATVYRTRKLHTPANYLIASLAFTDLLVSILVMPISTMYTV-TGRWTLGQALCDFWLSSDITCCTASIMHLCVIAL 144  
+                                              9********************************************06*********************************
+    
+                                  7tm_1    82 DRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesaekeetvClidfpeeestwevsytlllsvlg 161  
+                                              DRY+aI+ ++ y+++rt+rra+ +i++vWv+++++slpp+++++ k e   +e+  Cl+++++      v yt++++ ++
+    O08892|reviewed|5-hydroxytryptamine   145 DRYWAITDAVGYSAKRTPRRAAGMIALVWVFSICISLPPFFWRQAKAE---EEVLDCLVNTDH------VLYTVYSTGGA 215  
+                                              *****************************************777666500099******99990000009**********
+    
+                                  7tm_1   162 fllpllvilvcyvrilrtlrksakkeks.................................................... 189  
+                                              f+lp+l+++ +y ri+ ++r++  k++                                                     
+    O08892|reviewed|5-hydroxytryptamine   216 FYLPTLLLIALYGRIYVEARSRILKQTPNKTGKRLTRAQLITDSPGSTSSVTSINSRAPEVPCDSGSPVYVNQVKVRVSD 295  
+                                              ***********************9999899999999999999999999********************************
+    
+                                  7tm_1   190 ....rkkksarkerkalktllvvvvvfvlcwlPyfilllldsllkeceseklve.tallitlllayvnsclNPiiY 260  
+                                                  +kk +a++erka+ktl+v++++f++cwlP+fi++l++ +   c++ +  + ++++++++l+y+ns++NPiiY
+    O08892|reviewed|5-hydroxytryptamine   296 ALLEKKKLMAARERKATKTLGVILGAFIVCWLPFFIISLVMPI---CKDACWFHMAIFDFFTWLGYLNSLINPIIY 368  
+                                              ***9999************************************000777666551666******************
+    
+    //
+    
+    query:        7tm_1
+    target:       O02666|reviewed|Alpha-1D
+    query start:  1
+    query end:    260
+    target start: 118
+    target end:   407
+    score:        255.6
+    comp bias:    5.5
+    E-value:      2.8e-78
+    cell frac:    0.061
+    
+    ==
+    
+                       7tm_1     1 gNllVilvilrnkklrtptnifllnLavaDllvlllvlpfslvyallegdwvfgevlCklvtaldvvnltasillltais 80   
+                                   gNllVil +++n++l+t+tn+f++nLavaDll++++vlpfs++ ++l g w fg+++C+++ a+dv+++tasil+l+ is
+    O02666|reviewed|Alpha-1D   118 GNLLVILSVACNRHLQTVTNYFIVNLAVADLLLSATVLPFSATMEVL-GFWAFGRAFCDVWAAVDVLCCTASILSLCTIS 196  
+                                   8*********************************************70********************************
+    
+                       7tm_1    81 iDRYlaIvkplkykrirtkrralvlilvvWvlalllslppllfsgtktesaekeetvClidfpeeestwevsytlllsvl 160  
+                                   +DRY+ + + lky++i+t r+a++++++ W++al++s+ pll  g+k+  +  +e++C i+ +         y++++s++
+    O02666|reviewed|Alpha-1D   197 VDRYVGVRHSLKYPAIMTERKAAAILALLWAVALVVSMGPLL--GWKEPVP-PDERFCGITEEV-------GYAVFSSLC 266  
+                                   ******************************************00677776609*******87650000000*********
+    
+                       7tm_1   161 gfllpllvilvcyvrilrtlrksakkeks............................................rkkksar 196  
+                                   +f+lp+ vi+v+y+r++  +r++ ++ +                                              +  +++
+    O02666|reviewed|Alpha-1D   267 SFYLPMAVIVVMYCRVYVVARSTTRSLEAGVKRERGKASEVVLRIHCRGAASGADGAPGTRGAKGHTFRSSLSVRLLKFS 346  
+                                   ***************************99999999999999999999999999999999999999999999986677778
+    
+                       7tm_1   197 kerkalktllvvvvvfvlcwlPyfilllldsllkeceseklvetallitlllayvnsclNPiiY 260  
+                                   +e+ka+ktl++vv+vfvlcw+P+f++l l sl    ++ k +e +++++ +l+y+nsc+NP+iY
+    O02666|reviewed|Alpha-1D   347 REKKAAKTLAIVVGVFVLCWFPFFFVLPLGSL---FPQLKPSEGVFKVIFWLGYFNSCVNPLIY 407  
+                                   899*****************************0009****************************
+    
+    //
+    
+    ...
+    ...
+    ...
+
+### nail seeds
+
+If you run `nail search --only-seed` command, nail will run MMseqs2, produces `seeds.json` file, and terminate.
+This may be useful if you would like to experiment with different nail settings using the same seeds.
 
 For example:
 
-    $ nail seed query.hmm target.fa
+    $ nail search --only-seed query.hmm target.fa
+
+You can also save the seeds from a full run of the `nail search` pipeline by supplying a `--seeds-out` argument:
+
+    $ nail search --seeds-out seeds.json query.hmm target.fa
 
 Seeds can be provided to `nail search` using the `--seeds <seeds.json>` flag, which will skip the seed step in the search pipeline.
 
@@ -133,12 +206,12 @@ In practice, these seeds may be produced from any source as long as they are for
 {
   "query1": {
     "target1": {
-      "target_start": 48,
-      "target_end": 287,
-      "profile_start": 1,
-      "profile_end": 259,
-      "score": 168.0
-    },
+      "target_start": 48, //  <-  these are the positions from which
+      "target_end": 287,  //  <   nail will begin the cloud search
+      "profile_start": 1, //  <   
+      "profile_end": 259, //  <
+      "score": 168.0      //  <-  the score field is used to pick between
+    },                            seeds that compete with each other
     "target2": {
       "target_start": 72,
       "target_end": 343,
@@ -158,6 +231,9 @@ In practice, these seeds may be produced from any source as long as they are for
   ...
 }
 ```
+
+We plan to make the use of custom seeds more robust in the future.
+
 
 ## License
 
