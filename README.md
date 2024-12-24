@@ -35,8 +35,8 @@ To run the `nail search` pipeline, `mmseqs search` must be available in your sys
 To install nail, you'll need the Rust development tooling, which means you'll need to install the Rust compiler and Cargo.
 The easiest way to do that is to use [rustup](https://rustup.rs/).
 
-(*Note: this may seem like a slight barrier to entry, but it's as simple as running a single shell command.
-That being said, we plan to begin releasing pre-compiled binaries for several platforms in the next release.*)
+*Note: this may seem like a slight barrier to entry, but it's as simple as running a single shell command.
+That being said, we plan to begin releasing pre-compiled binaries for several platforms in the next release*
 
 Once Cargo is installed, you can install nail with:
 
@@ -60,7 +60,9 @@ For example, try running:
 
 The nail command line interface uses subcommands. 
 
-Currently, there is only one subcommand: `search` (that may seem a little strange, but we will be adding subcommands in the near future).
+Currently, there is only one subcommand: `search` 
+
+*Note: that may seem a little strange, but we will be adding subcommands in the near future
 
 ### nail search
 
@@ -82,7 +84,6 @@ For example, when running nail search, you'll see something like:
 Checking the `results.tbl` will look something like:
 
     $ head -n 15 results.bl
-
     #                                                                         target target query query       comp         cell  
     # target                                                  query           start  end    start end   score bias evalue  frac  
     # ------------------------------------------------------- --------------- ------ ------ ----- ----- ----- ---- ------- ----- 
@@ -108,7 +109,6 @@ nail can also produce alignment output if you supply an `--ali-out` argument:
 Checking the `results.ali` will look something like:
 
     $ head -n 70 results.ali
-
     query:        7tm_1
     target:       O08892|reviewed|5-hydroxytryptamine
     query start:  2
@@ -210,8 +210,8 @@ In practice, these seeds may be produced from any source as long as they are for
       "target_end": 287,  //  <   nail will begin the cloud search
       "profile_start": 1, //  <   
       "profile_end": 259, //  <
-      "score": 168.0      //  <-  the score field is used to pick between
-    },                            seeds that compete with each other
+      "score": 168.0      //  <---  the score field is used to pick between
+    },                              seeds that compete with each other
     "target2": {
       "target_start": 72,
       "target_end": 343,
@@ -233,7 +233,6 @@ In practice, these seeds may be produced from any source as long as they are for
 ```
 
 We plan to make the use of custom seeds more robust in the future.
-
 
 ## License
 
