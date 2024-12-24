@@ -24,7 +24,7 @@ pub struct UnknownDigitalSequenceByteError {
 }
 
 /// This holds the both the "digital" data and string data of a biological sequence.
-#[derive(Default)]
+#[derive(Default, PartialEq)]
 pub struct Sequence {
     /// The name of the sequence
     pub name: String,
@@ -125,6 +125,9 @@ impl Sequence {
                     digital_bytes.push(*digital_byte)
                 }
             }
+
+            utf8_bytes.shrink_to_fit();
+            digital_bytes.shrink_to_fit();
 
             seqs.push(Sequence {
                 name,

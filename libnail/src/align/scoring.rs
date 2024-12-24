@@ -3,10 +3,10 @@ use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-use super::CloudSearchScores;
+use super::CloudSearchResults;
 
 /// A wrapper around f32 to describe nats
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct Nats(pub f32);
 impl Nats {
     pub fn value(&self) -> f32 {
@@ -57,7 +57,7 @@ impl std::ops::Sub<Bits> for Nats {
 }
 
 /// A wrapper around f32 to describe bits
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct Bits(pub f32);
 impl Bits {
     pub fn value(&self) -> f32 {
@@ -112,6 +112,7 @@ pub trait Score {
     fn bits(self) -> Bits;
     fn nats(self) -> Nats;
     fn max(self, other: Self) -> Self;
+    fn min(self, other: Self) -> Self;
 }
 
 impl Score for Nats {
@@ -125,6 +126,10 @@ impl Score for Nats {
 
     fn max(self, other: Self) -> Self {
         Nats(self.0.max(other.0))
+    }
+
+    fn min(self, other: Self) -> Self {
+        Nats(self.0.min(other.0))
     }
 }
 
@@ -140,6 +145,10 @@ impl Score for Bits {
     fn max(self, other: Self) -> Self {
         Bits(self.0.max(other.0))
     }
+
+    fn min(self, other: Self) -> Self {
+        Bits(self.0.min(other.0))
+    }
 }
 
 pub fn p_value(score: impl Score, lambda: f32, tau: f32) -> f64 {
@@ -151,7 +160,10 @@ pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
 }
 
 /// Compute the cloud score: the approximation of the forward score of the entire cloud.
-pub fn cloud_score(forward_scores: &CloudSearchScores, reverse_scores: &CloudSearchScores) -> Nats {
+pub fn cloud_score(
+    forward_scores: &CloudSearchResults,
+    reverse_scores: &CloudSearchResults,
+) -> Nats {
     // this approximates the score for the forward
     // cloud that extends past the seed end point
     let disjoint_forward_score = forward_scores.max_score - forward_scores.max_score_within;

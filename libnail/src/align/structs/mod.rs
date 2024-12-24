@@ -1,5 +1,7 @@
 mod alignment;
-pub use alignment::{Alignment, AlignmentBuilder, ScoreParams};
+pub use alignment::{
+    Alignment, AlignmentBuilder, Boundaries, CellStats, DisplayStrings, ScoreParams, Scores,
+};
 
 mod anti_diagonal_bounds;
 pub use anti_diagonal_bounds::{AntiDiagonal, AntiDiagonalBounds, Relationship};

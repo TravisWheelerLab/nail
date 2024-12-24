@@ -28,9 +28,10 @@ pub enum PruneStatus {
     PartiallyPruned,
 }
 
-pub struct CloudSearchScores {
+pub struct CloudSearchResults {
     pub max_score: Nats,
     pub max_score_within: Nats,
+    pub num_cells_computed: usize,
 }
 
 #[inline]
@@ -233,7 +234,8 @@ pub fn cloud_search_backward(
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut AntiDiagonalBounds,
-) -> CloudSearchScores {
+) -> CloudSearchResults {
+    let mut num_cells_computed = 0;
     // the highest score we've seen overall
     let mut max_score = -f32::INFINITY;
     // the highest score we see before we pass the end seed point
@@ -299,6 +301,7 @@ pub fn cloud_search_backward(
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
         for (target_idx, profile_idx) in current_bound.cell_zip() {
+            num_cells_computed += 1;
             compute_backward_cell(
                 target,
                 profile,
@@ -357,6 +360,7 @@ pub fn cloud_search_backward(
         );
 
         for (target_idx, profile_idx) in current_bound.cell_zip() {
+            num_cells_computed += 1;
             compute_backward_cell(
                 target,
                 profile,
@@ -392,9 +396,10 @@ pub fn cloud_search_backward(
         }
     }
 
-    CloudSearchScores {
+    CloudSearchResults {
         max_score: Nats(max_score),
         max_score_within: Nats(max_score_within),
+        num_cells_computed,
     }
 }
 
@@ -490,7 +495,8 @@ pub fn cloud_search_forward(
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
     bounds: &mut AntiDiagonalBounds,
-) -> CloudSearchScores {
+) -> CloudSearchResults {
+    let mut num_cells_computed = 0;
     // the highest score we've seen overall
     let mut max_score = -f32::INFINITY;
     // the highest score we see before we pass the end seed point
@@ -566,6 +572,7 @@ pub fn cloud_search_forward(
         let cloud_matrix_row_idx = anti_diagonal_idx % 3;
 
         for (target_idx, profile_idx) in current_bound.cell_zip() {
+            num_cells_computed += 1;
             compute_forward_cell(
                 target,
                 profile,
@@ -624,6 +631,7 @@ pub fn cloud_search_forward(
         );
 
         for (target_idx, profile_idx) in current_bound.cell_zip() {
+            num_cells_computed += 1;
             compute_forward_cell(
                 target,
                 profile,
@@ -659,8 +667,9 @@ pub fn cloud_search_forward(
         }
     }
 
-    CloudSearchScores {
+    CloudSearchResults {
         max_score: Nats(max_score),
         max_score_within: Nats(max_score_within),
+        num_cells_computed,
     }
 }

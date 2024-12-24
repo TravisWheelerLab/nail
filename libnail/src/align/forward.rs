@@ -199,9 +199,18 @@ pub fn forward(
         );
     }
 
+    // what: sum up the loop transitions to the N and/or C states
+    //       once for every position in the target sequence that
+    //       isn't included in the cloud
+    // why: we want the best approximation of the full Forward score
+    let aligned_target_length = bounds.target_end - bounds.target_start + 1;
+    let unaligned_target_length = target.length - aligned_target_length;
+    let background_correction = unaligned_target_length as f32
+        * profile.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX);
+
     let final_c_state_score = dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX);
     let c_to_n_score =
         profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX);
 
-    Nats(final_c_state_score + c_to_n_score)
+    Nats(final_c_state_score + background_correction + c_to_n_score)
 }

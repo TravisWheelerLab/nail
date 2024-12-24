@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context};
 use rand::SeedableRng;
 use rand_pcg::Pcg64;
 
@@ -13,8 +14,9 @@ use crate::structs::hmm::constants::{
 };
 use crate::structs::hmm::Alphabet;
 use crate::structs::Hmm;
-use crate::util::{avg_relative_entropy, f32_vec_argmax, LogAbuse, VecUtils};
+use crate::util::{f32_vec_argmax, mean_relative_entropy, LogAbuse};
 
+use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Formatter;
 
@@ -108,15 +110,22 @@ impl Profile {
             })
             .collect();
 
-        avg_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
+        mean_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
     }
 
-    pub fn raise_relative_entropy(&mut self, target: f32) {
+    pub fn adjust_mean_relative_entropy(&mut self, target_mre: f32) -> anyhow::Result<f32> {
         const LOWER_PROB_LIMIT: f32 = 1e-3;
         const TARGET_TOLERANCE: f32 = 1e-3;
-        const NUM_SATURATED_RESIDUE_LIMIT: usize = 10;
-        const PCT_SATURATED_COL_LIMIT: f32 = 0.5;
+        const WEIGHT_START: f32 = 0.1;
+        const WEIGHT_STEP: f32 = 2.0;
         const MAX_ITER: usize = 100;
+
+        let start_mre = self.relative_entropy();
+
+        // double check that we aren't already at the target MRE
+        if (start_mre - target_mre).abs() < TARGET_TOLERANCE {
+            return Ok(start_mre);
+        }
 
         let start_probs_by_pos: Vec<Vec<f32>> = self
             .match_scores
@@ -131,110 +140,172 @@ impl Profile {
             })
             .collect();
 
-        enum Mode {
-            Growing,
-            Binary,
-        }
-
-        enum Status {
-            Iterating,
-            Success,
-            Failure,
-        }
-
-        let mut search_mode = Mode::Growing;
-        let mut status = Status::Iterating;
-
         let mut new_probs_by_pos = start_probs_by_pos.clone();
-        let mut factor = 0.1;
-        let mut upper_bound = 0.0;
-        let mut lower_bound = 0.0;
 
-        for _ in 0..MAX_ITER {
-            new_probs_by_pos
-                .iter_mut()
-                .zip(&start_probs_by_pos)
-                // skip model position 0
-                .skip(1)
-                .for_each(|(new_probs, start_probs)| {
-                    new_probs
+        // for raising MRE, this will contain the maximum weights
+        // that we can scale each position without setting any member
+        // of the distribution below the LOWER_PROB_LIMIT
+        let mut max_weights_by_pos: Vec<f32> = vec![0.0; self.length + 1];
+
+        enum Mode {
+            Raise,
+            Lower,
+        }
+
+        let mode = if start_mre < target_mre {
+            Mode::Raise
+        } else {
+            Mode::Lower
+        };
+
+        let (mut lower_bound, mut upper_bound) = match mode {
+            Mode::Raise => {
+                max_weights_by_pos
+                    .iter_mut()
+                    .enumerate()
+                    .skip(1)
+                    .try_for_each(|(pos, weight)| {
+                        *weight = start_probs_by_pos[pos]
+                            .iter()
+                            .enumerate()
+                            .take(Profile::MAX_ALPHABET_SIZE)
+                            .map(|(r, p)| {
+                                // this comes from:
+                                //   P'_a = (P_a + W * P_b) / (1 + W)
+                                //   for P'_a = <LOWER_PROB_LIMIT>
+                                (LOWER_PROB_LIMIT - p)
+                                    / (AMINO_BACKGROUND_FREQUENCIES[r] - LOWER_PROB_LIMIT)
+                            })
+                            // **note: we're taking the max of (mostly) negative weights
+                            .max_by(|a, b| a.partial_cmp(b).expect("NaN encountered"))
+                            .ok_or(anyhow!("empty emission probabilities"))?;
+
+                        anyhow::Ok(())
+                    })
+                    .context("failed to produce max weights")?;
+
+                // the lower bound is the min of the max weights
+                let lower_bound = max_weights_by_pos
+                    .iter()
+                    .skip(1)
+                    .min_by(|a, b| a.total_cmp(b))
+                    .ok_or(anyhow!("empty weights"))?;
+
+                Ok((*lower_bound, 0.0f32))
+            }
+            Mode::Lower => {
+                let mut last_weight = 0.0;
+                let mut weight = WEIGHT_START;
+                let mut result = Err(anyhow!("exceeded max iterations during linear search"));
+                for _ in 0..MAX_ITER {
+                    new_probs_by_pos
                         .iter_mut()
-                        .zip(start_probs)
-                        .enumerate()
-                        .take(Profile::MAX_ALPHABET_SIZE)
-                        .for_each(|(idx, (p_new, p_start))| {
-                            *p_new = p_start - factor * AMINO_BACKGROUND_FREQUENCIES[idx]
+                        .zip(&start_probs_by_pos)
+                        // skip model position 0
+                        .skip(1)
+                        .for_each(|(new_probs, start_probs)| {
+                            new_probs
+                                .iter_mut()
+                                .zip(start_probs)
+                                .enumerate()
+                                // only take core emission probs
+                                .take(Profile::MAX_ALPHABET_SIZE)
+                                // take a weighted mean
+                                .for_each(|(residue_idx, (p_new, p_start))| {
+                                    *p_new = (p_start
+                                        + weight * AMINO_BACKGROUND_FREQUENCIES[residue_idx])
+                                        / (1.0 + weight)
+                                });
                         });
 
-                    new_probs.saturate_lower(LOWER_PROB_LIMIT);
-                });
+                    let current_mre = mean_relative_entropy(
+                        &new_probs_by_pos[1..],
+                        &AMINO_BACKGROUND_FREQUENCIES,
+                    );
 
-            let percent_ruined_columns = new_probs_by_pos
-                .iter()
-                .skip(1)
-                .filter(|probs| {
-                    probs.iter().filter(|&&p| p == LOWER_PROB_LIMIT).count()
-                        > NUM_SATURATED_RESIDUE_LIMIT
-                })
-                .count() as f32
-                / self.length as f32;
+                    if current_mre < target_mre {
+                        result = Ok((last_weight, weight));
+                        break;
+                    }
 
-            if percent_ruined_columns >= PCT_SATURATED_COL_LIMIT {
-                status = Status::Failure;
+                    last_weight = weight;
+                    weight *= WEIGHT_STEP;
+                }
+                result
+            }
+        }
+        .with_context(|| {
+            format!(
+                "failed to produce weight bounds for MRE tuning: {}, {:4.3}->{:4.3}",
+                match mode {
+                    Mode::Raise => "raising",
+                    Mode::Lower => "lowering",
+                },
+                start_mre,
+                target_mre,
+            )
+        })?;
+
+        let mut current_mre = start_mre;
+        // subtle:
+        //   by starting the weight at the lower bound instead of
+        //   the mid point, we can easily catch the case of not
+        //   being able to reach the target MRE when lowering
+        let mut weight = lower_bound;
+
+        for iter in 0..MAX_ITER {
+            (1..=self.length).for_each(|pos| {
+                let new_probs = &mut new_probs_by_pos[pos];
+                let start_probs = &start_probs_by_pos[pos];
+                let clamped_weight = weight.max(max_weights_by_pos[pos]);
+                new_probs
+                    .iter_mut()
+                    .zip(start_probs)
+                    .enumerate()
+                    // only take core emission probs
+                    .take(Profile::MAX_ALPHABET_SIZE)
+                    .for_each(|(residue_idx, (p_new, p_start))| {
+                        *p_new = (p_start
+                            + clamped_weight * AMINO_BACKGROUND_FREQUENCIES[residue_idx])
+                            / (1.0 + clamped_weight)
+                    });
+            });
+            current_mre =
+                mean_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
+
+            let ordering = if (current_mre - target_mre).abs() < TARGET_TOLERANCE {
+                Ordering::Equal
+            } else {
+                current_mre.total_cmp(&target_mre)
+            };
+
+            match ordering {
+                Ordering::Less => upper_bound = weight,
+                Ordering::Greater => lower_bound = weight,
+                Ordering::Equal => break,
+            }
+
+            if lower_bound == upper_bound && iter == 0 {
                 break;
             }
 
-            new_probs_by_pos
-                .iter_mut()
-                // skip model position 0
-                .skip(1)
-                .for_each(|probs| probs.normalize());
-
-            let relative_entropy =
-                avg_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
-
-            if (relative_entropy - target).abs() < TARGET_TOLERANCE {
-                status = Status::Success;
-                break;
-            }
-
-            match search_mode {
-                Mode::Growing => {
-                    if relative_entropy > target {
-                        upper_bound = factor;
-                        factor = (lower_bound + upper_bound) / 2.0;
-                        search_mode = Mode::Binary;
-                    } else {
-                        lower_bound = factor;
-                        factor += 0.1;
-                    }
-                }
-                Mode::Binary => {
-                    if relative_entropy > target {
-                        upper_bound = factor;
-                    } else {
-                        lower_bound = factor;
-                    }
-                    factor = (lower_bound + upper_bound) / 2.0;
-                }
-            }
+            weight = (lower_bound + upper_bound) / 2.0;
         }
+        self.match_scores
+            .iter_mut()
+            .zip(new_probs_by_pos)
+            // skip model position 0
+            .skip(1)
+            .for_each(|(scores, probs)| {
+                scores
+                    .iter_mut()
+                    .zip(probs)
+                    .enumerate()
+                    .take(Profile::MAX_ALPHABET_SIZE)
+                    .for_each(|(idx, (s, p))| *s = (p / AMINO_BACKGROUND_FREQUENCIES[idx]).ln())
+            });
 
-        if let Status::Success = status {
-            self.match_scores
-                .iter_mut()
-                .zip(new_probs_by_pos)
-                // skip model position 0
-                .skip(1)
-                .for_each(|(scores, probs)| {
-                    scores
-                        .iter_mut()
-                        .zip(probs)
-                        .enumerate()
-                        .take(Profile::MAX_ALPHABET_SIZE)
-                        .for_each(|(idx, (s, p))| *s = (p / AMINO_BACKGROUND_FREQUENCIES[idx]).ln())
-                });
-        }
+        Ok(current_mre)
     }
 
     pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {

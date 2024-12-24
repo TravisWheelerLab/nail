@@ -384,13 +384,11 @@ impl DpMatrixSparse {
 
         let new_special_length = 5 * (new_target_length + 1);
 
-        if core_length > self.core_data.len() {
-            self.core_data.resize(core_length, -f32::INFINITY);
-        }
+        self.core_data.resize(core_length, -f32::INFINITY);
+        self.special_data.resize(new_special_length, -f32::INFINITY);
 
-        if new_special_length > self.special_data.len() {
-            self.special_data.resize(new_special_length, -f32::INFINITY);
-        }
+        self.core_data.shrink_to_fit();
+        self.special_data.shrink_to_fit();
 
         self.row_start_offsets = row_offsets;
         self.block_offsets = block_offsets;
@@ -539,6 +537,7 @@ mod tests {
             row_capacity: 0,
             left_row_bounds: vec![0, 1, 1, 2, 3, 4],
             right_row_bounds: vec![0, 2, 3, 4, 5, 5],
+            num_cells: 0,
         };
 
         (bounds.target_start..=bounds.target_end).for_each(|row| {

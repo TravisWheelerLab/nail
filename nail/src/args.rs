@@ -3,11 +3,9 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Subcommand)]
-pub enum SubCommands {
-    #[command(about = "")]
+pub enum NailSubCommands {
+    #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
-    #[command(about = "")]
-    Seed(SeedArgs),
 }
 
 #[derive(Parser)]
@@ -15,169 +13,208 @@ pub enum SubCommands {
 #[command(
     about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
 )]
-pub struct Cli {
+pub struct NailCli {
     #[command(subcommand)]
-    pub command: SubCommands,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct CommonArgs {
-    /// The number of threads that nail will use
-    #[arg(
-        short = 't',
-        long = "threads",
-        default_value_t = 8usize,
-        value_name = "n"
-    )]
-    pub num_threads: usize,
-
-    /// Allow nail to overwrite files
-    #[arg(short = 'q', long = "allow-overwrite", default_value_t = false)]
-    pub allow_overwrite: bool,
+    pub command: NailSubCommands,
 }
 
 #[derive(Debug, Args)]
 pub struct SearchArgs {
-    /// Query file
+    /// The query database file
     #[arg(value_name = "QUERY.[fasta:hmm]")]
     pub query_path: PathBuf,
 
-    /// Target file
+    /// The target database file
     #[arg(value_name = "TARGET.fasta")]
     pub target_path: PathBuf,
 
-    /// The path to pre-computed alignment seeds
-    #[arg(short = 's', long = "seeds")]
-    pub seeds_path: Option<PathBuf>,
+    /// The number of threads that nail will use
+    #[arg(short = 't', default_value_t = 8usize, value_name = "N")]
+    pub num_threads: usize,
 
-    /// Arguments that control output options
-    #[command(flatten)]
-    pub output_args: OutputArgs,
+    /// Print out pipeline summary statistics
+    #[arg(short = 's', action)]
+    pub print_summary_stats: bool,
 
-    /// Arguments that are passed to libnail functions
+    /// Don't write any tabular results, write alignments to stdout
+    #[arg(short = 'x', action)]
+    pub ali_to_stdout: bool,
+
     #[command(flatten)]
-    pub nail_args: NailArgs,
+    #[clap(next_help_heading = "File I/O options")]
+    pub io_args: IoArgs,
+
+    #[command(flatten)]
+    #[clap(next_help_heading = "Pipeline options")]
+    pub pipeline_args: PipelineArgs,
 
     /// Arguments that are passed to MMseqs2
     #[command(flatten)]
+    #[clap(next_help_heading = "MMseqs2 options")]
     pub mmseqs_args: MmseqsArgs,
 
-    /// Arguments that are common across all nail subcommands
     #[command(flatten)]
-    pub common_args: CommonArgs,
+    #[clap(next_help_heading = "Expert options")]
+    pub expert_args: ExpertArgs,
+
+    #[command(flatten)]
+    #[clap(next_help_heading = "Dev options")]
+    pub dev_args: DevArgs,
 }
 
-#[derive(Args, Debug, Clone)]
-pub struct SeedArgs {
-    /// Query file
-    #[arg(value_name = "QUERY.[fasta:hmm]")]
-    pub query_path: PathBuf,
+#[derive(Args, Debug, Clone, Default)]
+pub struct IoArgs {
+    /// The file where tabular output will be written
+    #[arg(long = "tbl-out", default_value = "results.tbl", value_name = "PATH")]
+    pub tbl_results_path: Option<PathBuf>,
 
-    /// Target file
-    #[arg(value_name = "TARGET.fasta")]
-    pub target_path: PathBuf,
+    /// The file where alignment output will be written
+    #[arg(long = "ali-out", default_value = None, value_name = "PATH")]
+    pub ali_results_path: Option<PathBuf>,
 
-    /// Where to place the seeds output file
-    #[arg(short = 's', long = "seeds", default_value = "seeds.json")]
-    pub seeds_path: PathBuf,
+    /// A file containing pre-computed alignment seeds
+    #[arg(long = "seeds", value_name = "PATH")]
+    pub seeds_input_path: Option<PathBuf>,
 
-    /// Arguments that are passed to MMseqs2
-    #[command(flatten)]
-    pub mmseqs_args: MmseqsArgs,
+    /// The file where alignment seeds will be written
+    #[arg(long = "seeds-out", default_value = None, value_name = "PATH")]
+    pub seeds_output_path: Option<PathBuf>,
 
-    /// Arguments that are common across all nail subcommands
-    #[command(flatten)]
-    pub common_args: CommonArgs,
+    /// The directory where intermediate files will be placed
+    #[arg(long = "tmp-dir", default_value = "tmp/", value_name = "PATH")]
+    pub temp_dir_path: PathBuf,
+
+    /// Allow nail to overwrite files
+    #[arg(long = "allow-overwrite", default_value_t = false)]
+    pub allow_overwrite: bool,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct PipelineArgs {
+    /// Pruning parameter alpha
+    #[arg(
+        short = 'A',
+        default_value_t = 12.0,
+        value_name = "X",
+        help = "Cloud search parameter α:\n  \
+                local score pruning threshold"
+    )]
+    pub alpha: f32,
+
+    /// Pruning parameter beta
+    #[arg(
+        short = 'B',
+        default_value_t = 20.0,
+        value_name = "X",
+        help = "Cloud search parameter β:\n  \
+                global score pruning threshold"
+    )]
+    pub beta: f32,
+
+    /// Pruning parameter gamma
+    #[arg(
+        short = 'G',
+        default_value_t = 5,
+        value_name = "N",
+        help = "Cloud search parameter γ:\n  \
+                at minimum, compute N anti-diagonals"
+    )]
+    pub gamma: usize,
+
+    /// Seeding filter threshold
+    #[arg(
+        short = 'S',
+        default_value_t = 0.01f64,
+        value_name = "X",
+        help = "Seeding filter threshold:\n  \
+                filter hits with P-value > X"
+    )]
+    pub seed_pvalue_threshold: f64,
+
+    /// Cloud search filter threshold
+    #[arg(
+        short = 'C',
+        default_value_t = 1e-3,
+        value_name = "X",
+        help = "Cloud search threshold:\n  \
+                filter hits with P-value > X"
+    )]
+    pub cloud_pvalue_threshold: f64,
+
+    /// Forward filter threshold
+    #[arg(
+        short = 'F',
+        default_value_t = 1e-4,
+        value_name = "X",
+        help = "Forward filter threshold:\n  \
+                filter hits with P-value > X"
+    )]
+    pub forward_pvalue_threshold: f64,
+
+    /// Final E-value threshold
+    #[arg(
+        short = 'E',
+        default_value_t = 10.0,
+        value_name = "X",
+        help = "Final reporting threshold:\n  \
+                filter hits with E-value > X"
+    )]
+    pub e_value_threshold: f64,
+
+    /// Seed alignments twice (high/low expected sequence divergence)
+    #[arg(long = "double-seed", action)]
+    pub double_seed: bool,
+
+    /// Produce alignment seeds and terminate
+    #[arg(long = "only-seed", action)]
+    pub only_seed: bool,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct ExpertArgs {
+    /// Override the number of comparisons used for E-value calculation
+    #[arg(short = 'Z', value_name = "N")]
+    pub target_database_size: Option<usize>,
+
+    /// Don't compute sequence composition bias score correction
+    #[arg(long = "no-null2", action)]
+    pub no_null_two: bool,
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct DevArgs {
+    /// Where to place stats output
+    #[arg(long, value_name = "PATH", hide = true)]
+    pub stats_results_path: Option<PathBuf>,
+
+    /// Compute the full DP matrices
+    #[arg(long, action, hide = true)]
+    pub full_dp: bool,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct MmseqsArgs {
-    /// The directory where intermediate files will be placed
-    #[arg(long = "prep", value_name = "PATH", default_value = "prep/")]
-    pub prep_dir: PathBuf,
-
     /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
-    #[arg(long = "mmseqs-k", default_value_t = 0usize)]
+    #[arg(long = "mmseqs-k", default_value_t = 0usize, value_name = "N")]
     pub k: usize,
 
     /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
-    #[arg(long = "mmseqs-k-score", default_value_t = 80usize)]
+    #[arg(long = "mmseqs-k-score", default_value_t = 80usize, value_name = "N")]
     pub k_score: usize,
 
     /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
-    #[arg(long = "mmseqs-min-ungapped-score", default_value_t = 15usize)]
+    #[arg(
+        long = "mmseqs-min-ungapped-score",
+        default_value_t = 15usize,
+        value_name = "N"
+    )]
     pub min_ungapped_score: usize,
 
     /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
-    #[arg(long = "mmseqs-max-seqs", default_value_t = 1000usize)]
+    #[arg(
+        long = "mmseqs-max-seqs",
+        default_value_t = 1000usize,
+        value_name = "N"
+    )]
     pub max_seqs: usize,
-
-    /// MMseqs2 align: Include matches below this P-value as seeds.
-    ///
-    // Note: the MMseqs2 align tool only allows thresholding by E-value, so the P-value supplied
-    // here is multiplied by the size of the target database (i.e. number of sequences) to achieve
-    // an E-value threshold that is effectively the same as the chosen P-value threshold.
-    #[arg(long = "mmseqs-pvalue-threshold", default_value_t = 0.01f64)]
-    pub pvalue_threshold: f64,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct NailArgs {
-    /// Override the target database size (number of sequences) used for E-value calculation
-    #[arg(short = 'Z', value_name = "N")]
-    pub target_database_size: Option<usize>,
-
-    /// Pruning parameter alpha
-    #[arg(short = 'A', default_value_t = 12.0, value_name = "F")]
-    pub alpha: f32,
-
-    /// Pruning parameter beta
-    #[arg(short = 'B', default_value_t = 20.0, value_name = "F")]
-    pub beta: f32,
-
-    /// Pruning parameter gamma
-    #[arg(short = 'G', default_value_t = 5, value_name = "N")]
-    pub gamma: usize,
-
-    /// The P-value threshold for promoting hits past cloud search
-    #[arg(
-        short = 'C',
-        long = "cloud-thresh",
-        default_value_t = 1e-3,
-        value_name = "F"
-    )]
-    pub cloud_pvalue_threshold: f64,
-
-    /// The P-value threshold for promoting hits past forward
-    #[arg(
-        short = 'F',
-        long = "forward-thresh",
-        default_value_t = 1e-4,
-        value_name = "F"
-    )]
-    pub forward_pvalue_threshold: f64,
-
-    /// Compute the full dynamic programming matrices during alignment
-    #[arg(long, action)]
-    pub full_dp: bool,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct OutputArgs {
-    /// Only report hits with an E-value below this value
-    #[arg(short = 'E', default_value_t = 10.0, value_name = "F")]
-    pub evalue_threshold: f64,
-
-    /// Where to place tabular output
-    #[arg(
-        short = 'T',
-        long = "tab-output",
-        default_value = "results.tbl",
-        value_name = "path"
-    )]
-    pub tbl_results_path: PathBuf,
-
-    /// Where to place alignment output
-    #[arg(short = 'O', long = "output", value_name = "path")]
-    pub ali_results_path: Option<PathBuf>,
 }

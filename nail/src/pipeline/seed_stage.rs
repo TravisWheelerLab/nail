@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-use libnail::{
-    align::structs::Seed,
-    structs::{Profile, Sequence},
-};
+use anyhow::bail;
+use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
-    args::MmseqsArgs,
+    args::SearchArgs,
+    io::Fasta,
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths,
@@ -44,32 +43,35 @@ fn merge_seed_maps(
 
 pub fn seed_profile_to_sequence(
     queries: &[Profile],
-    targets: &[Sequence],
-    num_threads: usize,
-    mmseqs_args: &MmseqsArgs,
+    targets: &Fasta,
+    args: &SearchArgs,
 ) -> anyhow::Result<SeedMap> {
-    let paths = MmseqsDbPaths::new(&mmseqs_args.prep_dir);
+    let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_profile_database(queries, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, targets.len(), num_threads, mmseqs_args)?;
+    run_mmseqs_search(&paths, args)?;
 
     let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+
+    if !args.pipeline_args.double_seed {
+        return Ok(seed_map_a);
+    }
 
     let queries_b: Vec<_> = queries
         .iter()
         .filter(|p| p.relative_entropy() < 1.0)
         .map(|p| {
             let mut p2 = p.clone();
-            p2.raise_relative_entropy(1.0);
+            p2.adjust_mean_relative_entropy(1.0).unwrap();
             p2
         })
         .collect();
 
     write_mmseqs_profile_database(&queries_b, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, targets.len(), num_threads, mmseqs_args)?;
+    run_mmseqs_search(&paths, args)?;
 
     let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
@@ -79,52 +81,46 @@ pub fn seed_profile_to_sequence(
 }
 
 pub fn seed_sequence_to_sequence(
-    queries: &[Sequence],
-    targets: &[Sequence],
-    num_threads: usize,
-    mmseqs_args: &MmseqsArgs,
+    queries: &Fasta,
+    targets: &Fasta,
+    args: &SearchArgs,
 ) -> anyhow::Result<SeedMap> {
-    let paths = MmseqsDbPaths::new(&mmseqs_args.prep_dir);
+    let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_sequence_database(queries, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, targets.len(), num_threads, mmseqs_args)?;
+    run_mmseqs_search(&paths, args)?;
 
     let seeds = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+
+    if args.pipeline_args.double_seed {
+        bail!("double seeding not implemented for sequence to sequence search")
+    }
 
     Ok(seeds)
 }
 
-pub trait SeedStep: dyn_clone::DynClone {
-    fn run(
-        &mut self,
-        profile: &Profile,
-        target: &HashMap<String, Sequence>,
-    ) -> Option<&HashMap<String, Seed>>;
+dyn_clone::clone_trait_object!(SeedStage);
+pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
+    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>>;
 }
-
-dyn_clone::clone_trait_object!(SeedStep);
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
 
 #[derive(Default, Clone)]
-pub struct DefaultSeedStep {
+pub struct DefaultSeedStage {
     seeds: SeedMap,
 }
 
-impl DefaultSeedStep {
+impl DefaultSeedStage {
     pub fn new(seeds: SeedMap) -> Self {
-        DefaultSeedStep { seeds }
+        DefaultSeedStage { seeds }
     }
 }
 
-impl SeedStep for DefaultSeedStep {
-    fn run(
-        &mut self,
-        profile: &Profile,
-        _target: &HashMap<String, Sequence>,
-    ) -> Option<&HashMap<String, Seed>> {
+impl SeedStage for DefaultSeedStage {
+    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>> {
         self.seeds.get(&profile.name)
     }
 }
