@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!---
+## [Unreleased]
 ### Added
 ### Changed
 ### Deprecated
@@ -13,8 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
-
-## [Unreleased]
+## [0.3.0] - 2024-12-23
 
 ### Added
 
@@ -52,12 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         - can optionally write any or none of the output categories
         - can now write summary statistics to the `stats_results_path` data for each call to `Pipeline.run()`
 - refactored CLI
-
-### Deprecated
-
-### Removed
-
-### Fixed
 
 
 ## [0.2.0] - 2024-07-12

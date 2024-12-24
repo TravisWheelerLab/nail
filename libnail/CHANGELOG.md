@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!---
+## [Unreleased]
 ### Added
 ### Changed
 ### Deprecated
@@ -14,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -->
 
 
-## [Unreleased]
+## [0.3.0] - 2024-12-23
 
 ### Added
 - added `min()` to `Score`, `Nats`, and `Bits`
@@ -37,10 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CloudSearchScores` renamed to `CloudSearchResults`, added `num_cells_computed` field
 - `TableFormat::update_widths()` now takes a slice of `AsRef\<Alignment\>` instead of `&\[Alignment\]`
 - changed the formatting of the output of `Alignment::ali_string()`
-
-### Deprecated
-
-### Removed
 
 ### Fixed
 - Fixed the score returned from `Forward()` so that it includes N/C state
