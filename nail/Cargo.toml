@@ -1,6 +1,6 @@
 [package]
 name = "nail"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
 license = "BSD-3-Clause"
