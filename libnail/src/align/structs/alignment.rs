@@ -150,7 +150,7 @@ impl<'a> AlignmentBuilder<'a> {
 
     pub fn with_null_two(mut self, score: Option<impl Score>) -> Self {
         // we don't allow positive bias composition
-        self.null_two = score.map(|s| s.bits().min(Bits(0.0)));
+        self.null_two = score.map(|s| s.bits().max(Bits(0.0)));
         self
     }
 
