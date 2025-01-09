@@ -185,7 +185,7 @@ Checking the `results.ali` will look something like:
 
 ### nail seeds
 
-If you run `nail search --only-seed` command, nail will run MMseqs2, produces `seeds.json` file, and terminate.
+If you run `nail search --only-seed` command, nail will run MMseqs2, produce a `seeds.json` file, and terminate.
 This may be useful if you would like to experiment with different nail settings using the same seeds.
 
 For example:
