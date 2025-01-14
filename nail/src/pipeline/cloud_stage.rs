@@ -18,9 +18,13 @@ pub type CloudStageResult = StageResult<RowBounds, CloudStageStats>;
 
 impl CloudStageResult {
     pub fn tab_string(&self) -> String {
-        let stats = self.stats();
+        let (stats, pass_str) = match self {
+            StageResult::Filtered { stats } => (stats, "F"),
+            StageResult::Passed { stats, .. } => (stats, "P"),
+        };
         format!(
-            "F {:.2}b {:.1e} {} {} {} {}",
+            "{} {:.2}b {:.1e} {} {} {} {}",
+            pass_str,
             stats.score.to_bits().value(),
             stats.p_value,
             stats.forward_cells,

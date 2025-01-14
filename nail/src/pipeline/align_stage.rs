@@ -147,6 +147,7 @@ impl AlignStage for DefaultAlignStage {
         let forward_score = forward(profile, target, &mut self.forward_matrix, bounds).to_bits()
             // the denominator is the null one score
             - null_one_score(target.length);
+
         stats.forward_time(now.elapsed());
         stats.forward_cells(bounds.num_cells);
 
