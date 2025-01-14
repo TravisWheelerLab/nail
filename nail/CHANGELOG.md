@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [Unreleased]
+
+### Added
+- added support for `--double-seed` for sequence to sequence search
+- added `Fasta.names_iter()`
+- added `mmseqs::consts::{BLOSUM_62, BLOSUM_80}`
+- added `MmseqsScoreModel`
+- added `MmseqsDbPaths.dir()`
+
 ## [0.3.0] - 2024-12-23
 
 ### Added

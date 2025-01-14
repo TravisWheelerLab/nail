@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::bail;
 use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
@@ -8,18 +7,18 @@ use crate::{
     io::Fasta,
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
-        write_mmseqs_sequence_database, MmseqsDbPaths,
+        write_mmseqs_sequence_database, MmseqsDbPaths, MmseqsScoreModel,
     },
 };
 
-fn merge_seed_maps(
+fn merge_seed_maps<'a>(
     mut seed_map_a: SeedMap,
     mut seed_map_b: SeedMap,
-    queries: &[impl AsRef<Profile>],
+    query_names: impl Iterator<Item = &'a str>,
 ) -> SeedMap {
-    queries.iter().map(|q| q.as_ref()).for_each(|profile| {
-        let seeds_a = seed_map_a.get_mut(&profile.name);
-        let seeds_b = seed_map_b.remove(&profile.name);
+    query_names.for_each(|query: &str| {
+        let seeds_a = seed_map_a.get_mut(query);
+        let seeds_b = seed_map_b.remove(query);
         match (seeds_a, seeds_b) {
             (Some(seeds_a), Some(seeds_b)) => {
                 seeds_b.into_iter().for_each(|(target, seed_b)| {
@@ -32,7 +31,7 @@ fn merge_seed_maps(
                 });
             }
             (None, Some(b)) => {
-                seed_map_a.insert(profile.name.clone(), b);
+                seed_map_a.insert(query.to_string(), b);
             }
             _ => {}
         }
@@ -51,7 +50,7 @@ pub fn seed_profile_to_sequence(
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_profile_database(queries, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, args)?;
+    run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
 
     let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
@@ -71,13 +70,14 @@ pub fn seed_profile_to_sequence(
 
     write_mmseqs_profile_database(&queries_b, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, args)?;
+    run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
 
     let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
-    let seeds = merge_seed_maps(seed_map_a, seed_map_b, queries);
+    let names = queries.iter().map(|q| q.name.as_str());
+    let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, names);
 
-    Ok(seeds)
+    Ok(seed_map_merged)
 }
 
 pub fn seed_sequence_to_sequence(
@@ -90,15 +90,22 @@ pub fn seed_sequence_to_sequence(
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_sequence_database(queries, &paths.query_db)?;
 
-    run_mmseqs_search(&paths, args)?;
+    run_mmseqs_search(&paths, args, MmseqsScoreModel::Blosum62)?;
 
-    let seeds = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+    let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
-    if args.pipeline_args.double_seed {
-        bail!("double seeding not implemented for sequence to sequence search")
+    if !args.pipeline_args.double_seed {
+        return Ok(seed_map_a);
     }
 
-    Ok(seeds)
+    run_mmseqs_search(&paths, args, MmseqsScoreModel::Blosum80)?;
+
+    let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+
+    let names = queries.names_iter();
+    let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, names);
+
+    Ok(seed_map_merged)
 }
 
 dyn_clone::clone_trait_object!(SeedStage);

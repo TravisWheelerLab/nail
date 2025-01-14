@@ -291,6 +291,10 @@ impl Fasta {
             }),
         )
     }
+
+    pub fn names_iter(&self) -> impl Iterator<Item = &str> {
+        self.index.offsets.keys().map(|k| k.as_str())
+    }
 }
 
 impl SequenceDatabase for Fasta {
