@@ -184,8 +184,9 @@ pub fn cloud_score(
 /// Compute the null one score adjustment: the sum of the background
 /// transitions across the length of the target sequence.
 pub fn null_one_score(target_length: usize) -> Nats {
-    let p1 = (target_length as f32) / (target_length as f32 + 1.0);
-    Nats(target_length as f32 * p1.ln() + (1.0 - p1).ln())
+    let p_null_loop = (target_length as f32) / (target_length as f32 + 1.0);
+    let p_null_exit = 1.0 - p_null_loop;
+    Nats(target_length as f32 * p_null_loop.ln() + p_null_exit.ln())
 }
 
 /// Compute the null two score adjustment: the composition bias.

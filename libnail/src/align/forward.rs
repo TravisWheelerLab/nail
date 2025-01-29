@@ -209,8 +209,8 @@ pub fn forward(
         * profile.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX);
 
     let final_c_state_score = dp_matrix.get_special(bounds.target_end, Profile::SPECIAL_C_IDX);
-    let c_to_n_score =
+    let c_to_exit_score =
         profile.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX);
 
-    Nats(final_c_state_score + background_correction + c_to_n_score)
+    Nats(final_c_state_score + background_correction + c_to_exit_score)
 }

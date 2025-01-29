@@ -453,31 +453,43 @@ impl Profile {
         }
 
         // porting p7_hmm_CalculateOccupancy() from p7_hmm.c
-        let mut match_occupancy = vec![0.0; profile.length + 1];
+        //
+        // TODO: make this a function somewhere
+        //       probably either:
+        //         - a method on the Hmm struct, or
+        //         - an associated function in the Hmm struct namespace
+        let mut occupancy = vec![0.0; profile.length + 1];
 
-        match_occupancy[1] = hmm.model.transition_probabilities[0][HMM_MATCH_TO_INSERT]
+        occupancy[1] = hmm.model.transition_probabilities[0][HMM_MATCH_TO_INSERT]
             + hmm.model.transition_probabilities[0][HMM_MATCH_TO_MATCH];
 
-        for k in 2..=profile.length {
-            match_occupancy[k] = match_occupancy[k - 1]
-                * (hmm.model.transition_probabilities[k - 1][HMM_MATCH_TO_MATCH]
-                    + hmm.model.transition_probabilities[k - 1][HMM_MATCH_TO_INSERT])
-                + (1.0 - match_occupancy[k - 1])
-                    * hmm.model.transition_probabilities[k - 1][HMM_DELETE_TO_MATCH]
+        for profile_idx in 2..=profile.length {
+            // the occupancy of a model position is the
+            // sum of the following two probabilities:
+            occupancy[profile_idx] = (
+                // the occupancy probability of the previous position
+                occupancy[profile_idx - 1]
+                    // multiplied by the sum of the transitions to "occupying" states
+                    * (hmm.model.transition_probabilities[profile_idx - 1][HMM_MATCH_TO_MATCH]
+                        + hmm.model.transition_probabilities[profile_idx - 1][HMM_MATCH_TO_INSERT])
+            ) + (
+                // the complement of the occupancy of the previous position
+                1.0 - occupancy[profile_idx - 1]
+                    // multiplied by the transition to a match state
+                    //   ** since there's no delete to insert transition **
+                    * hmm.model.transition_probabilities[profile_idx - 1][HMM_DELETE_TO_MATCH]
+            )
         }
 
-        // TODO: what does Z represent?
-        let mut z: f32 = 0.0;
+        let occupancy_sum: f32 = (1..=profile.length).fold(0.0, |acc, profile_idx| {
+            acc + occupancy[profile_idx] * (profile.length - profile_idx + 1) as f32
+        });
 
-        for profile_idx in 1..=profile.length {
-            z += match_occupancy[profile_idx] * (profile.length - profile_idx + 1) as f32;
-        }
-
-        // the goal here must be to set the transition of begin to match at each position
-        for model_position_idx in 1..=profile.length {
-            profile.transitions[model_position_idx - 1][Profile::BEGIN_TO_MATCH_IDX] =
-                (match_occupancy[model_position_idx] / z).ln();
-        }
+        // the model entry distribution is essentially the normalized occupancy
+        (1..=profile.length).for_each(|profile_idx| {
+            profile.transitions[profile_idx - 1][Profile::BEGIN_TO_MATCH_IDX] =
+                (occupancy[profile_idx] / occupancy_sum).ln();
+        });
 
         // these settings are for the non-multi-hit mode
         // N, C, and J transitions are set later by length config

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use derive_builder::Builder;
 use libnail::{
     align::{
-        cloud_score, cloud_search_backward, cloud_search_forward, p_value,
+        cloud_score, cloud_search_backward, cloud_search_forward, null_one_score, p_value,
         structs::{AntiDiagonalBounds, CloudMatrixLinear, RowBounds, Seed},
         CloudSearchParams, Nats,
     },
@@ -129,7 +129,26 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         stats.backward_time(now.elapsed());
         stats.backward_cells(backward_results.num_cells_computed);
 
-        let cloud_score = cloud_score(&forward_results, &backward_results);
+        // cloud search does not compute any special state scores
+        let raw_cloud_score = cloud_score(&forward_results, &backward_results);
+
+        // TODO: put this score adjustment somewhere else
+        let target_length = target.length as f32;
+        let profile_length = profile.length as f32;
+        let cloud_score_adjustment = Nats(
+            // L * log(L / (L + 2))        [ N->N | C->C ] non-homologous states
+            target_length * (target_length / (target_length + 2.0)).ln()
+                // 2 * log(2 / (L + 2))    [ N->B + C->T ] start/end transitions
+                + 2.0 * (2.0 / (target_length + 2.0)).ln()
+                // log(2 / (M * (M + 1)))    [ B->M + M->E ] core model entry approximation
+                + (2.0 / (profile_length * (profile_length + 1.0))).ln(),
+        );
+
+        // the null one is the denominator in the probability ratio
+        let null_one = null_one_score(target.length);
+
+        let cloud_score = raw_cloud_score + cloud_score_adjustment - null_one;
+
         let cloud_p_value = p_value(cloud_score, profile.forward_lambda, profile.forward_tau);
 
         stats.score(cloud_score);
