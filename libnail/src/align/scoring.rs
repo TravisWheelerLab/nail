@@ -1,3 +1,7 @@
+use std::cmp::{Ordering, PartialEq, PartialOrd};
+use std::fmt::Debug;
+use std::ops::{Add, Sub};
+
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
@@ -18,13 +22,13 @@ impl Nats {
     }
 }
 
-impl std::fmt::Debug for Nats {
+impl Debug for Nats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Nats({})", self.0)
     }
 }
 
-impl std::ops::Add for Nats {
+impl Add for Nats {
     type Output = Nats;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -32,15 +36,7 @@ impl std::ops::Add for Nats {
     }
 }
 
-impl std::ops::Sub for Nats {
-    type Output = Nats;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Nats(self.0 - rhs.0)
-    }
-}
-
-impl std::ops::Add<Bits> for Nats {
+impl Add<Bits> for Nats {
     type Output = Nats;
 
     fn add(self, rhs: Bits) -> Self::Output {
@@ -48,11 +44,31 @@ impl std::ops::Add<Bits> for Nats {
     }
 }
 
-impl std::ops::Sub<Bits> for Nats {
+impl Sub for Nats {
+    type Output = Nats;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Nats(self.0 - rhs.0)
+    }
+}
+
+impl Sub<Bits> for Nats {
     type Output = Nats;
 
     fn sub(self, rhs: Bits) -> Self::Output {
         self - rhs.to_nats()
+    }
+}
+
+impl PartialEq for Nats {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd for Nats {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -69,13 +85,13 @@ impl Bits {
     }
 }
 
-impl std::fmt::Debug for Bits {
+impl Debug for Bits {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Bits({})", self.0)
     }
 }
 
-impl std::ops::Add for Bits {
+impl Add for Bits {
     type Output = Bits;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -83,15 +99,7 @@ impl std::ops::Add for Bits {
     }
 }
 
-impl std::ops::Sub for Bits {
-    type Output = Bits;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Bits(self.0 - rhs.0)
-    }
-}
-
-impl std::ops::Add<Nats> for Bits {
+impl Add<Nats> for Bits {
     type Output = Bits;
 
     fn add(self, rhs: Nats) -> Self::Output {
@@ -99,11 +107,31 @@ impl std::ops::Add<Nats> for Bits {
     }
 }
 
-impl std::ops::Sub<Nats> for Bits {
+impl Sub for Bits {
+    type Output = Bits;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Bits(self.0 - rhs.0)
+    }
+}
+
+impl Sub<Nats> for Bits {
     type Output = Bits;
 
     fn sub(self, rhs: Nats) -> Self::Output {
         self - rhs.to_bits()
+    }
+}
+
+impl PartialEq for Bits {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd for Bits {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -357,6 +385,24 @@ mod test {
         let c = a - b;
         assert_eq!(c.value(), 10.0);
 
+        let a = Nats(10.0);
+        let b = Nats(10.0);
+        assert_eq!(a, b);
+        assert_eq!(b, a);
+        assert!(a <= b);
+        assert!(a >= b);
+        assert!(b <= a);
+        assert!(b >= a);
+
+        let a = Nats(10.0);
+        let b = Nats(20.0);
+        assert_ne!(a, b);
+        assert_ne!(b, a);
+        assert!(a < b);
+        assert!(a <= b);
+        assert!(b > a);
+        assert!(b >= a);
+
         Ok(())
     }
 
@@ -371,6 +417,24 @@ mod test {
         let b = Bits(10.0);
         let c = a - b;
         assert_eq!(c.value(), 10.0);
+
+        let a = Bits(10.0);
+        let b = Bits(10.0);
+        assert_eq!(a, b);
+        assert_eq!(b, a);
+        assert!(a <= b);
+        assert!(a >= b);
+        assert!(b <= a);
+        assert!(b >= a);
+
+        let a = Bits(10.0);
+        let b = Bits(20.0);
+        assert_ne!(a, b);
+        assert_ne!(b, a);
+        assert!(a < b);
+        assert!(a <= b);
+        assert!(b > a);
+        assert!(b >= a);
 
         Ok(())
     }
