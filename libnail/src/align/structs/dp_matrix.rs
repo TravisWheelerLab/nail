@@ -1,9 +1,361 @@
-use std::io::Write;
+use std::{
+    io::Write,
+    ops::{Index, IndexMut},
+};
 
-use crate::structs::Profile;
-use anyhow::Result;
+use crate::{align::structs::AntiDiagonal, structs::Profile};
 
-use super::RowBounds;
+use super::{Cloud, RowBounds};
+
+#[derive(Debug)]
+#[repr(usize)]
+pub enum CoreState {
+    M(usize) = 0,
+    I(usize) = 1,
+    D(usize) = 2,
+}
+
+impl CoreState {
+    #[inline(always)]
+    fn state_idx(&self) -> usize {
+        // safety:
+        //   when an enum is repr(usize), it is guaranteed that
+        //   the discriminant can be reliably cast from from
+        //   the first 8 bytes of the in-memory representation
+        //
+        //   see RFC 2368: arbitrary_enum_discriminant:
+        //     https://rust-lang.github.io/rfcs/2363-arbitrary-enum-discriminant.html
+        //     https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
+        let raw_ptr = <*const _>::from(self).cast::<usize>();
+        unsafe { *raw_ptr }
+    }
+
+    #[inline(always)]
+    fn profile_idx(&self) -> usize {
+        // safety:
+        //   when an enum is repr(usize), it is guaranteed that
+        //   the discriminant can be reliably cast from from
+        //   the first 8 bytes of the in-memory representation
+        //
+        //   see RFC 2368: arbitrary_enum_discriminant:
+        //     https://rust-lang.github.io/rfcs/2363-arbitrary-enum-discriminant.html
+        //     https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
+        let mut raw_ptr = <*const _>::from(self).cast::<usize>();
+        unsafe {
+            raw_ptr = raw_ptr.add(1);
+            *raw_ptr
+        }
+    }
+}
+
+#[repr(usize)]
+pub enum BackgroundState {
+    N = 0,
+    B = 1,
+    C = 2,
+    E = 3,
+}
+
+pub type CoreCell = (CoreState, usize);
+pub type BackgroundCell = (BackgroundState, usize);
+
+pub trait CoreCellIndexable:
+    Index<CoreCell, Output = f32> + IndexMut<CoreCell, Output = f32>
+{
+}
+pub trait BackgroundCellIndexable:
+    Index<BackgroundCell, Output = f32> + IndexMut<BackgroundCell, Output = f32>
+{
+}
+pub trait CellIndexable: CoreCellIndexable + BackgroundCellIndexable {}
+
+#[derive(Default, Clone)]
+pub struct AdMatrixSparse {
+    target_len: usize,
+    profile_len: usize,
+    first_ad_idx: usize,
+    block_offsets: Vec<usize>,
+    ad_start_offsets: Vec<usize>,
+    core_data: [Vec<f32>; 3],
+    background_data: [Vec<f32>; 4],
+}
+
+impl AdMatrixSparse {
+    pub fn layout(&self) {
+        println!("target len:     {}", self.target_len());
+        println!("profile len:    {}", self.profile_len());
+        println!("first AD index: {}", self.first_ad_idx);
+
+        self.block_offsets
+            .iter()
+            .zip(self.block_offsets.iter().skip(1))
+            .zip(self.ad_start_offsets.iter())
+            .enumerate()
+            .for_each(|(idx, ((&a, &b), o))| {
+                print!("AD: {:<3} -> {a:<3} | +{o:<3} | ", idx + self.first_ad_idx);
+                self.core_data[0][(a + 1)..b].iter().for_each(|v| {
+                    print!("{v:4.2} ");
+                });
+                println!();
+            });
+        println!(
+            "AD: ∅   -> {:<3} | +{:<3} | {:4.2}",
+            self.block_offsets.last().unwrap(),
+            0,
+            -f32::INFINITY
+        );
+    }
+
+    pub fn from_cloud(cloud: &Cloud) -> Self {
+        let mut matrix = Self::default();
+        matrix.reuse(cloud);
+        matrix
+    }
+
+    pub fn reuse(&mut self, cloud: &Cloud) {
+        self.target_len = cloud.target_len();
+        self.profile_len = cloud.profile_len();
+
+        self.first_ad_idx = cloud.first().idx();
+
+        let num_ad = cloud.num_anti_diagonals();
+        // +1 to point to the final pad cell
+        let num_blocks = num_ad + 1;
+        self.ad_start_offsets.resize(num_ad, 0);
+        self.block_offsets.resize(num_blocks, 0);
+        self.ad_start_offsets.shrink_to_fit();
+        self.block_offsets.shrink_to_fit();
+
+        /// A simple local function to compute the AD start offset
+        /// given a `Bound` and the length of a `Profile`
+        #[inline(always)]
+        fn offset(bound: &AntiDiagonal, profile_len: usize) -> usize {
+            let left = bound.right_target_major();
+            let delta = left.idx().saturating_sub(profile_len);
+            println!("{bound:?}");
+            println!("Left   {left:?}");
+            println!("delta: {delta}\n");
+            left.seq_idx - delta
+        }
+
+        // peeling off the first pair of offsets so
+        // that the following iterator stays clean
+        self.block_offsets[0] = 0;
+        self.ad_start_offsets[0] = offset(cloud.first(), self.profile_len);
+
+        cloud
+            .bounds()
+            .iter()
+            .rev()
+            .enumerate()
+            .zip(cloud.bounds().iter().rev().enumerate().skip(1))
+            .for_each(|((prev_idx, prev_bound), (idx, bound))| {
+                self.ad_start_offsets[idx] = offset(bound, self.profile_len);
+                let block_offset = self.block_offsets[prev_idx] + prev_bound.len() + 1;
+                self.block_offsets[idx] = block_offset;
+            });
+
+        self.block_offsets[num_blocks - 1] =
+            self.block_offsets[num_ad - 1] + cloud.last().len() + 1;
+
+        let num_cells = self.block_offsets[num_blocks - 1] + 1;
+
+        self.core_data.iter_mut().for_each(|v| {
+            v.resize(num_cells, 0.0);
+            v.shrink_to_fit();
+        });
+
+        self.background_data.iter_mut().for_each(|v| {
+            v.resize(self.target_len + 1, 0.0);
+            v.shrink_to_fit();
+        });
+
+        self.core_data
+            .iter_mut()
+            .for_each(|state_vec| state_vec.iter_mut().for_each(|val| *val = -f32::INFINITY));
+    }
+
+    pub fn size(&self) -> usize {
+        self.core_data[0].len()
+    }
+
+    #[inline(always)]
+    fn sparse_core_idx(&self, cell: &CoreCell) -> usize {
+        let profile_idx = cell.0.profile_idx();
+        let seq_idx = cell.1;
+
+        let ad_idx = profile_idx + seq_idx - self.first_ad_idx;
+        let seq_delta = ad_idx.saturating_sub(self.profile_len);
+        let seq_idx_in_block = seq_idx - seq_delta;
+        let block_start = self.block_offsets[ad_idx] + 1;
+        let next_block_start = self.block_offsets[ad_idx + 1];
+        let ad_offset = self.ad_start_offsets[ad_idx];
+
+        // the saturating sub prevents moving left out of the block
+        // the min with the next block offset prevents moving right out of the block
+        (block_start + (seq_idx_in_block.saturating_sub(ad_offset))).min(next_block_start)
+    }
+}
+
+impl Index<CoreCell> for AdMatrixSparse {
+    type Output = f32;
+
+    fn index(&self, cell: CoreCell) -> &Self::Output {
+        let state_idx = cell.0.state_idx();
+        let sparse_idx = self.sparse_core_idx(&cell);
+        &self.core_data[state_idx][sparse_idx]
+    }
+}
+
+impl IndexMut<CoreCell> for AdMatrixSparse {
+    fn index_mut(&mut self, cell: CoreCell) -> &mut Self::Output {
+        let state_idx = cell.0.state_idx();
+        let sparse_idx = self.sparse_core_idx(&cell);
+        &mut self.core_data[state_idx][sparse_idx]
+    }
+}
+
+impl Index<BackgroundCell> for AdMatrixSparse {
+    type Output = f32;
+
+    fn index(&self, cell: BackgroundCell) -> &Self::Output {
+        &self.background_data[cell.0 as usize][cell.1]
+    }
+}
+
+impl IndexMut<BackgroundCell> for AdMatrixSparse {
+    fn index_mut(&mut self, cell: BackgroundCell) -> &mut Self::Output {
+        &mut self.background_data[cell.0 as usize][cell.1]
+    }
+}
+
+impl CoreCellIndexable for AdMatrixSparse {}
+impl BackgroundCellIndexable for AdMatrixSparse {}
+impl CellIndexable for AdMatrixSparse {}
+
+impl NewDpMatrix for AdMatrixSparse {
+    fn target_len(&self) -> usize {
+        self.target_len
+    }
+
+    fn profile_len(&self) -> usize {
+        self.profile_len
+    }
+}
+
+pub trait NewDpMatrix: CellIndexable {
+    fn target_len(&self) -> usize;
+    fn profile_len(&self) -> usize;
+
+    fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        use BackgroundState::*;
+        use CoreState::*;
+
+        let t_idx_width = self.target_len().to_string().len();
+        let first_column_width = t_idx_width + 3;
+        // TODO: configurable?
+        const W: usize = 13;
+        const P: usize = 3;
+
+        // -- profile indices
+        write!(out, "{}", " ".repeat(first_column_width - 1))?;
+        for p_idx in 0..=self.profile_len() {
+            write!(out, "{:w$} ", p_idx, w = W)?;
+        }
+
+        for s_idx in 0..Profile::NUM_SPECIAL_STATES {
+            write!(
+                out,
+                "{:>w$} ",
+                Profile::SPECIAL_STATE_IDX_TO_NAME[s_idx],
+                w = W
+            )?;
+        }
+        writeln!(out)?;
+
+        write!(out, "{}", " ".repeat(first_column_width))?;
+        for _ in 0..=self.profile_len() + Profile::NUM_SPECIAL_STATES {
+            write!(out, "   {} ", "-".repeat(W - 3))?;
+        }
+        writeln!(out)?;
+
+        for t_idx in 0..=self.target_len() {
+            // -- match
+            write!(out, "{:w$} M ", t_idx, w = t_idx_width)?;
+            for p_idx in 0..=self.profile_len() {
+                write!(out, "{:w$.p$} ", self[(M(p_idx), t_idx)], w = W, p = P)?;
+            }
+
+            // -- special
+            write!(out, "{:w$.p$} ", self[(E, t_idx)], w = W, p = P)?;
+            write!(out, "{:w$.p$} ", self[(N, t_idx)], w = W, p = P)?;
+            write!(out, "{:w$.p$} ", -f32::INFINITY, w = W, p = P)?;
+            write!(out, "{:w$.p$} ", self[(B, t_idx)], w = W, p = P)?;
+            write!(out, "{:w$.p$} ", self[(C, t_idx)], w = W, p = P)?;
+            writeln!(out)?;
+
+            // -- insert
+            write!(out, "{:w$} I ", t_idx, w = t_idx_width)?;
+            for p_idx in 0..=self.profile_len() {
+                write!(out, "{:w$.p$} ", self[(I(p_idx), t_idx)], w = W, p = P)?;
+            }
+            writeln!(out)?;
+
+            // -- delete
+            write!(out, "{:w$} D ", t_idx, w = t_idx_width)?;
+            for p_idx in 0..=self.profile_len() {
+                write!(out, "{:w$.p$} ", self[(D(p_idx), t_idx)], w = W, p = P)?;
+            }
+            writeln!(out, "\n")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: NewDpMatrix> DpMatrix for T {
+    fn target_length(&self) -> usize {
+        self.target_len()
+    }
+
+    fn profile_length(&self) -> usize {
+        self.profile_len()
+    }
+
+    fn get_match(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        self[(CoreState::M(profile_idx), target_idx)]
+    }
+
+    fn set_match(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        self[(CoreState::M(profile_idx), target_idx)] = value;
+    }
+
+    fn get_insert(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        self[(CoreState::I(profile_idx), target_idx)]
+    }
+
+    fn set_insert(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        self[(CoreState::I(profile_idx), target_idx)] = value;
+    }
+
+    fn get_delete(&self, target_idx: usize, profile_idx: usize) -> f32 {
+        self[(CoreState::D(profile_idx), target_idx)]
+    }
+
+    fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32) {
+        self[(CoreState::D(profile_idx), target_idx)] = value;
+    }
+
+    fn get_special(&self, target_idx: usize, special_idx: usize) -> f32 {
+        let state: BackgroundState = unsafe { std::mem::transmute(special_idx) };
+        self[(state, target_idx)]
+    }
+
+    fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32) {
+        let state: BackgroundState = unsafe { std::mem::transmute(special_idx) };
+        self[(state, target_idx)] = value;
+    }
+}
 
 pub trait DpMatrix {
     fn target_length(&self) -> usize;
@@ -16,7 +368,7 @@ pub trait DpMatrix {
     fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32);
     fn get_special(&self, target_idx: usize, special_idx: usize) -> f32;
     fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32);
-    fn dump(&self, out: &mut impl Write) -> Result<()> {
+    fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
         let target_idx_width = self.target_length().to_string().len();
         let first_column_width = target_idx_width + 3;
         // TODO: should these be global statics or something?
@@ -32,7 +384,7 @@ pub trait DpMatrix {
         for special_idx in 0..Profile::NUM_SPECIAL_STATES {
             write!(
                 out,
-                "{:.w$} ",
+                "{:>w$} ",
                 Profile::SPECIAL_STATE_IDX_TO_NAME[special_idx],
                 w = column_width
             )?;
@@ -59,7 +411,7 @@ pub trait DpMatrix {
             }
 
             // write the special states on the match line
-            for special_idx in 0..Profile::NUM_SPECIAL_STATES {
+            for special_idx in 0..(Profile::NUM_SPECIAL_STATES - 1) {
                 write!(
                     out,
                     "{:w$.p$} ",
@@ -68,6 +420,14 @@ pub trait DpMatrix {
                     p = precision
                 )?;
             }
+            write!(
+                out,
+                "{:w$.p$} ",
+                -f32::INFINITY,
+                w = column_width,
+                p = precision
+            )?;
+
             writeln!(out)?;
 
             // write the insert line
@@ -488,7 +848,11 @@ impl DpMatrix for DpMatrixSparse {
 
 #[cfg(test)]
 mod tests {
+    use super::CoreState::*;
     use super::*;
+    use crate::align::structs::test_consts::BOUNDS_A_1;
+
+    use assert2::assert;
 
     #[test]
     fn test_dp_matrix_flat() {
@@ -516,9 +880,9 @@ mod tests {
 
         (0..=5).for_each(|row| {
             (0..=5).for_each(|col| {
-                assert_eq!(matrix.get_match(row, col), m[row][col]);
-                assert_eq!(matrix.get_insert(row, col), i[row][col]);
-                assert_eq!(matrix.get_delete(row, col), d[row][col]);
+                assert!(matrix.get_match(row, col) == m[row][col]);
+                assert!(matrix.get_insert(row, col) == i[row][col]);
+                assert!(matrix.get_delete(row, col) == d[row][col]);
             });
         });
     }
@@ -560,10 +924,93 @@ mod tests {
 
         (0..=5).for_each(|row| {
             (0..=5).for_each(|col| {
-                assert_eq!(matrix.get_match(row, col), m[row][col]);
-                assert_eq!(matrix.get_insert(row, col), i[row][col]);
-                assert_eq!(matrix.get_delete(row, col), d[row][col]);
+                assert!(matrix.get_match(row, col) == m[row][col]);
+                assert!(matrix.get_insert(row, col) == i[row][col]);
+                assert!(matrix.get_delete(row, col) == d[row][col]);
             });
         });
+    }
+
+    #[test]
+    fn test_ad_matrix_sparse_square() -> anyhow::Result<()> {
+        const S: usize = 3;
+        const P: usize = 3;
+
+        let mut cloud = Cloud::new(S, P);
+        cloud.fill_rectangle(0, 0, S, P);
+        let mut mx = AdMatrixSparse::from_cloud(&cloud);
+
+        let mut val = 1.0;
+        (1..=P).for_each(|p| {
+            (1..=S).for_each(|s| {
+                mx[(M(p), s)] = val;
+                mx[(I(p), s)] = val + 0.1;
+                mx[(D(p), s)] = val + 0.2;
+                val += 1.0;
+            })
+        });
+
+        // the indices and respective values
+        // that should be set by the loop above
+        let set_idx = [7, 12, 17, 11, 16, 20, 19, 15, 22];
+        let set_values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 7.0, 9.0];
+
+        set_idx.iter().zip(set_values).for_each(|(&idx, val)| {
+            assert!(mx.core_data[0][idx] == val);
+            assert!(mx.core_data[1][idx] == val + 0.1);
+            assert!(mx.core_data[2][idx] == val + 0.2);
+        });
+
+        (0..mx.size())
+            // everything that wasn't set should be -inf
+            .filter(|idx| !set_idx.contains(idx))
+            .for_each(|idx| {
+                assert!(mx.core_data[0][idx] == -f32::INFINITY);
+                assert!(mx.core_data[1][idx] == -f32::INFINITY);
+                assert!(mx.core_data[2][idx] == -f32::INFINITY);
+            });
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ad_matrix_sparse_cloud() -> anyhow::Result<()> {
+        const S: usize = 10;
+        const P: usize = 10;
+
+        let mut cloud = Cloud::new(S, P);
+        cloud.fill(&BOUNDS_A_1)?;
+        cloud.image().print();
+        let mut mx = AdMatrixSparse::from_cloud(&cloud);
+        mx.layout();
+
+        let mut val = 1.0;
+        (1..=P).for_each(|p| {
+            (1..=S).for_each(|s| {
+                mx[(M(p), s)] = val;
+                mx[(I(p), s)] = val + 0.1;
+                mx[(D(p), s)] = val + 0.2;
+                val += 1.0;
+            })
+        });
+
+        let set_idx = [];
+        let set_values = [];
+
+        set_idx.iter().zip(set_values).for_each(|(&idx, val)| {
+            assert!(mx.core_data[0][idx] == val);
+            assert!(mx.core_data[1][idx] == val + 0.1);
+            assert!(mx.core_data[2][idx] == val + 0.2);
+        });
+
+        (0..mx.size())
+            .filter(|idx| !set_idx.contains(idx))
+            .for_each(|idx| {
+                assert!(mx.core_data[0][idx] == -f32::INFINITY);
+                assert!(mx.core_data[1][idx] == -f32::INFINITY);
+                assert!(mx.core_data[2][idx] == -f32::INFINITY);
+            });
+
+        Ok(())
     }
 }

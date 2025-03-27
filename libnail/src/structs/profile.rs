@@ -73,13 +73,13 @@ impl Profile {
 
     // special state indices
     pub const NUM_SPECIAL_STATES: usize = 5;
-    pub const SPECIAL_E_IDX: usize = 0;
-    pub const SPECIAL_N_IDX: usize = 1;
-    pub const SPECIAL_J_IDX: usize = 2;
-    pub const SPECIAL_B_IDX: usize = 3;
-    pub const SPECIAL_C_IDX: usize = 4;
+    pub const SPECIAL_N_IDX: usize = 0;
+    pub const SPECIAL_B_IDX: usize = 1;
+    pub const SPECIAL_E_IDX: usize = 2;
+    pub const SPECIAL_C_IDX: usize = 3;
+    pub const SPECIAL_J_IDX: usize = 4;
 
-    pub const SPECIAL_STATE_IDX_TO_NAME: [&'static str; 5] = ["E", "N", "J", "B", "C"];
+    pub const SPECIAL_STATE_IDX_TO_NAME: [&'static str; 5] = ["N", "B", "E", "C", "J"];
 
     // special transition indices
     pub const SPECIAL_LOOP_IDX: usize = 0;
@@ -474,7 +474,7 @@ impl Profile {
                         + hmm.model.transition_probabilities[profile_idx - 1][HMM_MATCH_TO_INSERT])
             ) + (
                 // the complement of the occupancy of the previous position
-                1.0 - occupancy[profile_idx - 1]
+                (1.0 - occupancy[profile_idx - 1])
                     // multiplied by the transition to a match state
                     //   ** since there's no delete to insert transition **
                     * hmm.model.transition_probabilities[profile_idx - 1][HMM_DELETE_TO_MATCH]

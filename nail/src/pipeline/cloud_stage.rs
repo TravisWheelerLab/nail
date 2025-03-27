@@ -3,11 +3,15 @@ use std::time::{Duration, Instant};
 use derive_builder::Builder;
 use libnail::{
     align::{
-        cloud_score, cloud_search_backward, cloud_search_forward, null_one_score, p_value,
-        structs::{AntiDiagonalBounds, CloudMatrixLinear, RowBounds, Seed},
+        cloud_score, cloud_search_backward, cloud_search_forward, cloud_search_test, forward_test,
+        null_one_score, p_value,
+        structs::{
+            AdMatrixSparse, Cloud, CloudMatrixLinear, CloudMatrixQuadratic, DpMatrixFlat,
+            RowBounds, Seed,
+        },
         CloudSearchParams, Nats,
     },
-    structs::{Profile, Sequence},
+    structs::{sequence, Profile, Sequence},
 };
 
 use crate::args::SearchArgs;
@@ -57,6 +61,59 @@ pub trait CloudSearchStage: dyn_clone::DynClone + Send + Sync {
 dyn_clone::clone_trait_object!(CloudSearchStage);
 
 #[derive(Default, Clone)]
+pub struct TmpDebugCloudSearchStage {}
+
+impl CloudSearchStage for TmpDebugCloudSearchStage {
+    fn run(&mut self, profile: &Profile, target: &Sequence, _: &Seed) -> CloudStageResult {
+        let mut profile = profile.clone();
+        profile.configure_for_target_length(target.length);
+
+        // let mut fwd_lin = CloudMatrixLinear::new(profile.length);
+        // let mut bwd_lin = CloudMatrixLinear::new(profile.length);
+        // cloud_search_test(profile, target, seed, &mut fwd_lin, &mut bwd_lin);
+
+        // let mut fwd_cloud_quad = CloudMatrixQuadratic::new(target.length, profile.length);
+        // let mut bwd_cloud_quad = CloudMatrixQuadratic::new(target.length, profile.length);
+
+        // cloud_search_test(
+        //     &mut profile,
+        //     target,
+        //     &mut fwd_cloud_quad,
+        //     &mut bwd_cloud_quad,
+        // );
+
+        let mut fwd_matrix_og = DpMatrixFlat::new(target.length, profile.length);
+        let mut bwd_matrix_og = DpMatrixFlat::new(target.length, profile.length);
+        forward_test(
+            &mut profile,
+            target,
+            &mut fwd_matrix_og,
+            &mut bwd_matrix_og,
+            "1",
+        );
+
+        let mut bounds = Cloud::new(target.length, profile.length);
+        bounds.fill_rectangle(0, 0, target.length, profile.length);
+        let mut fwd_matrix_new = AdMatrixSparse::from_cloud(&bounds);
+        let mut bwd_matrix_new = AdMatrixSparse::from_cloud(&bounds);
+
+        forward_test(
+            &mut profile,
+            target,
+            &mut fwd_matrix_new,
+            &mut bwd_matrix_new,
+            "2",
+        );
+
+        fwd_matrix_new.layout();
+
+        StageResult::Filtered {
+            stats: CloudStageStatsBuilder::default().build().unwrap(),
+        }
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct FullDpCloudSearchStage {}
 
 impl CloudSearchStage for FullDpCloudSearchStage {
@@ -74,8 +131,8 @@ impl CloudSearchStage for FullDpCloudSearchStage {
 #[derive(Default, Clone)]
 pub struct DefaultCloudSearchStage {
     cloud_matrix: CloudMatrixLinear,
-    forward_bounds: AntiDiagonalBounds,
-    reverse_bounds: AntiDiagonalBounds,
+    forward_bounds: Cloud,
+    reverse_bounds: Cloud,
     params: CloudSearchParams,
     p_value_threshold: f64,
 }
@@ -96,9 +153,8 @@ impl DefaultCloudSearchStage {
 
 impl CloudSearchStage for DefaultCloudSearchStage {
     fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult {
-        let mut stats = CloudStageStatsBuilder::default();
-
         let now = Instant::now();
+        let mut stats = CloudStageStatsBuilder::default();
         self.cloud_matrix.reuse(profile.length);
         self.forward_bounds.reuse(target.length, profile.length);
         self.reverse_bounds.reuse(target.length, profile.length);
@@ -136,10 +192,11 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         let target_length = target.length as f32;
         let profile_length = profile.length as f32;
         let cloud_score_adjustment = Nats(
-            // L * log(L / (L + 2))        [ N->N | C->C ] non-homologous states
+            // L * log(L / (L + 2))          [ N->N | C->C ] non-homologous states
             target_length * (target_length / (target_length + 2.0)).ln()
-                // 2 * log(2 / (L + 2))    [ N->B + C->T ] start/end transitions
-                + 2.0 * (2.0 / (target_length + 2.0)).ln()
+                // NOTE: no longer adding this here
+                // // 2 * log(2 / (L + 2))      [ N->B + C->T ] start/end transitions
+                // + 2.0 * (2.0 / (target_length + 2.0)).ln()
                 // log(2 / (M * (M + 1)))    [ B->M + M->E ] core model entry approximation
                 + (2.0 / (profile_length * (profile_length + 1.0))).ln(),
         );

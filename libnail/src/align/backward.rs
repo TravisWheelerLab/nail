@@ -9,37 +9,11 @@ pub fn backward(
     dp_matrix: &mut impl DpMatrix,
     row_bounds: &RowBounds,
 ) {
-    let end_score: f32 = 0.0;
-    //  M   s_D
-    //  s_I s_M
-    //
-    //  I    -
-    //  s_I s_M
-    //
-    //  D   s_D
-    //  -   s_M
-    //
-
-    // C:   a cell in the cloud
-    // L:   a cell in the last *row* of the cloud
-    // [p]: a padding cell
-    //
-    //  .........................
-    //  .........................
-    //  ....  C  C  C  C  C  C  C [p]
-    //  ....  C  C  C  C  C  C [p][p] <-  we need different amounts of
-    //  ....  C  C  C  C  C  C [p]    <-  padding depending on whether
-    //  ....  C  C  C  C  C [p][p]    <-  or not the rows are offset
-    //  ....  L  L  L  L [p][p]
-    //        ^  ^  ^  ^
-    //       the last row defined in the row bounds
-    //       is initialized with special conditions
-
-    dp_matrix.set_special(
-        row_bounds.target_end,
-        Profile::SPECIAL_J_IDX,
-        -f32::INFINITY,
-    );
+    // dp_matrix.set_special(
+    //     row_bounds.target_end,
+    //     Profile::SPECIAL_J_IDX,
+    //     -f32::INFINITY,
+    // );
     dp_matrix.set_special(
         row_bounds.target_end,
         Profile::SPECIAL_B_IDX,
@@ -72,11 +46,11 @@ pub fn backward(
     // *: the last cell on the last row
     //
     //     bounded                       full
-    //  C  C  C  C  C  -            F  F  F  F  F  F
+    //  C  C  C  C  -  -            F  F  F  F  F  F
     //  C  C  C  C  -  -            F  F  F  F  F  F
     //  C  C  C  C  -  -   <-vs->   F  F  F  F  F  F
-    //  C  C  C  -  -  -            F  F  F  F  F  F
-    //  L  *  -  -  -  -            L  L  L  L  L  *
+    //  L  L  L  *  -  -            F  F  F  F  F  F
+    //  -  - -  -  -  -             L  L  L  L  L  *
 
     dp_matrix.set_match(
         row_bounds.target_end,
@@ -96,24 +70,13 @@ pub fn backward(
         -f32::INFINITY,
     );
 
-    // C: dp matrix cell
-    // L: cell in the last row
-    // *: the last cell on the last row
-    //
-    //     bounded                       full
-    //  C  C  C  C  C  -            F  F  F  F  F  F
-    //  C  C  C  C  -  -   <-vs->   F  F  F  F  F  F
-    //  C  C  C  -  -  -            F  F  F  F  F  F
-    //  L  *  -  -  -  -            F  F  F  F  F  F
-    //  -  -  -  -  -  -            L  L  L  L  L  *
-    //
     // this loops over the last row, setting all of the <L> cells, excluding the last cell <*>
     for profile_idx in (profile_start_on_last_row..profile_end_on_last_row).rev() {
         dp_matrix.set_match(
             row_bounds.target_end,
             profile_idx,
             log_sum!(
-                dp_matrix.get_special(row_bounds.target_end, Profile::SPECIAL_E_IDX) + end_score,
+                dp_matrix.get_special(row_bounds.target_end, Profile::SPECIAL_E_IDX),
                 dp_matrix.get_delete(row_bounds.target_end, profile_idx + 1)
                     + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
             ),
@@ -124,7 +87,7 @@ pub fn backward(
             row_bounds.target_end,
             profile_idx,
             log_sum!(
-                dp_matrix.get_special(row_bounds.target_end, Profile::SPECIAL_E_IDX) + end_score,
+                dp_matrix.get_special(row_bounds.target_end, Profile::SPECIAL_E_IDX),
                 dp_matrix.get_delete(row_bounds.target_end, profile_idx + 1)
                     + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx)
             ),
@@ -134,22 +97,6 @@ pub fn backward(
     // main recursion
     for target_idx in (row_bounds.target_start..row_bounds.target_end).rev() {
         let current_residue = target.digital_bytes[target_idx + 1] as usize;
-        //            Backward matrix             B state
-        // ... .   ...  .  .  .  .  .  .  .  .       .
-        // ... .   ...  .  .  .  .  .  .  .  .       .
-        // ... .   ...  .  .  .  .  .  .  .  .       .
-        // ... C   ...  C  C  C  C  C  C  C  -       -
-        // ... C   ...  C  C  C  C  C  C  C  -       -
-        // ... C   ...  C  C  C  C  C  C  C  -       -
-        // ... C   ...  C  C  C  C  C  C  -  -      B_t = M_p * tsc(B->M) * msc(T_t) // init
-        //    M_p  ...  C  C  C  C  C  -  -  -      B_p // the previous B state
-        //              .  .  .  .  .  .  .  .       .
-        //              .  .  .  .  .  .  .  .       .
-        //              .  .  .  .  .  .  .  .       .
-        //              L  L  L  L  -  -  -  -      B_L  // the first B state
-        //              -  -  -  -  -  -  -  -
-        //
-
         let profile_start_on_current_row = row_bounds.left_row_bounds[target_idx];
         let profile_end_on_current_row = row_bounds.right_row_bounds[target_idx];
 
@@ -181,22 +128,22 @@ pub fn backward(
             );
         }
 
-        dp_matrix.set_special(
-            target_idx,
-            Profile::SPECIAL_J_IDX,
-            log_sum!(
-                dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_J_IDX)
-                    + profile.special_transition_score(
-                        Profile::SPECIAL_J_IDX,
-                        Profile::SPECIAL_LOOP_IDX
-                    ),
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_B_IDX)
-                    + profile.special_transition_score(
-                        Profile::SPECIAL_J_IDX,
-                        Profile::SPECIAL_MOVE_IDX
-                    )
-            ),
-        );
+        // dp_matrix.set_special(
+        //     target_idx,
+        //     Profile::SPECIAL_J_IDX,
+        //     log_sum!(
+        //         dp_matrix.get_special(target_idx + 1, Profile::SPECIAL_J_IDX)
+        //             + profile.special_transition_score(
+        //                 Profile::SPECIAL_J_IDX,
+        //                 Profile::SPECIAL_LOOP_IDX
+        //             ),
+        //         dp_matrix.get_special(target_idx, Profile::SPECIAL_B_IDX)
+        //             + profile.special_transition_score(
+        //                 Profile::SPECIAL_J_IDX,
+        //                 Profile::SPECIAL_MOVE_IDX
+        //             )
+        //     ),
+        // );
 
         dp_matrix.set_special(
             target_idx,
@@ -210,11 +157,11 @@ pub fn backward(
             target_idx,
             Profile::SPECIAL_E_IDX,
             log_sum!(
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
-                    + profile.special_transition_score(
-                        Profile::SPECIAL_E_IDX,
-                        Profile::SPECIAL_LOOP_IDX
-                    ),
+                // dp_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
+                //     + profile.special_transition_score(
+                //         Profile::SPECIAL_E_IDX,
+                //         Profile::SPECIAL_LOOP_IDX
+                //     ),
                 dp_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX)
                     + profile.special_transition_score(
                         Profile::SPECIAL_E_IDX,
@@ -265,7 +212,7 @@ pub fn backward(
                     dp_matrix.get_insert(target_idx + 1, profile_idx)
                         + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx)
                         + profile.insert_score(current_residue, profile_idx),
-                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX) + end_score,
+                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX),
                     dp_matrix.get_delete(target_idx, profile_idx + 1)
                         + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
                 ),
@@ -293,7 +240,7 @@ pub fn backward(
                         + profile.match_score(current_residue, profile_idx + 1),
                     dp_matrix.get_delete(target_idx, profile_idx + 1)
                         + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx),
-                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX) + end_score
+                    dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX)
                 ),
             );
         }
@@ -325,11 +272,11 @@ pub fn backward(
         );
     }
 
-    dp_matrix.set_special(
-        row_bounds.target_start - 1,
-        Profile::SPECIAL_J_IDX,
-        -f32::INFINITY,
-    );
+    // dp_matrix.set_special(
+    //     row_bounds.target_start - 1,
+    //     Profile::SPECIAL_J_IDX,
+    //     -f32::INFINITY,
+    // );
     dp_matrix.set_special(
         row_bounds.target_start - 1,
         Profile::SPECIAL_C_IDX,

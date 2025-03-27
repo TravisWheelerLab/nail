@@ -20,6 +20,7 @@ use jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 fn main() -> anyhow::Result<()> {
+    color_backtrace::install();
     match NailCli::parse().command {
         NailSubCommands::Search(args) => {
             check_mmseqs_installed()?;

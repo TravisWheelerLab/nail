@@ -1,48 +1,40 @@
-use std::ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign};
+use std::{
+    fmt::{Debug, Display},
+    ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign},
+};
 
 use lazy_static::lazy_static;
 
-pub trait PrintMe {
+#[cfg(test)]
+#[ctor::ctor]
+fn init_backtrace() {
+    color_backtrace::install();
+}
+
+pub trait Print {
+    fn print(&self);
+    fn print_debug(&self);
+}
+
+impl<T: Display + Debug> Print for T {
+    fn print(&self) {
+        println!("{self}");
+    }
+
+    fn print_debug(&self) {
+        println!("{self:?}");
+    }
+}
+
+pub trait CollectionPrint {
     fn print(&self);
 }
 
-impl<T: PrintMe> PrintMe for Vec<T> {
+impl<T: Display + Debug> CollectionPrint for Vec<T> {
     fn print(&self) {
-        for val in self.iter() {
-            val.print();
-        }
-    }
-}
-
-impl<T: PrintMe> PrintMe for &[T] {
-    fn print(&self) {
-        for val in self.iter() {
-            val.print();
-        }
-    }
-}
-
-impl PrintMe for String {
-    fn print(&self) {
-        println!("{}", self)
-    }
-}
-
-impl PrintMe for usize {
-    fn print(&self) {
-        println!("{}", self)
-    }
-}
-
-impl PrintMe for i32 {
-    fn print(&self) {
-        println!("{}", self)
-    }
-}
-
-impl PrintMe for f32 {
-    fn print(&self) {
-        println!("{:.3}", self)
+        self.iter()
+            .enumerate()
+            .for_each(|(i, e)| println!("{i}: {e}"));
     }
 }
 
@@ -231,6 +223,15 @@ macro_rules! max_f32 {
         // Call `max_f32!` on the tail `$y`
         $x.max(max_f32!($($y),+))
     )
+}
+
+#[macro_export]
+macro_rules! assert_eq_pairs {
+    ($( $left:expr, $right:expr );+ $(;)?) => {
+        $(
+            assert!($left == $right);
+        )+
+    };
 }
 
 #[cfg(feature = "debug")]

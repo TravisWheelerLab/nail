@@ -1,9 +1,52 @@
+use std::fs::File;
+use std::io::BufWriter;
+
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-use super::Nats;
+use super::{backward, Nats};
+
+pub fn forward_test(
+    profile: &mut Profile,
+    target: &Sequence,
+    fwd_matrix: &mut impl DpMatrix,
+    bwd_matrix: &mut impl DpMatrix,
+    name: &str,
+) {
+    profile.configure_for_target_length(target.length);
+
+    let target_start = 1;
+    let profile_start = 1;
+
+    let target_end = target.length;
+    let profile_end = profile.length;
+
+    let mut bounds = RowBounds::new(target.length);
+    bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
+
+    let _raw_forward_score = forward(profile, target, fwd_matrix, &bounds);
+    backward(profile, target, bwd_matrix, &bounds);
+
+    fwd_matrix
+        .dump(&mut BufWriter::new(
+            File::create(format!("{name}.fwd.mat")).unwrap(),
+        ))
+        .unwrap();
+
+    bwd_matrix
+        .dump(&mut BufWriter::new(
+            File::create(format!("{name}.bwd.mat")).unwrap(),
+        ))
+        .unwrap();
+
+    println!(
+        "  fwd: {}\n  bwd: {}\n",
+        fwd_matrix.get_match(target_end, profile_end),
+        bwd_matrix.get_special(Profile::SPECIAL_N_IDX, target_start),
+    );
+}
 
 pub fn forward(
     profile: &Profile,
@@ -14,6 +57,7 @@ pub fn forward(
     let end_score: f32 = 0.0;
 
     dp_matrix.set_special(bounds.target_start - 1, Profile::SPECIAL_N_IDX, 0.0);
+
     dp_matrix.set_special(
         bounds.target_start - 1,
         Profile::SPECIAL_B_IDX,
@@ -29,11 +73,11 @@ pub fn forward(
         Profile::SPECIAL_C_IDX,
         -f32::INFINITY,
     );
-    dp_matrix.set_special(
-        bounds.target_start - 1,
-        Profile::SPECIAL_J_IDX,
-        -f32::INFINITY,
-    );
+    // dp_matrix.set_special(
+    //     bounds.target_start - 1,
+    //     Profile::SPECIAL_J_IDX,
+    //     -f32::INFINITY,
+    // );
 
     for target_idx in bounds.target_start..=bounds.target_end {
         let current_target_character = target.digital_bytes[target_idx];
@@ -136,22 +180,22 @@ pub fn forward(
         );
 
         // unrolled J state
-        dp_matrix.set_special(
-            target_idx,
-            Profile::SPECIAL_J_IDX,
-            log_sum!(
-                dp_matrix.get_special(target_idx - 1, Profile::SPECIAL_J_IDX)
-                    + profile.special_transition_score(
-                        Profile::SPECIAL_J_IDX,
-                        Profile::SPECIAL_LOOP_IDX
-                    ),
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX)
-                    + profile.special_transition_score(
-                        Profile::SPECIAL_E_IDX,
-                        Profile::SPECIAL_LOOP_IDX
-                    )
-            ),
-        );
+        // dp_matrix.set_special(
+        //     target_idx,
+        //     Profile::SPECIAL_J_IDX,
+        //     log_sum!(
+        //         dp_matrix.get_special(target_idx - 1, Profile::SPECIAL_J_IDX)
+        //             + profile.special_transition_score(
+        //                 Profile::SPECIAL_J_IDX,
+        //                 Profile::SPECIAL_LOOP_IDX
+        //             ),
+        //         dp_matrix.get_special(target_idx, Profile::SPECIAL_E_IDX)
+        //             + profile.special_transition_score(
+        //                 Profile::SPECIAL_E_IDX,
+        //                 Profile::SPECIAL_LOOP_IDX
+        //             )
+        //     ),
+        // );
 
         // unrolled C state
         dp_matrix.set_special(
@@ -189,12 +233,11 @@ pub fn forward(
                     + profile.special_transition_score(
                         Profile::SPECIAL_N_IDX,
                         Profile::SPECIAL_MOVE_IDX
-                    ),
-                dp_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
-                    + profile.special_transition_score(
-                        Profile::SPECIAL_J_IDX,
-                        Profile::SPECIAL_MOVE_IDX
-                    )
+                    ) // dp_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
+                      //     + profile.special_transition_score(
+                      //         Profile::SPECIAL_J_IDX,
+                      //         Profile::SPECIAL_MOVE_IDX
+                      //     )
             ),
         );
     }

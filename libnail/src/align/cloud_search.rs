@@ -1,10 +1,75 @@
-use crate::align::structs::{AntiDiagonal, AntiDiagonalBounds, CloudMatrixLinear, Seed};
+use std::fs::File;
+
+use crate::align::structs::{AntiDiagonal, Cloud, CloudMatrixLinear, Seed};
 use crate::log_sum;
 use crate::max_f32;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
+use super::structs::CloudMatrix;
 use super::Nats;
+
+pub fn cloud_search_test(
+    profile: &mut Profile,
+    target: &Sequence,
+    fwd_matrix: &mut impl CloudMatrix,
+    bwd_matrix: &mut impl CloudMatrix,
+) {
+    profile.configure_for_target_length(target.length);
+    let mut bounds = Cloud::new(target.length, profile.length);
+
+    // what: we want to make sure that the seed
+    //       doesn't start at position 0
+    // why:  0 is not a valid target/profile position;
+    //       it is used as kind of an implicit edge guard
+    //       for illegal transitions in the recurrence
+    // let target_start = seed.target_start.max(1);
+    // let profile_start = seed.profile_start.max(1);
+    let target_start = 1;
+    let profile_start = 1;
+
+    // what: we want to make sure we start cloud search
+    //       at least two positions before the end of
+    //       both the target and profile
+    //
+    // why:  since backward uses target[idx + 1]
+    //
+    //       starting one position before doesn't quite do it,
+    //       since the second anti-diagonal will still try to
+    //       pull [idx + 1]
+    // let target_end = seed.target_end.min(target.length - 2);
+    // let profile_end = seed.profile_end.min(profile.length - 2);
+    let target_end = target.length;
+    let profile_end = profile.length;
+
+    bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
+
+    bounds.bounds().iter().for_each(|ad| {
+        ad.cell_zip().for_each(|(target_idx, profile_idx)| {
+            compute_forward_cell2(target, profile, fwd_matrix, target_idx, profile_idx);
+        })
+    });
+
+    // bounds.bounds().iter().rev().skip(2).for_each(|ad| {
+    //     ad.cell_zip().for_each(|(target_idx, profile_idx)| {
+    //         compute_backward_cell2(target, profile, bwd_matrix, target_idx, profile_idx);
+    //     })
+    // });
+
+    fwd_matrix
+        .dump(&mut File::create("nail.cloud.fwd.mat").unwrap())
+        .unwrap();
+
+    bwd_matrix
+        .dump(&mut File::create("nail.cloud.bwd.mat").unwrap())
+        .unwrap();
+
+    println!(
+        "  fwd: {}\n  bwd: {}\n",
+        fwd_matrix.get_match(target_end, profile_end),
+        bwd_matrix.get_match(target_start, profile_start),
+    );
+}
 
 #[derive(Clone)]
 pub struct CloudSearchParams {
@@ -134,6 +199,124 @@ pub fn scrub_co_located(
 }
 
 #[inline]
+pub fn compute_backward_cell2(
+    target: &Sequence,
+    profile: &Profile,
+    matrix: &mut impl CloudMatrix,
+    target_idx: usize,
+    profile_idx: usize,
+) {
+    let target_residue = target.digital_bytes[target_idx + 1] as usize;
+    // note: the Backward recurrence is somewhat counterintuitive,
+    //       since it is derived by inverting all of the transitions
+    //       in the Forward HMM
+    //
+    //       consequently, when any specific state contributes score
+    //       to a Backward cell, the source cell is always the same
+    //
+    //       i.e., the following source indices are used for each of
+    //       the following Backward computations
+    let match_sources = (target_idx + 1, profile_idx + 1);
+    let insert_sources = (target_idx + 1, profile_idx);
+    let delete_sources = (target_idx, profile_idx + 1);
+
+    // match state
+    //
+    //   *: the cell we are computing                     (target_idx    , profile_idx    )
+    //   M: the cell of the source match state component  (target_idx + 1, profile_idx + 1)
+    //   I: the cell of the source insert state component (target_idx + 1, profile_idx    )
+    //   D: the cell of the source delete state component (target_idx    , profile_idx + 1)
+    //
+    //   classic orientation:
+    //       p r o f i l e
+    //     t - - - - - - - -
+    //     a - - - - - - - -
+    //     r - - - * D - - -
+    //     g - - - I M - - -
+    //     e - - - - - - - -
+    //     t - - - - - - - -
+    //
+    //   linear orientation:
+    //       p r o f i l e
+    //     r - - - * - - - -
+    //     o - - - I D - - -
+    //     w - - - - M - - -
+    //
+    matrix.set_match(
+        target_idx,
+        profile_idx,
+        log_sum!(
+            matrix.get_match(match_sources.0, match_sources.1)
+                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, profile_idx)
+                + profile.match_score(target_residue, profile_idx + 1),
+            matrix.get_insert(insert_sources.0, insert_sources.1)
+                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx)
+                + profile.insert_score(target_residue, profile_idx),
+            matrix.get_delete(delete_sources.0, delete_sources.1)
+                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
+        ),
+    );
+
+    // insert state
+    //
+    //   classic orientation:
+    //       p r o f i l e
+    //     t - - - - - - - -
+    //     a - - - - - - - -
+    //     r - - - * - - - -
+    //     g - - - I M - - -
+    //     e - - - - - - - -
+    //     t - - - - - - - -
+    //
+    //   linear orientation:
+    //       p r o f i l e
+    //     r - - - * - - - -
+    //     o - - - I - - - -
+    //     w - - - - M - - -
+    //
+    matrix.set_insert(
+        target_idx,
+        profile_idx,
+        log_sum!(
+            matrix.get_match(match_sources.0, match_sources.1)
+                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, profile_idx)
+                + profile.match_score(target_residue, profile_idx + 1),
+            matrix.get_insert(insert_sources.0, insert_sources.1)
+                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
+                + profile.insert_score(target_residue, profile_idx)
+        ),
+    );
+
+    // delete state
+    //
+    //   classic orientation:
+    //       p r o f i l e
+    //     t - - - - - - - -
+    //     a - - - - - - - -
+    //     r - - - * D - - -
+    //     g - - - - M - - -
+    //     e - - - - - - - -
+    //     t - - - - - - - -
+    //
+    //   linear orientation:
+    //       p r o f i l e
+    //     r - - - * - - - -
+    //     o - - - - D - - -
+    //     w - - - - M - - -
+    matrix.set_delete(
+        target_idx,
+        profile_idx,
+        log_sum!(
+            matrix.get_match(match_sources.0, match_sources.1)
+                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, profile_idx)
+                + profile.match_score(target_residue, profile_idx + 1),
+            matrix.get_delete(delete_sources.0, delete_sources.1)
+                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx)
+        ),
+    );
+}
+
+#[inline]
 pub fn compute_backward_cell(
     target: &Sequence,
     profile: &Profile,
@@ -158,7 +341,7 @@ pub fn compute_backward_cell(
     //     e - - - - - - - -
     //     t - - - - - - - -
     //
-    //   rotated linear orientation:
+    //   linear orientation:
     //       p r o f i l e
     //     r - - - * - - - -
     //     o - - - I D - - -
@@ -233,7 +416,7 @@ pub fn cloud_search_backward(
     seed: &Seed,
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
-    bounds: &mut AntiDiagonalBounds,
+    bounds: &mut Cloud,
 ) -> CloudSearchResults {
     let mut num_cells_computed = 0;
     // the highest score we've seen overall
@@ -258,7 +441,7 @@ pub fn cloud_search_backward(
     cloud_matrix.set_delete(first_cloud_matrix_row_idx, profile_end, 0.0);
 
     // the first bound is the ending position
-    bounds.max_anti_diagonal_idx = first_anti_diagonal_idx;
+    bounds.ad_end = first_anti_diagonal_idx;
     bounds.set(
         first_anti_diagonal_idx,
         target_end,
@@ -386,11 +569,11 @@ pub fn cloud_search_backward(
 
         match prune_status {
             PruneStatus::FullyPruned => {
-                bounds.min_anti_diagonal_idx = anti_diagonal_idx + 1;
+                bounds.ad_start = anti_diagonal_idx + 1;
                 break;
             }
             PruneStatus::PartiallyPruned => {
-                bounds.min_anti_diagonal_idx = anti_diagonal_idx;
+                bounds.ad_start = anti_diagonal_idx;
                 continue;
             }
         }
@@ -401,6 +584,122 @@ pub fn cloud_search_backward(
         max_score_within: Nats(max_score_within),
         num_cells_computed,
     }
+}
+
+#[inline]
+pub fn compute_forward_cell2(
+    target: &Sequence,
+    profile: &Profile,
+    matrix: &mut impl CloudMatrix,
+    target_idx: usize,
+    profile_idx: usize,
+) {
+    let target_residue = target.digital_bytes[target_idx];
+
+    // match state
+    // note: begin to match excluded in cloud search
+    // note: the match, insert, and delete contributions to
+    //       a match cell all come from the upper left cell
+    //
+    //   *: the cell we are computing (target_idx    , profile_idx    )
+    //   S: the source cell           (target_idx - 1, profile_idx - 1)
+    //
+    //   classic orientation:
+    //       p r o f i l e
+    //     t - - - - - - - -
+    //     a - - - - - - - -
+    //     r - - - S - - - -
+    //     g - - - - * - - -
+    //     e - - - - - - - -
+    //     t - - - - - - - -
+    //
+    //   linear orientation:
+    //       p r o f i l e
+    //     r - - - S - - - -
+    //     o - - - - - - - -
+    //     w - - - - * - - -
+    //
+    let source_target_idx = target_idx - 1;
+    let source_profile_idx = profile_idx - 1;
+    matrix.set_match(
+        target_idx,
+        profile_idx,
+        log_sum!(
+            matrix.get_match(source_target_idx, source_profile_idx)
+                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, source_profile_idx),
+            matrix.get_insert(source_target_idx, source_profile_idx)
+                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, source_profile_idx),
+            matrix.get_delete(source_target_idx, source_profile_idx)
+                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, source_profile_idx),
+            (source_target_idx as f32
+                * profile
+                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX))
+                + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, source_profile_idx)
+                + profile
+                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_MOVE_IDX)
+        ) + profile.match_score(target_residue as usize, profile_idx),
+    );
+
+    //
+    // insert state
+    //   note: delete to insert is not allowed
+    //
+    //   classic orientation:
+    //       p r o f i l e
+    //     t - - - - - - - -
+    //     a - - - - - - - -
+    //     r - - - - S - - -
+    //     g - - - - * - - -
+    //     e - - - - - - - -
+    //     t - - - - - - - -
+    //
+    //   linear orientation:
+    //       p r o f i l e
+    //     r - - - - - - - -
+    //     o - - - - S - - -
+    //     w - - - - * - - -
+    let source_target_idx = target_idx - 1;
+    let source_profile_idx = profile_idx;
+    matrix.set_insert(
+        target_idx,
+        profile_idx,
+        log_sum!(
+            matrix.get_match(source_target_idx, source_profile_idx)
+                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, source_profile_idx),
+            matrix.get_insert(source_target_idx, profile_idx)
+                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, source_profile_idx)
+        ) + profile.insert_score(target_residue as usize, profile_idx),
+    );
+
+    // delete state
+    //   note: delete to insert is not allowed
+    //
+    //   classic orientation:
+    //       p r o f i l e
+    //     t - - - - - - - -
+    //     a - - - - - - - -
+    //     r - - - - - - - -
+    //     g - - - S * - - -
+    //     e - - - - - - - -
+    //     t - - - - - - - -
+    //
+    //   linear orientation:
+    //       p r o f i l e
+    //     r - - - - - - - -
+    //     o - - - S - - - -
+    //     w - - - - * - - -
+    let source_target_idx = target_idx;
+    let source_profile_idx = profile_idx - 1;
+    matrix.set_delete(
+        target_idx,
+        profile_idx,
+        log_sum!(
+            matrix.get_match(source_target_idx, source_profile_idx)
+                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, source_profile_idx),
+            matrix.get_delete(source_target_idx, source_profile_idx)
+                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, source_profile_idx)
+        ),
+    );
 }
 
 #[inline]
@@ -428,7 +727,7 @@ pub fn compute_forward_cell(
     //     e - - - - - - - -
     //     t - - - - - - - -
     //
-    //   rotated linear orientation:
+    //   linear orientation:
     //       p r o f i l e
     //     r - - - S - - - -
     //     o - - - - - - - -
@@ -494,7 +793,7 @@ pub fn cloud_search_forward(
     seed: &Seed,
     cloud_matrix: &mut CloudMatrixLinear,
     params: &CloudSearchParams,
-    bounds: &mut AntiDiagonalBounds,
+    bounds: &mut Cloud,
 ) -> CloudSearchResults {
     let mut num_cells_computed = 0;
     // the highest score we've seen overall
@@ -528,7 +827,7 @@ pub fn cloud_search_forward(
     cloud_matrix.set_delete(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
 
     // the first bound is just the starting cell
-    bounds.min_anti_diagonal_idx = first_anti_diagonal_idx;
+    bounds.ad_start = first_anti_diagonal_idx;
     bounds.set(
         first_anti_diagonal_idx,
         seed.target_start,
@@ -657,11 +956,11 @@ pub fn cloud_search_forward(
 
         match prune_status {
             PruneStatus::FullyPruned => {
-                bounds.max_anti_diagonal_idx = anti_diagonal_idx - 1;
+                bounds.ad_end = anti_diagonal_idx - 1;
                 break;
             }
             PruneStatus::PartiallyPruned => {
-                bounds.max_anti_diagonal_idx = anti_diagonal_idx;
+                bounds.ad_end = anti_diagonal_idx;
                 continue;
             }
         }
