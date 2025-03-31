@@ -28,6 +28,7 @@ impl<T: Display + Debug> Print for T {
 
 pub trait CollectionPrint {
     fn print(&self);
+    fn print_debug(&self);
 }
 
 impl<T: Display + Debug> CollectionPrint for Vec<T> {
@@ -35,6 +36,12 @@ impl<T: Display + Debug> CollectionPrint for Vec<T> {
         self.iter()
             .enumerate()
             .for_each(|(i, e)| println!("{i}: {e}"));
+    }
+
+    fn print_debug(&self) {
+        self.iter()
+            .enumerate()
+            .for_each(|(i, e)| println!("{i}: {e:?}"));
     }
 }
 

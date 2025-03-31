@@ -3,9 +3,8 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::{align::structs::AntiDiagonal, structs::Profile};
-
-use super::{Cloud, RowBounds};
+use super::{Cell, Cloud, RowBounds};
+use crate::structs::Profile;
 
 #[derive(Debug)]
 #[repr(usize)]
@@ -57,6 +56,25 @@ pub enum BackgroundState {
 }
 
 pub type CoreCell = (CoreState, usize);
+
+impl From<CoreCell> for Cell {
+    fn from(val: CoreCell) -> Self {
+        Cell {
+            profile_idx: val.0.profile_idx(),
+            seq_idx: val.1,
+        }
+    }
+}
+
+impl From<&CoreCell> for Cell {
+    fn from(src: &CoreCell) -> Self {
+        Cell {
+            profile_idx: src.0.profile_idx(),
+            seq_idx: src.1,
+        }
+    }
+}
+
 pub type BackgroundCell = (BackgroundState, usize);
 
 pub trait CoreCellIndexable:
@@ -73,7 +91,7 @@ pub trait CellIndexable: CoreCellIndexable + BackgroundCellIndexable {}
 pub struct AdMatrixSparse {
     target_len: usize,
     profile_len: usize,
-    first_ad_idx: usize,
+    ad_start_idx: usize,
     block_offsets: Vec<usize>,
     ad_start_offsets: Vec<usize>,
     core_data: [Vec<f32>; 3],
@@ -84,7 +102,7 @@ impl AdMatrixSparse {
     pub fn layout(&self) {
         println!("target len:     {}", self.target_len());
         println!("profile len:    {}", self.profile_len());
-        println!("first AD index: {}", self.first_ad_idx);
+        println!("first AD index: {}", self.ad_start_idx);
 
         self.block_offsets
             .iter()
@@ -92,7 +110,7 @@ impl AdMatrixSparse {
             .zip(self.ad_start_offsets.iter())
             .enumerate()
             .for_each(|(idx, ((&a, &b), o))| {
-                print!("AD: {:<3} -> {a:<3} | +{o:<3} | ", idx + self.first_ad_idx);
+                print!("AD: {:<3} -> {a:<3} | +{o:<3} | ", idx + self.ad_start_idx);
                 self.core_data[0][(a + 1)..b].iter().for_each(|v| {
                     print!("{v:4.2} ");
                 });
@@ -116,7 +134,7 @@ impl AdMatrixSparse {
         self.target_len = cloud.target_len();
         self.profile_len = cloud.profile_len();
 
-        self.first_ad_idx = cloud.first().idx();
+        self.ad_start_idx = cloud.first().idx();
 
         let num_ad = cloud.num_anti_diagonals();
         // +1 to point to the final pad cell
@@ -126,31 +144,18 @@ impl AdMatrixSparse {
         self.ad_start_offsets.shrink_to_fit();
         self.block_offsets.shrink_to_fit();
 
-        /// A simple local function to compute the AD start offset
-        /// given a `Bound` and the length of a `Profile`
-        #[inline(always)]
-        fn offset(bound: &AntiDiagonal, profile_len: usize) -> usize {
-            let left = bound.right_target_major();
-            let delta = left.idx().saturating_sub(profile_len);
-            println!("{bound:?}");
-            println!("Left   {left:?}");
-            println!("delta: {delta}\n");
-            left.seq_idx - delta
-        }
-
         // peeling off the first pair of offsets so
         // that the following iterator stays clean
         self.block_offsets[0] = 0;
-        self.ad_start_offsets[0] = offset(cloud.first(), self.profile_len);
+        self.ad_start_offsets[0] = self.sparse_cell_idx(&cloud.first().right_target_major());
 
         cloud
             .bounds()
             .iter()
-            .rev()
             .enumerate()
-            .zip(cloud.bounds().iter().rev().enumerate().skip(1))
+            .zip(cloud.bounds().iter().enumerate().skip(1))
             .for_each(|((prev_idx, prev_bound), (idx, bound))| {
-                self.ad_start_offsets[idx] = offset(bound, self.profile_len);
+                self.ad_start_offsets[idx] = self.sparse_cell_idx(&bound.right_target_major());
                 let block_offset = self.block_offsets[prev_idx] + prev_bound.len() + 1;
                 self.block_offsets[idx] = block_offset;
             });
@@ -180,16 +185,24 @@ impl AdMatrixSparse {
     }
 
     #[inline(always)]
-    fn sparse_core_idx(&self, cell: &CoreCell) -> usize {
-        let profile_idx = cell.0.profile_idx();
-        let seq_idx = cell.1;
+    fn sparse_cell_idx(&self, cell: &Cell) -> usize {
+        let delta = cell.idx().saturating_sub(self.profile_len());
+        cell.seq_idx - delta
+    }
 
-        let ad_idx = profile_idx + seq_idx - self.first_ad_idx;
-        let seq_delta = ad_idx.saturating_sub(self.profile_len);
-        let seq_idx_in_block = seq_idx - seq_delta;
-        let block_start = self.block_offsets[ad_idx] + 1;
-        let next_block_start = self.block_offsets[ad_idx + 1];
-        let ad_offset = self.ad_start_offsets[ad_idx];
+    #[inline(always)]
+    fn sparse_ad_idx(&self, cell: &Cell) -> usize {
+        (cell.idx() - self.ad_start_idx).min(self.ad_start_offsets.len() - 1)
+    }
+
+    #[inline(always)]
+    fn sparse_core_idx(&self, cell: &CoreCell) -> usize {
+        let cell: Cell = cell.into();
+        let seq_idx_in_block = self.sparse_cell_idx(&cell);
+        let sparse_ad_idx = self.sparse_ad_idx(&cell);
+        let block_start = self.block_offsets[sparse_ad_idx] + 1;
+        let next_block_start = self.block_offsets[sparse_ad_idx + 1];
+        let ad_offset = self.ad_start_offsets[sparse_ad_idx];
 
         // the saturating sub prevents moving left out of the block
         // the min with the next block offset prevents moving right out of the block
@@ -210,7 +223,14 @@ impl Index<CoreCell> for AdMatrixSparse {
 impl IndexMut<CoreCell> for AdMatrixSparse {
     fn index_mut(&mut self, cell: CoreCell) -> &mut Self::Output {
         let state_idx = cell.0.state_idx();
+
+        debug_assert!(cell.0.profile_idx() + cell.1 >= self.ad_start_idx);
+        debug_assert!(
+            cell.0.profile_idx() + cell.1 < self.ad_start_idx + self.ad_start_offsets.len()
+        );
+
         let sparse_idx = self.sparse_core_idx(&cell);
+
         &mut self.core_data[state_idx][sparse_idx]
     }
 }
@@ -850,7 +870,7 @@ impl DpMatrix for DpMatrixSparse {
 mod tests {
     use super::CoreState::*;
     use super::*;
-    use crate::align::structs::test_consts::BOUNDS_A_1;
+    use crate::align::structs::test_consts::BOUNDS_A_MERGE;
 
     use assert2::assert;
 
@@ -979,23 +999,28 @@ mod tests {
         const P: usize = 10;
 
         let mut cloud = Cloud::new(S, P);
-        cloud.fill(&BOUNDS_A_1)?;
-        cloud.image().print();
+        cloud.fill(&BOUNDS_A_MERGE)?;
+
         let mut mx = AdMatrixSparse::from_cloud(&cloud);
-        mx.layout();
 
         let mut val = 1.0;
-        (1..=P).for_each(|p| {
-            (1..=S).for_each(|s| {
-                mx[(M(p), s)] = val;
-                mx[(I(p), s)] = val + 0.1;
-                mx[(D(p), s)] = val + 0.2;
+        cloud.new_bounds().iter().for_each(|b| {
+            b.iter().for_each(|c| {
+                mx[c.m_cell()] = val;
+                mx[c.i_cell()] = val + 0.1;
+                mx[c.d_cell()] = val + 0.2;
                 val += 1.0;
             })
         });
 
-        let set_idx = [];
-        let set_values = [];
+        let set_idx: Vec<usize> = mx
+            .block_offsets
+            .iter()
+            .zip(mx.block_offsets.iter().skip(1))
+            .flat_map(|(&a, &b)| ((a + 1)..b))
+            .collect();
+
+        let set_values: Vec<f32> = (1..cloud.cloud_size()).map(|i| i as f32).collect();
 
         set_idx.iter().zip(set_values).for_each(|(&idx, val)| {
             assert!(mx.core_data[0][idx] == val);

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail};
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::io::{stdout, Write};
 use std::iter::{Rev, Zip};
 use std::ops::RangeInclusive;
@@ -104,11 +104,26 @@ pub struct BoundIter {
     seq_end: usize,
 }
 
+impl Debug for BoundIter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mid = if self.profile_end <= self.profile_start {
+            "-".repeat(self.profile_start - self.profile_end + 1)
+        } else {
+            "".to_string()
+        };
+        writeln!(
+            f,
+            "p{}>{mid}<{}\ns{}>{mid}<{}",
+            self.profile_start, self.profile_end, self.seq_start, self.seq_end
+        )
+    }
+}
+
 impl Iterator for BoundIter {
     type Item = Cell;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.profile_start < self.profile_end {
+        if self.profile_start >= self.profile_end {
             let cell = Cell {
                 profile_idx: self.profile_start,
                 seq_idx: self.seq_start,
@@ -124,7 +139,7 @@ impl Iterator for BoundIter {
 
 impl DoubleEndedIterator for BoundIter {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.profile_start < self.profile_end {
+        if self.profile_start <= self.profile_end {
             let cell = Cell {
                 profile_idx: self.profile_end,
                 seq_idx: self.seq_end,
@@ -146,8 +161,8 @@ impl Bound {
 
     pub fn iter(&self) -> BoundIter {
         BoundIter {
-            profile_start: self.1.profile_idx,
-            profile_end: self.0.profile_idx,
+            profile_start: self.0.profile_idx,
+            profile_end: self.1.profile_idx,
             seq_start: self.0.seq_idx,
             seq_end: self.1.seq_idx,
         }
@@ -269,6 +284,19 @@ impl Default for AntiDiagonal {
             right_target_idx: 1,
             right_profile_idx: 0,
         }
+    }
+}
+
+impl Display for AntiDiagonal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{},{} : {},{}",
+            self.left_target_idx,
+            self.left_profile_idx,
+            self.right_target_idx,
+            self.right_profile_idx
+        )
     }
 }
 
@@ -635,6 +663,15 @@ impl Cloud {
     /// Get the number of anti-diagonals defined in the cloud.
     pub fn num_anti_diagonals(&self) -> usize {
         self.ad_end - self.ad_start + 1
+    }
+
+    /// A temporary function to get the bounds
+    /// as `Vec<Bound>` instead of `&[AntiDiagonal]`
+    pub(crate) fn new_bounds(&self) -> Vec<Bound> {
+        self.bounds[self.ad_start..=self.ad_end]
+            .iter()
+            .map(|ad| Bound(ad.right_target_major(), ad.left_target_major()))
+            .collect()
     }
 
     pub fn bounds(&self) -> &[AntiDiagonal] {
