@@ -52,13 +52,27 @@ impl Default for BoundingBox {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct Cell {
     pub profile_idx: usize,
     pub seq_idx: usize,
 }
 
 impl Cell {
+    pub(crate) fn from_seq_major(src: &[usize]) -> Self {
+        Self {
+            profile_idx: src[1],
+            seq_idx: src[0],
+        }
+    }
+
+    pub(crate) fn from_profile_major(src: &[usize]) -> Self {
+        Self {
+            profile_idx: src[0],
+            seq_idx: src[1],
+        }
+    }
+
     pub fn idx(&self) -> usize {
         self.seq_idx + self.profile_idx
     }
@@ -92,10 +106,30 @@ impl Debug for Cell {
 
 #[derive(Default, Clone)]
 pub struct Bound(Cell, Cell);
-pub struct ArrayProfileMajorBound([usize; 4]);
-pub struct ArraySeqMajorBound([usize; 4]);
-pub struct TupleProfileMajorBound((usize, usize), (usize, usize));
-pub struct TupleSeqMajorBound((usize, usize), (usize, usize));
+
+impl Bound {
+    #[allow(dead_code)]
+    pub(crate) fn from_seq_major(src: &[usize]) -> Self {
+        Bound(
+            Cell::from_seq_major(&src[2..4]),
+            Cell::from_seq_major(&src[0..2]),
+        )
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_profile_major(src: &[usize]) -> Self {
+        Bound(
+            Cell::from_profile_major(&src[0..2]),
+            Cell::from_profile_major(&src[2..4]),
+        )
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) struct ArrayProfileMajorBound([usize; 4]);
+
+#[allow(dead_code)]
+pub(crate) struct ArraySeqMajorBound([usize; 4]);
 
 pub struct BoundIter {
     profile_start: usize,
@@ -208,61 +242,13 @@ impl BoundInterpretable for Bound {
 
 impl BoundInterpretable for ArrayProfileMajorBound {
     fn interpret(&self) -> Bound {
-        Bound(
-            Cell {
-                profile_idx: self.0[0],
-                seq_idx: self.0[1],
-            },
-            Cell {
-                profile_idx: self.0[2],
-                seq_idx: self.0[3],
-            },
-        )
+        Bound::from_profile_major(&self.0)
     }
 }
 
 impl BoundInterpretable for ArraySeqMajorBound {
     fn interpret(&self) -> Bound {
-        Bound(
-            Cell {
-                profile_idx: self.0[3],
-                seq_idx: self.0[2],
-            },
-            Cell {
-                profile_idx: self.0[1],
-                seq_idx: self.0[0],
-            },
-        )
-    }
-}
-
-impl BoundInterpretable for TupleProfileMajorBound {
-    fn interpret(&self) -> Bound {
-        Bound(
-            Cell {
-                profile_idx: self.0 .0,
-                seq_idx: self.0 .1,
-            },
-            Cell {
-                profile_idx: self.1 .0,
-                seq_idx: self.1 .1,
-            },
-        )
-    }
-}
-
-impl BoundInterpretable for TupleSeqMajorBound {
-    fn interpret(&self) -> Bound {
-        Bound(
-            Cell {
-                profile_idx: self.1 .1,
-                seq_idx: self.1 .0,
-            },
-            Cell {
-                profile_idx: self.0 .1,
-                seq_idx: self.0 .0,
-            },
-        )
+        Bound::from_seq_major(&self.0)
     }
 }
 
@@ -1799,6 +1785,56 @@ mod tests {
     use test_consts::*;
 
     use assert2::assert;
+
+    #[test]
+    pub fn test_bound_iter() -> anyhow::Result<()> {
+        let bounds: Vec<Bound> = BOUNDS_A_MERGE.iter().map(|b| b.interpret()).collect();
+
+        // note: sentinel [0,0] added to each vec to make
+        // sure Bound::iter() stops where it's supposd to
+        let cells_by_bound: Vec<Vec<Cell>> = [
+            vec![[0, 0], [1, 1], [0, 0]],
+            vec![[0, 0], [2, 1], [0, 0]],
+            vec![[0, 0], [3, 1], [2, 2], [0, 0]],
+            vec![[0, 0], [4, 1], [3, 2], [2, 3], [0, 0]],
+            vec![[0, 0], [4, 2], [3, 3], [2, 4], [0, 0]],
+            vec![[0, 0], [5, 2], [4, 3], [3, 4], [2, 5], [0, 0]],
+            vec![[0, 0], [5, 3], [4, 4], [3, 5], [0, 0]],
+            vec![[0, 0], [6, 3], [5, 4], [4, 5], [3, 6], [0, 0]],
+            vec![[0, 0], [6, 4], [5, 5], [4, 6], [0, 0]],
+            vec![[0, 0], [7, 4], [6, 5], [5, 6], [4, 7], [0, 0]],
+            vec![[0, 0], [7, 5], [6, 6], [5, 7], [0, 0]],
+            vec![[0, 0], [8, 5], [7, 6], [6, 7], [5, 8], [0, 0]],
+            vec![[0, 0], [8, 6], [7, 7], [6, 8], [0, 0]],
+            vec![[0, 0], [8, 7], [7, 8], [6, 9], [0, 0]],
+            vec![[0, 0], [8, 8], [7, 9], [0, 0]],
+            vec![[0, 0], [8, 9], [0, 0]],
+            vec![[0, 0], [9, 9], [0, 0]],
+        ]
+        .iter()
+        .map(|x| x.iter().map(|y| Cell::from_profile_major(y)).collect())
+        .collect();
+
+        bounds
+            .iter()
+            .zip(cells_by_bound)
+            .for_each(|(bound, cells)| {
+                bound
+                    .iter()
+                    // skip the leading sentinel (0, 0)
+                    .zip(cells.iter().skip(1))
+                    .for_each(|(c1, c2)| assert!(c1 == *c2));
+
+                bound
+                    .iter()
+                    .rev()
+                    // skip the trailing sentinel (0, 0)
+                    .zip(cells.iter().rev().skip(1))
+                    .for_each(|(c1, c2)| assert!(c1 == *c2))
+            });
+
+        Ok(())
+    }
 
     #[test]
     pub fn test_advance_forward() {
