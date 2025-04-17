@@ -908,8 +908,8 @@ impl AdMatrixQuadratic {
     pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
         use CoreState::*;
 
-        let t_idx_width = self.seq_len.to_string().len();
-        let first_column_width = t_idx_width + 3;
+        let s_idx_width = self.seq_len.to_string().len();
+        let first_column_width = s_idx_width + 3;
         // TODO: configurable?
         const W: usize = 13;
         const P: usize = 3;
@@ -927,25 +927,25 @@ impl AdMatrixQuadratic {
         }
         writeln!(out)?;
 
-        for t_idx in 0..=self.seq_len {
+        for p_idx in 0..=self.profile_len {
             // -- match
-            write!(out, "{:w$} M ", t_idx, w = t_idx_width)?;
-            for p_idx in 0..=self.profile_len {
-                write!(out, "{:w$.p$} ", self[(M(p_idx), t_idx)], w = W, p = P)?;
+            write!(out, "{:w$} M ", p_idx, w = s_idx_width)?;
+            for s_idx in 0..=self.seq_len {
+                write!(out, "{:w$.p$} ", self[(M(p_idx), s_idx)], w = W, p = P)?;
             }
             writeln!(out)?;
 
             // -- insert
-            write!(out, "{:w$} I ", t_idx, w = t_idx_width)?;
-            for p_idx in 0..=self.profile_len {
-                write!(out, "{:w$.p$} ", self[(I(p_idx), t_idx)], w = W, p = P)?;
+            write!(out, "{:w$} I ", p_idx, w = s_idx_width)?;
+            for s_idx in 0..=self.seq_len {
+                write!(out, "{:w$.p$} ", self[(I(p_idx), s_idx)], w = W, p = P)?;
             }
             writeln!(out)?;
 
             // -- delete
-            write!(out, "{:w$} D ", t_idx, w = t_idx_width)?;
-            for p_idx in 0..=self.profile_len {
-                write!(out, "{:w$.p$} ", self[(D(p_idx), t_idx)], w = W, p = P)?;
+            write!(out, "{:w$} D ", p_idx, w = s_idx_width)?;
+            for s_idx in 0..=self.seq_len {
+                write!(out, "{:w$.p$} ", self[(D(p_idx), s_idx)], w = W, p = P)?;
             }
             writeln!(out, "\n")?;
         }
@@ -1027,7 +1027,6 @@ mod tests {
     use super::CoreState::*;
     use super::*;
     use crate::align::structs::test_consts::BOUNDS_A_MERGE;
-    use crate::align::structs::Bound;
 
     use assert2::assert;
 
