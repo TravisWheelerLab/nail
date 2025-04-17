@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering::{Equal, Greater, Less},
     fmt::{Debug, Display},
     ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign},
 };
@@ -86,7 +87,7 @@ impl Float for f64 {
     }
 }
 
-pub trait VecUtils<T>
+pub trait VecMath<T>
 where
     T: Float,
 {
@@ -99,7 +100,7 @@ where
     fn saturate_lower(&mut self, min: T);
 }
 
-impl<T> VecUtils<T> for Vec<T>
+impl<T> VecMath<T> for Vec<T>
 where
     T: Float,
 {
@@ -148,6 +149,47 @@ where
                 *item = min
             }
         });
+    }
+}
+
+pub trait VecUtils<T>
+where
+    T: Clone,
+{
+    fn grow_or_shrink(&mut self, new_len: usize, value: T);
+    fn resize_and_reset(&mut self, new_len: usize, value: T);
+}
+
+impl<T> VecUtils<T> for Vec<T>
+where
+    T: Clone,
+{
+    fn resize_and_reset(&mut self, new_len: usize, value: T) {
+        match new_len.cmp(&self.len()) {
+            Less => {
+                self.truncate(new_len);
+                self.shrink_to_fit();
+                self.iter_mut().for_each(|v| *v = value.clone());
+            }
+            Equal => self.iter_mut().for_each(|v| *v = value.clone()),
+            Greater => {
+                self.iter_mut().for_each(|v| *v = value.clone());
+                self.resize(new_len, value);
+            }
+        }
+    }
+
+    fn grow_or_shrink(&mut self, new_len: usize, value: T) {
+        match new_len.cmp(&self.len()) {
+            Less => {
+                self.truncate(new_len);
+                self.shrink_to_fit();
+            }
+            Equal => {}
+            Greater => {
+                self.resize(new_len, value);
+            }
+        }
     }
 }
 

@@ -1,10 +1,11 @@
 use std::{
+    cmp::Ordering::{Equal, Greater, Less},
     io::Write,
     ops::{Index, IndexMut},
 };
 
 use super::{Cell, Cloud, RowBounds};
-use crate::structs::Profile;
+use crate::{structs::Profile, util::VecUtils};
 
 #[derive(Debug)]
 #[repr(usize)]
@@ -16,7 +17,7 @@ pub enum CoreState {
 
 impl CoreState {
     #[inline(always)]
-    fn state_idx(&self) -> usize {
+    pub fn state_idx(&self) -> usize {
         // safety:
         //   when an enum is repr(usize), it is guaranteed that
         //   the discriminant can be reliably cast from from
@@ -30,7 +31,7 @@ impl CoreState {
     }
 
     #[inline(always)]
-    fn profile_idx(&self) -> usize {
+    pub fn profile_idx(&self) -> usize {
         // safety:
         //   when an enum is repr(usize), it is guaranteed that
         //   the discriminant can be reliably cast from from
@@ -125,15 +126,14 @@ impl AdMatrixSparse {
     }
 
     pub fn from_cloud(cloud: &Cloud) -> Self {
-        let mut matrix = Self::default();
-        matrix.reuse(cloud);
-        matrix
+        let mut mx = Self::default();
+        mx.reuse(cloud);
+        mx
     }
 
     pub fn reuse(&mut self, cloud: &Cloud) {
         self.target_len = cloud.target_len();
         self.profile_len = cloud.profile_len();
-
         self.ad_start_idx = cloud.first().idx();
 
         let num_ad = cloud.num_anti_diagonals();
@@ -165,6 +165,7 @@ impl AdMatrixSparse {
 
         let num_cells = self.block_offsets[num_blocks - 1] + 1;
 
+        // TODO: optimize this for the new size being smaller, equal, or larger
         self.core_data.iter_mut().for_each(|v| {
             v.resize(num_cells, 0.0);
             v.shrink_to_fit();
@@ -866,11 +867,167 @@ impl DpMatrix for DpMatrixSparse {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct AdMatrixQuadratic {
+    profile_len: usize,
+    seq_len: usize,
+    data: Vec<[Vec<f32>; 3]>,
+}
+
+impl AdMatrixQuadratic {
+    pub fn new(profile_len: usize, seq_len: usize) -> Self {
+        let mut mx = Self::default();
+        mx.reuse(profile_len, seq_len);
+        mx
+    }
+
+    pub fn reuse(&mut self, new_profile_len: usize, new_seq_len: usize) {
+        let num_ad = new_profile_len + new_seq_len + 1;
+        self.data.grow_or_shrink(num_ad, [vec![], vec![], vec![]]);
+
+        self.data.iter_mut().for_each(|ad| {
+            ad.iter_mut()
+                .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, -f32::INFINITY))
+        });
+
+        self.profile_len = new_profile_len;
+        self.seq_len = new_seq_len;
+    }
+
+    pub fn layout(&self) {
+        println!("target len:     {}", self.seq_len);
+        println!("profile len:    {}", self.profile_len);
+
+        self.data.iter().enumerate().for_each(|(idx, ad)| {
+            print!("AD: {:<3} -> ", idx);
+            ad[0].iter().for_each(|val| print!("| {val:5.1} "));
+            println!();
+        })
+    }
+
+    pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        use CoreState::*;
+
+        let t_idx_width = self.seq_len.to_string().len();
+        let first_column_width = t_idx_width + 3;
+        // TODO: configurable?
+        const W: usize = 13;
+        const P: usize = 3;
+
+        // -- profile indices
+        write!(out, "{}", " ".repeat(first_column_width - 1))?;
+        for p_idx in 0..=self.profile_len {
+            write!(out, "{:w$} ", p_idx, w = W)?;
+        }
+        writeln!(out)?;
+
+        write!(out, "{}", " ".repeat(first_column_width))?;
+        for _ in 0..=self.profile_len {
+            write!(out, "   {} ", "-".repeat(W - 3))?;
+        }
+        writeln!(out)?;
+
+        for t_idx in 0..=self.seq_len {
+            // -- match
+            write!(out, "{:w$} M ", t_idx, w = t_idx_width)?;
+            for p_idx in 0..=self.profile_len {
+                write!(out, "{:w$.p$} ", self[(M(p_idx), t_idx)], w = W, p = P)?;
+            }
+            writeln!(out)?;
+
+            // -- insert
+            write!(out, "{:w$} I ", t_idx, w = t_idx_width)?;
+            for p_idx in 0..=self.profile_len {
+                write!(out, "{:w$.p$} ", self[(I(p_idx), t_idx)], w = W, p = P)?;
+            }
+            writeln!(out)?;
+
+            // -- delete
+            write!(out, "{:w$} D ", t_idx, w = t_idx_width)?;
+            for p_idx in 0..=self.profile_len {
+                write!(out, "{:w$.p$} ", self[(D(p_idx), t_idx)], w = W, p = P)?;
+            }
+            writeln!(out, "\n")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Index<CoreCell> for AdMatrixQuadratic {
+    type Output = f32;
+
+    fn index(&self, cell: CoreCell) -> &Self::Output {
+        let state_idx = cell.0.state_idx();
+        let seq_idx = cell.1;
+        let ad_idx = cell.0.profile_idx() + seq_idx;
+        &self.data[ad_idx][state_idx][seq_idx]
+    }
+}
+
+impl IndexMut<CoreCell> for AdMatrixQuadratic {
+    fn index_mut(&mut self, cell: CoreCell) -> &mut Self::Output {
+        let state_idx = cell.0.state_idx();
+        let seq_idx = cell.1;
+        let ad_idx = cell.0.profile_idx() + seq_idx;
+        &mut self.data[ad_idx][state_idx][seq_idx]
+    }
+}
+
+impl CoreCellIndexable for AdMatrixQuadratic {}
+
+#[derive(Default, Clone)]
+pub struct AdMatrixLinear {
+    seq_len: usize,
+    data: [[Vec<f32>; 3]; 3],
+}
+
+impl AdMatrixLinear {
+    pub fn new(seq_len: usize) -> Self {
+        let mut mx = Self::default();
+        mx.reuse(seq_len);
+        mx
+    }
+
+    pub fn reuse(&mut self, new_seq_len: usize) {
+        self.data.iter_mut().for_each(|ad| {
+            ad.iter_mut()
+                .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, -f32::INFINITY))
+        });
+        self.seq_len = new_seq_len;
+    }
+}
+
+impl Index<CoreCell> for AdMatrixLinear {
+    type Output = f32;
+
+    fn index(&self, cell: CoreCell) -> &Self::Output {
+        let state_idx = cell.0.state_idx();
+        let seq_idx = cell.1;
+        let ad_idx = cell.0.profile_idx() + seq_idx;
+        let row_idx = ad_idx % 3;
+        &self.data[row_idx][state_idx][seq_idx]
+    }
+}
+
+impl IndexMut<CoreCell> for AdMatrixLinear {
+    fn index_mut(&mut self, cell: CoreCell) -> &mut Self::Output {
+        let state_idx = cell.0.state_idx();
+        let seq_idx = cell.1;
+        let ad_idx = cell.0.profile_idx() + seq_idx;
+        let row_idx = ad_idx % 3;
+        &mut self.data[row_idx][state_idx][seq_idx]
+    }
+}
+
+impl CoreCellIndexable for AdMatrixLinear {}
+
 #[cfg(test)]
 mod tests {
     use super::CoreState::*;
     use super::*;
     use crate::align::structs::test_consts::BOUNDS_A_MERGE;
+    use crate::align::structs::Bound;
 
     use assert2::assert;
 
@@ -949,6 +1106,67 @@ mod tests {
                 assert!(matrix.get_delete(row, col) == d[row][col]);
             });
         });
+    }
+
+    #[test]
+    fn test_ad_matrix_quadratic() -> anyhow::Result<()> {
+        const S: usize = 10;
+        const P: usize = 10;
+
+        let mut cloud = Cloud::new(S, P);
+        cloud.fill_rectangle(1, 1, S, P);
+
+        let mut mx = AdMatrixQuadratic::new(S, P);
+
+        let mut val = 1.0;
+        cloud.new_bounds().iter().for_each(|b| {
+            b.iter().for_each(|c| {
+                mx[c.m_cell()] = val;
+                mx[c.i_cell()] = val + 0.1;
+                mx[c.d_cell()] = val + 0.2;
+
+                let ad_idx = c.profile_idx + c.seq_idx;
+                assert!(mx.data[ad_idx][0][c.seq_idx] == val);
+                assert!(mx.data[ad_idx][1][c.seq_idx] == val + 0.1);
+                assert!(mx.data[ad_idx][2][c.seq_idx] == val + 0.2);
+                val += 1.0;
+            });
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ad_matrix_linear() -> anyhow::Result<()> {
+        const S: usize = 10;
+        const P: usize = 10;
+        let mut cloud = Cloud::new(S, P);
+        cloud.fill_rectangle(1, 1, S, P);
+
+        let mut quad_mx = AdMatrixQuadratic::new(S, P);
+        let mut lin_mx = AdMatrixLinear::new(S);
+
+        let mut val = 1.0;
+        cloud.new_bounds().iter().for_each(|b| {
+            b.iter().for_each(|c| {
+                quad_mx[c.m_cell()] = val;
+                quad_mx[c.i_cell()] = val + 0.1;
+                quad_mx[c.d_cell()] = val + 0.2;
+
+                lin_mx[c.m_cell()] = val;
+                lin_mx[c.i_cell()] = val + 0.1;
+                lin_mx[c.d_cell()] = val + 0.2;
+
+                let row_idx = (c.profile_idx + c.seq_idx) % 3;
+                assert!(lin_mx.data[row_idx][0][c.seq_idx] == quad_mx[c.m_cell()]);
+                assert!(lin_mx.data[row_idx][1][c.seq_idx] == quad_mx[c.i_cell()]);
+                assert!(lin_mx.data[row_idx][2][c.seq_idx] == quad_mx[c.d_cell()]);
+
+                val += 1.0;
+            });
+        });
+
+        Ok(())
     }
 
     #[test]

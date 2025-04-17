@@ -173,13 +173,13 @@ impl Iterator for BoundIter {
 
 impl DoubleEndedIterator for BoundIter {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.profile_start <= self.profile_end {
+        if self.profile_start >= self.profile_end {
             let cell = Cell {
                 profile_idx: self.profile_end,
                 seq_idx: self.seq_end,
             };
-            self.profile_start += 1;
-            self.seq_start -= 1;
+            self.profile_end += 1;
+            self.seq_end -= 1;
             Some(cell)
         } else {
             None
@@ -1819,6 +1819,8 @@ mod tests {
             .iter()
             .zip(cells_by_bound)
             .for_each(|(bound, cells)| {
+                assert!(bound.iter().count() == bound.iter().rev().count());
+
                 bound
                     .iter()
                     // skip the leading sentinel (0, 0)
@@ -1830,7 +1832,7 @@ mod tests {
                     .rev()
                     // skip the trailing sentinel (0, 0)
                     .zip(cells.iter().rev().skip(1))
-                    .for_each(|(c1, c2)| assert!(c1 == *c2))
+                    .for_each(|(c1, c2)| assert!(c1 == *c2));
             });
 
         Ok(())
