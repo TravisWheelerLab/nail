@@ -71,13 +71,13 @@ pub fn traceback(
                 ];
 
                 let possible_paths: [f32; 4] = [
-                    profile.transition_score_delta(Profile::MATCH_TO_MATCH_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Profile::M_M_IDX, profile_idx - 1)
                         * optimal_matrix.get_match(target_idx - 1, profile_idx - 1),
-                    profile.transition_score_delta(Profile::INSERT_TO_MATCH_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Profile::I_M_IDX, profile_idx - 1)
                         * optimal_matrix.get_insert(target_idx - 1, profile_idx - 1),
-                    profile.transition_score_delta(Profile::DELETE_TO_MATCH_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Profile::D_M_IDX, profile_idx - 1)
                         * optimal_matrix.get_delete(target_idx - 1, profile_idx - 1),
-                    profile.transition_score_delta(Profile::BEGIN_TO_MATCH_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Profile::B_M_IDX, profile_idx - 1)
                         * optimal_matrix.get_special(target_idx - 1, Profile::SPECIAL_B_IDX),
                 ];
 
@@ -96,11 +96,11 @@ pub fn traceback(
             }
             Trace::I_STATE => {
                 let match_to_insert_path = profile
-                    .transition_score_delta(Profile::MATCH_TO_INSERT_IDX, profile_idx)
+                    .transition_score_delta(Profile::M_I_IDX, profile_idx)
                     * optimal_matrix.get_match(target_idx - 1, profile_idx);
 
                 let insert_to_insert_path: f32 = profile
-                    .transition_score_delta(Profile::INSERT_TO_INSERT_IDX, profile_idx)
+                    .transition_score_delta(Profile::I_I_IDX, profile_idx)
                     * optimal_matrix.get_insert(target_idx - 1, profile_idx);
 
                 // an insert means we moved forward only in the profile
@@ -114,11 +114,11 @@ pub fn traceback(
             }
             Trace::D_STATE => {
                 let match_to_delete_path = profile
-                    .transition_score_delta(Profile::MATCH_TO_DELETE_IDX, profile_idx - 1)
+                    .transition_score_delta(Profile::M_D_IDX, profile_idx - 1)
                     * optimal_matrix.get_match(target_idx, profile_idx - 1);
 
                 let delete_to_delete_path = profile
-                    .transition_score_delta(Profile::DELETE_TO_DELETE_IDX, profile_idx - 1)
+                    .transition_score_delta(Profile::D_D_IDX, profile_idx - 1)
                     * optimal_matrix.get_delete(target_idx, profile_idx - 1);
 
                 // a delete means we moved forward only in the profile

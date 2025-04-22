@@ -121,7 +121,7 @@ impl AllocationSize for Profile {
             + self.length.size()
             + self.target_length.size()
             + self.max_length.size()
-            + Bytes(self.transitions.capacity() * std::mem::size_of::<[f32; 8]>())
+            + Bytes(self.core_transitions.capacity() * std::mem::size_of::<[f32; 8]>())
             + Bytes(
                 self.match_scores.capacity() * std::mem::size_of::<Vec<f32>>()
                     + self.match_scores

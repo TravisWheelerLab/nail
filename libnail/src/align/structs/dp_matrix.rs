@@ -1,14 +1,16 @@
 use std::{
-    cmp::Ordering::{Equal, Greater, Less},
     io::Write,
     ops::{Index, IndexMut},
 };
 
 use super::{Cell, Cloud, RowBounds};
-use crate::{structs::Profile, util::VecUtils};
+use crate::{
+    structs::{profile::CoreToCore, Profile},
+    util::VecUtils,
+};
 
-#[derive(Debug)]
 #[repr(usize)]
+#[derive(Debug, Clone, Copy)]
 pub enum CoreState {
     M(usize) = 0,
     I(usize) = 1,
@@ -46,9 +48,20 @@ impl CoreState {
             *raw_ptr
         }
     }
+
+    #[inline(always)]
+    pub fn cell_at(&self, seq_idx: usize) -> CoreCell {
+        (*self, seq_idx)
+    }
+
+    #[inline(always)]
+    pub fn to(&self, other: &Self) -> CoreToCore {
+        CoreToCore(*self, other)
+    }
 }
 
 #[repr(usize)]
+#[derive(Clone, Copy)]
 pub enum BackgroundState {
     N = 0,
     B = 1,
@@ -86,7 +99,6 @@ pub trait BackgroundCellIndexable:
     Index<BackgroundCell, Output = f32> + IndexMut<BackgroundCell, Output = f32>
 {
 }
-pub trait CellIndexable: CoreCellIndexable + BackgroundCellIndexable {}
 
 #[derive(Default, Clone)]
 pub struct AdMatrixSparse {
@@ -252,7 +264,6 @@ impl IndexMut<BackgroundCell> for AdMatrixSparse {
 
 impl CoreCellIndexable for AdMatrixSparse {}
 impl BackgroundCellIndexable for AdMatrixSparse {}
-impl CellIndexable for AdMatrixSparse {}
 
 impl NewDpMatrix for AdMatrixSparse {
     fn target_len(&self) -> usize {
@@ -264,7 +275,7 @@ impl NewDpMatrix for AdMatrixSparse {
     }
 }
 
-pub trait NewDpMatrix: CellIndexable {
+pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
     fn target_len(&self) -> usize;
     fn profile_len(&self) -> usize;
 

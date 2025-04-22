@@ -89,13 +89,13 @@ pub fn forward(
                 profile_idx,
                 log_sum!(
                     dp_matrix.get_match(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, profile_idx - 1),
+                        + profile.transition_score(Profile::M_M_IDX, profile_idx - 1),
                     dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, profile_idx - 1),
+                        + profile.transition_score(Profile::I_M_IDX, profile_idx - 1),
                     dp_matrix.get_special(target_idx - 1, Profile::SPECIAL_B_IDX)
-                        + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, profile_idx - 1),
+                        + profile.transition_score(Profile::B_M_IDX, profile_idx - 1),
                     dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, profile_idx - 1)
+                        + profile.transition_score(Profile::D_M_IDX, profile_idx - 1)
                 ) + profile.match_score(current_target_character as usize, profile_idx),
             );
 
@@ -105,9 +105,9 @@ pub fn forward(
                 profile_idx,
                 log_sum!(
                     dp_matrix.get_match(target_idx - 1, profile_idx)
-                        + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx),
+                        + profile.transition_score(Profile::M_I_IDX, profile_idx),
                     dp_matrix.get_insert(target_idx - 1, profile_idx)
-                        + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
+                        + profile.transition_score(Profile::I_I_IDX, profile_idx)
                 ) + profile.insert_score(current_target_character as usize, profile_idx),
             );
 
@@ -117,9 +117,9 @@ pub fn forward(
                 profile_idx,
                 log_sum!(
                     dp_matrix.get_match(target_idx, profile_idx - 1)
-                        + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx - 1),
+                        + profile.transition_score(Profile::M_D_IDX, profile_idx - 1),
                     dp_matrix.get_delete(target_idx, profile_idx - 1)
-                        + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx - 1)
+                        + profile.transition_score(Profile::D_D_IDX, profile_idx - 1)
                 ),
             );
 
@@ -143,13 +143,13 @@ pub fn forward(
             last_profile_idx,
             log_sum!(
                 dp_matrix.get_match(target_idx - 1, last_profile_idx - 1)
-                    + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, last_profile_idx - 1),
+                    + profile.transition_score(Profile::M_M_IDX, last_profile_idx - 1),
                 dp_matrix.get_insert(target_idx - 1, last_profile_idx - 1)
-                    + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, last_profile_idx - 1),
+                    + profile.transition_score(Profile::I_M_IDX, last_profile_idx - 1),
                 dp_matrix.get_special(target_idx - 1, Profile::SPECIAL_B_IDX)
-                    + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, last_profile_idx - 1),
+                    + profile.transition_score(Profile::B_M_IDX, last_profile_idx - 1),
                 dp_matrix.get_delete(target_idx - 1, last_profile_idx - 1)
-                    + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, last_profile_idx - 1)
+                    + profile.transition_score(Profile::D_M_IDX, last_profile_idx - 1)
             ) + profile.match_score(current_target_character as usize, last_profile_idx),
         );
 
@@ -162,9 +162,9 @@ pub fn forward(
             last_profile_idx,
             log_sum!(
                 dp_matrix.get_match(target_idx, last_profile_idx - 1)
-                    + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, last_profile_idx - 1),
+                    + profile.transition_score(Profile::M_D_IDX, last_profile_idx - 1),
                 dp_matrix.get_delete(target_idx, last_profile_idx - 1)
-                    + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, last_profile_idx - 1)
+                    + profile.transition_score(Profile::D_D_IDX, last_profile_idx - 1)
             ),
         );
 

@@ -3,10 +3,11 @@ use std::fs::File;
 use crate::align::structs::{AntiDiagonal, Cloud, CloudMatrixLinear, Seed};
 use crate::log_sum;
 use crate::max_f32;
+use crate::structs::profile::{AminoAcid, CoreEntry, CoreToCore, Emission};
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-use super::structs::CloudMatrix;
+use super::structs::{BackgroundState::*, CloudMatrix, CoreState::*, NewDpMatrix};
 use super::Nats;
 
 pub fn cloud_search_test(
@@ -44,15 +45,15 @@ pub fn cloud_search_test(
 
     bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
 
-    bounds.bounds().iter().for_each(|ad| {
-        ad.cell_zip().for_each(|(target_idx, profile_idx)| {
-            compute_forward_cell2(target, profile, fwd_matrix, target_idx, profile_idx);
-        })
-    });
+    // bounds.bounds().iter().for_each(|ad| {
+    //     ad.cell_zip().for_each(|(target_idx, profile_idx)| {
+    //         compute_forward_cells(target, profile, fwd_matrix, target_idx, profile_idx);
+    //     })
+    // });
 
     // bounds.bounds().iter().rev().skip(2).for_each(|ad| {
     //     ad.cell_zip().for_each(|(target_idx, profile_idx)| {
-    //         compute_backward_cell2(target, profile, bwd_matrix, target_idx, profile_idx);
+    //         compute_backward_cells(target, profile, bwd_matrix, target_idx, profile_idx);
     //     })
     // });
 
@@ -199,120 +200,61 @@ pub fn scrub_co_located(
 }
 
 #[inline]
-pub fn compute_backward_cell2(
-    target: &Sequence,
+pub fn compute_backward_cells<M>(
+    seq: &Sequence,
     profile: &Profile,
-    matrix: &mut impl CloudMatrix,
-    target_idx: usize,
-    profile_idx: usize,
-) {
-    let target_residue = target.digital_bytes[target_idx + 1] as usize;
+    matrix: &mut M,
+    prf_idx: usize,
+    seq_idx: usize,
+) where
+    M: NewDpMatrix,
+{
+    let residue = AminoAcid::from_u8(seq.digital_bytes[seq_idx + 1]);
+
     // note: the Backward recurrence is somewhat counterintuitive,
     //       since it is derived by inverting all of the transitions
-    //       in the Forward HMM
+    //       in the profile HMM
     //
     //       consequently, when any specific state contributes score
     //       to a Backward cell, the source cell is always the same
     //
-    //       i.e., the following source indices are used for each of
-    //       the following Backward computations
-    let match_sources = (target_idx + 1, profile_idx + 1);
-    let insert_sources = (target_idx + 1, profile_idx);
-    let delete_sources = (target_idx, profile_idx + 1);
+    //       i.e., the following source states/cells are used for each
+    //       of the following Backward cell computations
 
-    // match state
-    //
-    //   *: the cell we are computing                     (target_idx    , profile_idx    )
-    //   M: the cell of the source match state component  (target_idx + 1, profile_idx + 1)
-    //   I: the cell of the source insert state component (target_idx + 1, profile_idx    )
-    //   D: the cell of the source delete state component (target_idx    , profile_idx + 1)
-    //
-    //   classic orientation:
-    //       p r o f i l e
-    //     t - - - - - - - -
-    //     a - - - - - - - -
-    //     r - - - * D - - -
-    //     g - - - I M - - -
-    //     e - - - - - - - -
-    //     t - - - - - - - -
-    //
-    //   linear orientation:
-    //       p r o f i l e
-    //     r - - - * - - - -
-    //     o - - - I D - - -
-    //     w - - - - M - - -
-    //
-    matrix.set_match(
-        target_idx,
-        profile_idx,
-        log_sum!(
-            matrix.get_match(match_sources.0, match_sources.1)
-                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, profile_idx)
-                + profile.match_score(target_residue, profile_idx + 1),
-            matrix.get_insert(insert_sources.0, insert_sources.1)
-                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx)
-                + profile.insert_score(target_residue, profile_idx),
-            matrix.get_delete(delete_sources.0, delete_sources.1)
-                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
-        ),
+    let m_src = M(prf_idx + 1);
+    let i_src = I(prf_idx);
+    let d_src = D(prf_idx + 1);
+
+    let m_src_cell = m_src.cell_at(seq_idx + 1);
+    let i_src_cell = i_src.cell_at(seq_idx + 1);
+    let d_src_cell = d_src.cell_at(seq_idx);
+
+    // -- match state
+    let m_dest = M(prf_idx);
+    let m_cell = m_dest.cell_at(seq_idx);
+
+    matrix[m_cell] = log_sum!(
+        matrix[m_src_cell] + profile[CoreToCore(m_dest, m_src)] + profile[Emission(m_src, residue)],
+        matrix[i_src_cell] + profile[CoreToCore(m_dest, i_src)] + profile[Emission(i_src, residue)],
+        matrix[d_src_cell] + profile[CoreToCore(m_dest, d_src)]
     );
 
-    // insert state
-    //
-    //   classic orientation:
-    //       p r o f i l e
-    //     t - - - - - - - -
-    //     a - - - - - - - -
-    //     r - - - * - - - -
-    //     g - - - I M - - -
-    //     e - - - - - - - -
-    //     t - - - - - - - -
-    //
-    //   linear orientation:
-    //       p r o f i l e
-    //     r - - - * - - - -
-    //     o - - - I - - - -
-    //     w - - - - M - - -
-    //
-    matrix.set_insert(
-        target_idx,
-        profile_idx,
-        log_sum!(
-            matrix.get_match(match_sources.0, match_sources.1)
-                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, profile_idx)
-                + profile.match_score(target_residue, profile_idx + 1),
-            matrix.get_insert(insert_sources.0, insert_sources.1)
-                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
-                + profile.insert_score(target_residue, profile_idx)
-        ),
+    // -- insert state
+    let i_dest = I(prf_idx);
+    let i_cell = i_dest.cell_at(seq_idx);
+
+    matrix[i_cell] = log_sum!(
+        matrix[m_src_cell] + profile[CoreToCore(i_dest, m_src)] + profile[Emission(m_src, residue)],
+        matrix[i_src_cell] + profile[CoreToCore(i_dest, i_src)] + profile[Emission(i_src, residue)]
     );
 
-    // delete state
-    //
-    //   classic orientation:
-    //       p r o f i l e
-    //     t - - - - - - - -
-    //     a - - - - - - - -
-    //     r - - - * D - - -
-    //     g - - - - M - - -
-    //     e - - - - - - - -
-    //     t - - - - - - - -
-    //
-    //   linear orientation:
-    //       p r o f i l e
-    //     r - - - * - - - -
-    //     o - - - - D - - -
-    //     w - - - - M - - -
-    matrix.set_delete(
-        target_idx,
-        profile_idx,
-        log_sum!(
-            matrix.get_match(match_sources.0, match_sources.1)
-                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, profile_idx)
-                + profile.match_score(target_residue, profile_idx + 1),
-            matrix.get_delete(delete_sources.0, delete_sources.1)
-                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx)
-        ),
+    // -- delete state
+    let d_dest = D(prf_idx);
+    let d_cell = d_dest.cell_at(seq_idx);
+
+    matrix[d_cell] = log_sum!(
+        matrix[m_src_cell] + profile[CoreToCore(d_dest, m_src)] + profile[Emission(m_src, residue)],
+        matrix[d_src_cell] + profile[CoreToCore(d_dest, d_src)]
     );
 }
 
@@ -362,13 +304,13 @@ pub fn compute_backward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(match_source_row_idx, profile_idx + 1)
-                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, profile_idx)
+                + profile.transition_score(Profile::M_M_IDX, profile_idx)
                 + profile.match_score(previous_target_character, profile_idx + 1),
             cloud_matrix.get_insert(insert_source_row_idx, profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx)
+                + profile.transition_score(Profile::M_I_IDX, profile_idx)
                 + profile.insert_score(previous_target_character, profile_idx),
             cloud_matrix.get_delete(delete_source_row_idx, profile_idx + 1)
-                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, profile_idx)
+                + profile.transition_score(Profile::M_D_IDX, profile_idx)
         ),
     );
 
@@ -383,10 +325,10 @@ pub fn compute_backward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(match_source_row_idx, profile_idx + 1)
-                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, profile_idx)
+                + profile.transition_score(Profile::I_M_IDX, profile_idx)
                 + profile.match_score(previous_target_character, profile_idx + 1),
             cloud_matrix.get_insert(insert_source_row_idx, profile_idx)
-                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
+                + profile.transition_score(Profile::I_I_IDX, profile_idx)
                 + profile.insert_score(previous_target_character, profile_idx)
         ),
     );
@@ -402,10 +344,10 @@ pub fn compute_backward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(match_source_row_idx, profile_idx + 1)
-                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, profile_idx)
+                + profile.transition_score(Profile::D_M_IDX, profile_idx)
                 + profile.match_score(previous_target_character, profile_idx + 1),
             cloud_matrix.get_delete(delete_source_row_idx, profile_idx + 1)
-                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, profile_idx)
+                + profile.transition_score(Profile::D_D_IDX, profile_idx)
         ),
     );
 }
@@ -587,118 +529,64 @@ pub fn cloud_search_backward(
 }
 
 #[inline]
-pub fn compute_forward_cell2(
-    target: &Sequence,
+pub fn compute_forward_cells<P, M>(
+    seq: &Sequence,
     profile: &Profile,
-    matrix: &mut impl CloudMatrix,
-    target_idx: usize,
-    profile_idx: usize,
-) {
-    let target_residue = target.digital_bytes[target_idx];
+    matrix: &mut M,
+    prf_idx: usize,
+    seq_idx: usize,
+) where
+    M: NewDpMatrix,
+{
+    let residue = AminoAcid::from_u8(seq.digital_bytes[seq_idx]);
 
     // match state
-    // note: begin to match excluded in cloud search
-    // note: the match, insert, and delete contributions to
-    //       a match cell all come from the upper left cell
-    //
-    //   *: the cell we are computing (target_idx    , profile_idx    )
-    //   S: the source cell           (target_idx - 1, profile_idx - 1)
-    //
-    //   classic orientation:
-    //       p r o f i l e
-    //     t - - - - - - - -
-    //     a - - - - - - - -
-    //     r - - - S - - - -
-    //     g - - - - * - - -
-    //     e - - - - - - - -
-    //     t - - - - - - - -
-    //
-    //   linear orientation:
-    //       p r o f i l e
-    //     r - - - S - - - -
-    //     o - - - - - - - -
-    //     w - - - - * - - -
-    //
-    let source_target_idx = target_idx - 1;
-    let source_profile_idx = profile_idx - 1;
-    matrix.set_match(
-        target_idx,
-        profile_idx,
-        log_sum!(
-            matrix.get_match(source_target_idx, source_profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, source_profile_idx),
-            matrix.get_insert(source_target_idx, source_profile_idx)
-                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, source_profile_idx),
-            matrix.get_delete(source_target_idx, source_profile_idx)
-                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, source_profile_idx),
-            (source_target_idx as f32
-                * profile
-                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX))
-                + profile.transition_score(Profile::BEGIN_TO_MATCH_IDX, source_profile_idx)
-                + profile
-                    .special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_MOVE_IDX)
-        ) + profile.match_score(target_residue as usize, profile_idx),
-    );
+    let m_dest = M(prf_idx);
+    let m_cell = (m_dest, seq_idx);
 
-    //
+    let m_src = M(prf_idx - 1);
+    let i_src = I(prf_idx - 1);
+    let d_src = D(prf_idx - 1);
+
+    let m_src_cell = (m_src, seq_idx - 1);
+    let i_src_cell = (i_src, seq_idx - 1);
+    let d_src_cell = (d_src, seq_idx - 1);
+
+    matrix[m_cell] = log_sum!(
+        matrix[m_src_cell] + profile[CoreToCore(m_src, m_dest)],
+        matrix[i_src_cell] + profile[CoreToCore(i_src, m_dest)],
+        matrix[d_src_cell] + profile[CoreToCore(d_src, m_dest)],
+        matrix[(N, seq_idx - 1)] + profile[CoreEntry(m_src)]
+    ) + profile[Emission(m_dest, residue)];
+
     // insert state
-    //   note: delete to insert is not allowed
-    //
-    //   classic orientation:
-    //       p r o f i l e
-    //     t - - - - - - - -
-    //     a - - - - - - - -
-    //     r - - - - S - - -
-    //     g - - - - * - - -
-    //     e - - - - - - - -
-    //     t - - - - - - - -
-    //
-    //   linear orientation:
-    //       p r o f i l e
-    //     r - - - - - - - -
-    //     o - - - - S - - -
-    //     w - - - - * - - -
-    let source_target_idx = target_idx - 1;
-    let source_profile_idx = profile_idx;
-    matrix.set_insert(
-        target_idx,
-        profile_idx,
-        log_sum!(
-            matrix.get_match(source_target_idx, source_profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, source_profile_idx),
-            matrix.get_insert(source_target_idx, profile_idx)
-                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, source_profile_idx)
-        ) + profile.insert_score(target_residue as usize, profile_idx),
-    );
+    let i_dest = I(prf_idx);
+    let i_cell = (i_dest, seq_idx);
+
+    let m_src = M(prf_idx);
+    let i_src = I(prf_idx);
+
+    let m_src_cell = (m_src, seq_idx - 1);
+    let i_src_cell = (i_src, seq_idx - 1);
+
+    matrix[i_cell] = log_sum!(
+        matrix[m_src_cell] + profile[CoreToCore(m_src, i_dest)],
+        matrix[i_src_cell] + profile[CoreToCore(i_src, i_dest)]
+    ) + profile[Emission(i_dest, residue)];
 
     // delete state
-    //   note: delete to insert is not allowed
-    //
-    //   classic orientation:
-    //       p r o f i l e
-    //     t - - - - - - - -
-    //     a - - - - - - - -
-    //     r - - - - - - - -
-    //     g - - - S * - - -
-    //     e - - - - - - - -
-    //     t - - - - - - - -
-    //
-    //   linear orientation:
-    //       p r o f i l e
-    //     r - - - - - - - -
-    //     o - - - S - - - -
-    //     w - - - - * - - -
-    let source_target_idx = target_idx;
-    let source_profile_idx = profile_idx - 1;
-    matrix.set_delete(
-        target_idx,
-        profile_idx,
-        log_sum!(
-            matrix.get_match(source_target_idx, source_profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, source_profile_idx),
-            matrix.get_delete(source_target_idx, source_profile_idx)
-                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, source_profile_idx)
-        ),
+    let d_dest = D(prf_idx);
+    let d_cell = (d_dest, seq_idx);
+
+    let m_src = M(prf_idx - 1);
+    let d_src = D(prf_idx - 1);
+
+    let m_src_cell = (m_src, seq_idx);
+    let d_src_cell = (d_src, seq_idx);
+
+    matrix[d_cell] = log_sum!(
+        matrix[m_src_cell] + profile[CoreToCore(m_src, d_dest)],
+        matrix[d_src_cell] + profile[CoreToCore(d_src, d_dest)]
     );
 }
 
@@ -740,11 +628,11 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_MATCH_IDX, source_profile_idx),
+                + profile.transition_score(Profile::M_M_IDX, source_profile_idx),
             cloud_matrix.get_insert(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::INSERT_TO_MATCH_IDX, source_profile_idx),
+                + profile.transition_score(Profile::I_M_IDX, source_profile_idx),
             cloud_matrix.get_delete(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::DELETE_TO_MATCH_IDX, source_profile_idx)
+                + profile.transition_score(Profile::D_M_IDX, source_profile_idx)
         ) + profile.match_score(current_target_character as usize, profile_idx),
     );
 
@@ -761,9 +649,9 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_INSERT_IDX, profile_idx),
+                + profile.transition_score(Profile::M_I_IDX, profile_idx),
             cloud_matrix.get_insert(source_row_idx, profile_idx)
-                + profile.transition_score(Profile::INSERT_TO_INSERT_IDX, profile_idx)
+                + profile.transition_score(Profile::I_I_IDX, profile_idx)
         ) + profile.insert_score(current_target_character as usize, profile_idx),
     );
 
@@ -780,9 +668,9 @@ pub fn compute_forward_cell(
         profile_idx,
         log_sum!(
             cloud_matrix.get_match(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::MATCH_TO_DELETE_IDX, source_profile_idx),
+                + profile.transition_score(Profile::M_D_IDX, source_profile_idx),
             cloud_matrix.get_delete(source_row_idx, source_profile_idx)
-                + profile.transition_score(Profile::DELETE_TO_DELETE_IDX, source_profile_idx)
+                + profile.transition_score(Profile::D_D_IDX, source_profile_idx)
         ),
     );
 }
