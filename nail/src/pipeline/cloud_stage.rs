@@ -236,10 +236,10 @@ impl CloudSearchStage for DefaultCloudSearchStage {
             // TODO: probably want to do something else/extra here
             Err(_) => {
                 row_bounds.fill_rectangle(
-                    seed.target_start,
-                    seed.profile_start,
-                    seed.target_end,
-                    seed.profile_end,
+                    seed.seq_start,
+                    seed.prf_start,
+                    seed.seq_end,
+                    seed.prf_end,
                 );
             }
         }

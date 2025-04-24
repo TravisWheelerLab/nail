@@ -156,10 +156,10 @@ impl MaxSeedStage {
                             (
                                 t.name.clone(),
                                 Seed {
-                                    target_start: 1,
-                                    target_end: t.length,
-                                    profile_start: 1,
-                                    profile_end: l,
+                                    seq_start: 1,
+                                    seq_end: t.length,
+                                    prf_start: 1,
+                                    prf_end: l,
                                     score: 0.0,
                                 },
                             )

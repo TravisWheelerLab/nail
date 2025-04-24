@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{stdout, Write};
 use std::iter::{Rev, Zip};
-use std::ops::RangeInclusive;
+use std::ops::{Index, IndexMut, RangeInclusive};
 
 use super::{BackgroundCell, BackgroundState, CoreCell, CoreState};
 
@@ -52,41 +52,41 @@ impl Default for BoundingBox {
     }
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, Copy, PartialEq)]
 pub struct Cell {
-    pub profile_idx: usize,
+    pub prf_idx: usize,
     pub seq_idx: usize,
 }
 
 impl Cell {
     pub(crate) fn from_seq_major(src: &[usize]) -> Self {
         Self {
-            profile_idx: src[1],
+            prf_idx: src[1],
             seq_idx: src[0],
         }
     }
 
     pub(crate) fn from_profile_major(src: &[usize]) -> Self {
         Self {
-            profile_idx: src[0],
+            prf_idx: src[0],
             seq_idx: src[1],
         }
     }
 
     pub fn idx(&self) -> usize {
-        self.seq_idx + self.profile_idx
+        self.seq_idx + self.prf_idx
     }
 
     pub fn m_cell(&self) -> CoreCell {
-        (CoreState::M(self.profile_idx), self.seq_idx)
+        (CoreState::M(self.prf_idx), self.seq_idx)
     }
 
     pub fn i_cell(&self) -> CoreCell {
-        (CoreState::I(self.profile_idx), self.seq_idx)
+        (CoreState::I(self.prf_idx), self.seq_idx)
     }
 
     pub fn d_cell(&self) -> CoreCell {
-        (CoreState::D(self.profile_idx), self.seq_idx)
+        (CoreState::D(self.prf_idx), self.seq_idx)
     }
 
     pub fn b_cell(&self) -> BackgroundCell {
@@ -100,14 +100,63 @@ impl Cell {
 
 impl Debug for Cell {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(p{}, s{})", self.profile_idx, self.seq_idx)
+        write!(f, "(p{}, s{})", self.prf_idx, self.seq_idx)
     }
 }
 
-#[derive(Default, Clone)]
-pub struct Bound(Cell, Cell);
+#[allow(dead_code)]
+pub(crate) struct ArrayProfileMajorBound([usize; 4]);
+
+#[allow(dead_code)]
+pub(crate) struct ArraySeqMajorBound([usize; 4]);
+
+#[derive(Default, Clone, PartialEq)]
+pub struct Bound(pub Cell, pub Cell);
+
+impl From<AntiDiagonal> for Bound {
+    fn from(value: AntiDiagonal) -> Self {
+        Self(
+            Cell {
+                prf_idx: value.right_profile_idx,
+                seq_idx: value.right_target_idx,
+            },
+            Cell {
+                prf_idx: value.left_profile_idx,
+                seq_idx: value.left_target_idx,
+            },
+        )
+    }
+}
+
+impl From<&AntiDiagonal> for Bound {
+    fn from(value: &AntiDiagonal) -> Self {
+        (*value).into()
+    }
+}
 
 impl Bound {
+    pub fn idx(&self) -> usize {
+        debug_assert!(self.0.idx() == self.1.idx());
+        self.0.idx()
+    }
+
+    pub fn iter(&self) -> BoundIter {
+        BoundIter {
+            profile_start: self.0.prf_idx,
+            profile_end: self.1.prf_idx,
+            seq_start: self.0.seq_idx,
+            seq_end: self.1.seq_idx,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.prf_idx - self.1.prf_idx + 1
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.prf_idx > self.1.prf_idx
+    }
+
     #[allow(dead_code)]
     pub(crate) fn from_seq_major(src: &[usize]) -> Self {
         Bound(
@@ -125,11 +174,19 @@ impl Bound {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) struct ArrayProfileMajorBound([usize; 4]);
-
-#[allow(dead_code)]
-pub(crate) struct ArraySeqMajorBound([usize; 4]);
+impl Debug for Bound {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(p{}, s{}), (p{}, s{}) | AD: {}",
+            self.0.prf_idx,
+            self.0.seq_idx,
+            self.1.prf_idx,
+            self.1.seq_idx,
+            self.idx()
+        )
+    }
+}
 
 pub struct BoundIter {
     profile_start: usize,
@@ -159,7 +216,7 @@ impl Iterator for BoundIter {
     fn next(&mut self) -> Option<Self::Item> {
         if self.profile_start >= self.profile_end {
             let cell = Cell {
-                profile_idx: self.profile_start,
+                prf_idx: self.profile_start,
                 seq_idx: self.seq_start,
             };
             self.profile_start -= 1;
@@ -175,7 +232,7 @@ impl DoubleEndedIterator for BoundIter {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.profile_start >= self.profile_end {
             let cell = Cell {
-                profile_idx: self.profile_end,
+                prf_idx: self.profile_end,
                 seq_idx: self.seq_end,
             };
             self.profile_end += 1;
@@ -184,49 +241,6 @@ impl DoubleEndedIterator for BoundIter {
         } else {
             None
         }
-    }
-}
-
-impl Bound {
-    pub fn idx(&self) -> usize {
-        debug_assert!(self.0.idx() == self.1.idx());
-        self.0.idx()
-    }
-
-    pub fn iter(&self) -> BoundIter {
-        BoundIter {
-            profile_start: self.0.profile_idx,
-            profile_end: self.1.profile_idx,
-            seq_start: self.0.seq_idx,
-            seq_end: self.1.seq_idx,
-        }
-    }
-
-    pub fn from_anti_diagonal(ad: &AntiDiagonal) -> Self {
-        Self(
-            Cell {
-                profile_idx: ad.right_profile_idx,
-                seq_idx: ad.right_target_idx,
-            },
-            Cell {
-                profile_idx: ad.left_profile_idx,
-                seq_idx: ad.left_target_idx,
-            },
-        )
-    }
-}
-
-impl Debug for Bound {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "(p{}, s{}), (p{}, s{}) | AD: {}",
-            self.0.profile_idx,
-            self.0.seq_idx,
-            self.1.profile_idx,
-            self.1.seq_idx,
-            self.idx()
-        )
     }
 }
 
@@ -252,7 +266,7 @@ impl BoundInterpretable for ArraySeqMajorBound {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct AntiDiagonal {
     pub left_target_idx: usize,
     pub left_profile_idx: usize,
@@ -319,14 +333,14 @@ impl AntiDiagonal {
     pub fn left_target_major(&self) -> Cell {
         Cell {
             seq_idx: self.left_target_idx,
-            profile_idx: self.left_profile_idx,
+            prf_idx: self.left_profile_idx,
         }
     }
 
     pub fn right_target_major(&self) -> Cell {
         Cell {
             seq_idx: self.right_target_idx,
-            profile_idx: self.right_profile_idx,
+            prf_idx: self.right_profile_idx,
         }
     }
 
@@ -461,8 +475,9 @@ pub enum CloudValidity {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Cloud {
     pub bounds: Vec<AntiDiagonal>,
-    pub target_length: usize,
-    pub profile_length: usize,
+    pub new_bounds: Vec<Bound>,
+    pub seq_len: usize,
+    pub prf_len: usize,
     pub size: usize,
     pub ad_start: usize,
     pub ad_end: usize,
@@ -472,8 +487,9 @@ impl Default for Cloud {
     fn default() -> Self {
         Self {
             bounds: vec![AntiDiagonal::default()],
-            target_length: 0,
-            profile_length: 0,
+            new_bounds: vec![Bound::default()],
+            seq_len: 0,
+            prf_len: 0,
             size: 1,
             ad_start: 0,
             ad_end: 0,
@@ -481,13 +497,45 @@ impl Default for Cloud {
     }
 }
 
+pub struct Ad(pub usize);
+pub struct AdOffset(pub usize);
+
+impl Index<Ad> for Cloud {
+    type Output = Bound;
+
+    fn index(&self, index: Ad) -> &Self::Output {
+        &self.new_bounds[index.0]
+    }
+}
+
+impl IndexMut<Ad> for Cloud {
+    fn index_mut(&mut self, index: Ad) -> &mut Self::Output {
+        &mut self.new_bounds[index.0]
+    }
+}
+
+impl Index<AdOffset> for Cloud {
+    type Output = Bound;
+
+    fn index(&self, index: AdOffset) -> &Self::Output {
+        &self.new_bounds[self.ad_start + index.0]
+    }
+}
+
+impl IndexMut<AdOffset> for Cloud {
+    fn index_mut(&mut self, index: AdOffset) -> &mut Self::Output {
+        &mut self.new_bounds[self.ad_start + index.0]
+    }
+}
+
 impl Cloud {
-    pub fn new(target_length: usize, profile_length: usize) -> Self {
-        let size = target_length + profile_length + 1;
+    pub fn new(seq_len: usize, prf_len: usize) -> Self {
+        let size = seq_len + prf_len + 1;
         Self {
             bounds: vec![AntiDiagonal::default(); size],
-            target_length,
-            profile_length,
+            new_bounds: vec![Bound::default(); size],
+            seq_len,
+            prf_len,
             size,
             ad_start: 0,
             ad_end: 0,
@@ -509,17 +557,17 @@ impl Cloud {
             .for_each(|b| debug_assert!(b.is_default()));
     }
 
-    pub fn reuse(&mut self, target_length: usize, profile_length: usize) {
+    pub fn reuse(&mut self, seq_len: usize, prf_len: usize) {
         self.reset();
 
-        let new_size = target_length + profile_length + 1;
+        let new_size = seq_len + prf_len + 1;
         self.resize(new_size);
 
         self.ad_start = new_size;
         self.ad_end = 0;
 
-        self.target_length = target_length;
-        self.profile_length = profile_length;
+        self.seq_len = seq_len;
+        self.prf_len = prf_len;
     }
 
     /// Fill a Cloud with a list of hand-written bounds.
@@ -541,9 +589,9 @@ impl Cloud {
             self.set(
                 bound.idx(),
                 bound.1.seq_idx,
-                bound.1.profile_idx,
+                bound.1.prf_idx,
                 bound.0.seq_idx,
-                bound.0.profile_idx,
+                bound.0.prf_idx,
             );
         });
 
@@ -561,25 +609,26 @@ impl Cloud {
     }
 
     pub fn target_len(&self) -> usize {
-        self.target_length
+        self.seq_len
     }
 
     pub fn profile_len(&self) -> usize {
-        self.profile_length
+        self.prf_len
     }
 
     pub fn set(
         &mut self,
-        anti_diagonal_idx: usize,
-        left_target_idx: usize,
-        left_profile_idx: usize,
-        right_target_idx: usize,
-        right_profile_idx: usize,
+        ad_idx: usize,
+        left_seq_idx: usize,
+        left_prf_idx: usize,
+        right_seq_idx: usize,
+        right_prf_idx: usize,
     ) {
         // **NOTE: these asserts always fail currently because
         //         of the access pattern during cloud search
         //
         // make sure the two cells are on the same anti-diagonal
+
         // debug_assert!(
         //     left_target_idx + left_profile_idx,
         //     right_target_idx + right_profile_idx
@@ -588,11 +637,11 @@ impl Cloud {
         // make sure we are setting the anti-diagonal that we think we are
         //debug_assert!(anti_diagonal_idx, left_target_idx + left_profile_idx);
 
-        let bound = &mut self.bounds[anti_diagonal_idx];
-        bound.left_target_idx = left_target_idx;
-        bound.left_profile_idx = left_profile_idx;
-        bound.right_target_idx = right_target_idx;
-        bound.right_profile_idx = right_profile_idx;
+        let bound = &mut self.bounds[ad_idx];
+        bound.left_target_idx = left_seq_idx;
+        bound.left_profile_idx = left_prf_idx;
+        bound.right_target_idx = right_seq_idx;
+        bound.right_profile_idx = right_prf_idx;
     }
 
     pub fn get(&self, idx: usize) -> &AntiDiagonal {
@@ -626,11 +675,11 @@ impl Cloud {
             CloudValidity::BoundOutOfRange {
                 ad_start: self.ad_start,
                 ad_end: self.ad_end,
-                bound: Bound::from_anti_diagonal(ad),
+                bound: (*ad).into(),
             }
         } else if let Some(ad) = in_range.find(|b| !b.valid()) {
             CloudValidity::BoundInvalid {
-                bound: Bound::from_anti_diagonal(ad),
+                bound: (*ad).into(),
             }
         } else {
             CloudValidity::Valid
@@ -838,16 +887,16 @@ impl Cloud {
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move past the target length, and 0 otherwise
-        let profile_addend = ((last_bound.left_target_idx + 1) > self.target_length) as usize;
+        let profile_addend = ((last_bound.left_target_idx + 1) > self.seq_len) as usize;
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move past the profile length, and 0 otherwise
-        let target_addend = ((last_bound.right_profile_idx + 1) > self.profile_length) as usize;
+        let target_addend = ((last_bound.right_profile_idx + 1) > self.prf_len) as usize;
 
         self.set(
             next_idx,
             // prevent moving past the target length
-            (last_bound.left_target_idx + 1).min(self.target_length),
+            (last_bound.left_target_idx + 1).min(self.seq_len),
             // if we hit the target length, then the
             // addend is 1 and we'll move right a cell
             last_bound.left_profile_idx + profile_addend,
@@ -855,8 +904,10 @@ impl Cloud {
             // addend is 1 and we'll drop down a cell
             last_bound.right_target_idx + target_addend,
             // prevent moving past the profile length
-            (last_bound.right_profile_idx + 1).min(self.profile_length),
+            (last_bound.right_profile_idx + 1).min(self.prf_len),
         );
+
+        self[Ad(next_idx)] = self.get(next_idx).into();
 
         self.ad_end = next_idx;
     }
@@ -887,6 +938,8 @@ impl Cloud {
             // subtrahend is 1 and we'll move left a cell
             first_bound.right_profile_idx - profile_subtrahend,
         );
+
+        self[Ad(next_idx)] = self.get(next_idx).into();
 
         self.ad_start = next_idx;
     }
@@ -1018,8 +1071,8 @@ impl Cloud {
                     bound.grow_right(max_profile_idx);
                     bound.grow_down(max_target_idx);
 
-                    debug_assert!(bound.left_target_idx <= self.target_length);
-                    debug_assert!(bound.left_profile_idx <= self.profile_length);
+                    debug_assert!(bound.left_target_idx <= self.seq_len);
+                    debug_assert!(bound.left_profile_idx <= self.prf_len);
                 });
             }
             Relationship::Disjoint(_) => {
@@ -1113,16 +1166,14 @@ impl Cloud {
     }
 
     pub fn vec_image(&self, other: Option<&Self>) -> anyhow::Result<Vec<Vec<u8>>> {
-        let mut img = vec![vec![0; self.profile_length + 1]; self.target_length + 1];
+        let mut img = vec![vec![0; self.prf_len + 1]; self.seq_len + 1];
 
         self.bounds().iter().for_each(|b| {
             b.cell_zip().for_each(|(t, p)| img[t][p] += 1);
         });
 
         if let Some(other) = other {
-            if self.profile_length != other.profile_length
-                || self.target_length != other.target_length
-            {
+            if self.prf_len != other.prf_len || self.seq_len != other.seq_len {
                 bail!("dimension mismatch")
             }
 

@@ -52,8 +52,8 @@ impl RowBounds {
     }
 
     pub fn fill_from_anti_diagonal_bounds(&mut self, anti_diagonal_bounds: &Cloud) {
-        self.target_length = anti_diagonal_bounds.target_length;
-        self.profile_length = anti_diagonal_bounds.profile_length;
+        self.target_length = anti_diagonal_bounds.seq_len;
+        self.profile_length = anti_diagonal_bounds.prf_len;
 
         let first_bound = anti_diagonal_bounds.first();
         let last_bound = anti_diagonal_bounds.last();

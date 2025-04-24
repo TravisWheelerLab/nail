@@ -344,10 +344,10 @@ pub fn seeds_from_mmseqs_align_tsv(path: impl AsRef<Path>) -> anyhow::Result<See
         profile_map.insert(
             target_name,
             Seed {
-                target_start,
-                target_end,
-                profile_start,
-                profile_end,
+                seq_start: target_start,
+                seq_end: target_end,
+                prf_start: profile_start,
+                prf_end: profile_end,
                 score,
             },
         );

@@ -7,8 +7,10 @@ use crate::structs::profile::{AminoAcid, CoreEntry, CoreToCore, Emission};
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-use super::structs::{BackgroundState::*, CloudMatrix, CoreState::*, NewDpMatrix};
-use super::Nats;
+use super::structs::{
+    Ad, AdOffset, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix,
+};
+use super::{Nats, Score};
 
 pub fn cloud_search_test(
     profile: &mut Profile,
@@ -94,6 +96,7 @@ pub enum PruneStatus {
     PartiallyPruned,
 }
 
+#[derive(Default)]
 pub struct CloudSearchResults {
     pub max_score: Nats,
     pub max_score_within: Nats,
@@ -201,8 +204,8 @@ pub fn scrub_co_located(
 
 #[inline]
 pub fn compute_backward_cells<M>(
-    seq: &Sequence,
     profile: &Profile,
+    seq: &Sequence,
     matrix: &mut M,
     prf_idx: usize,
     seq_idx: usize,
@@ -352,6 +355,105 @@ pub fn compute_backward_cell(
     );
 }
 
+pub fn cloud_search_backward2<M>(
+    profile: &Profile,
+    seq: &Sequence,
+    seed: &Seed,
+    matrix: &mut M,
+    params: &CloudSearchParams,
+    cloud: &mut Cloud,
+) -> CloudSearchResults
+where
+    M: NewDpMatrix,
+{
+    let mut num_cells = 0usize;
+    let mut max_score = -f32::INFINITY;
+    let mut max_score_within = -f32::INFINITY;
+
+    let ad_start = seed.seq_start.min(seq.length - 1) + seed.prf_start.min(profile.length - 1);
+    let seed_ad_start = seed.seq_start + seed.prf_start;
+    let gamma_ad = ad_start - params.gamma;
+    let max_ad = 0usize;
+
+    cloud.ad_start = ad_start;
+    let cell_start = Cell {
+        prf_idx: seed.prf_start,
+        seq_idx: seed.seq_start,
+    };
+
+    cloud[Ad(ad_start)] = Bound(cell_start, cell_start);
+
+    // -- initial pass --
+    (ad_start..gamma_ad).for_each(|idx| {
+        cloud.advance_reverse();
+        let bound = &cloud[Ad(idx)];
+        bound.iter().for_each(|c| {
+            compute_backward_cells(profile, seq, matrix, c.prf_idx, c.seq_idx);
+            max_score = max_f32!(
+                max_score,
+                matrix[c.m_cell()],
+                matrix[c.i_cell()],
+                matrix[c.d_cell()]
+            );
+            num_cells += 1;
+        });
+    });
+
+    // -- cloud search --
+    for idx in gamma_ad..=max_ad {
+        let co_located_bound = &cloud[Ad(idx - 3)];
+        co_located_bound.iter().for_each(|c| {
+            matrix[c.m_cell()] = -f32::INFINITY;
+            matrix[c.i_cell()] = -f32::INFINITY;
+            matrix[c.d_cell()] = -f32::INFINITY;
+        });
+
+        cloud.advance_reverse();
+        let bound = &mut cloud[Ad(idx)];
+        let mut max_score_in_ad = -f32::INFINITY;
+        bound.iter().for_each(|c| {
+            compute_backward_cells(profile, seq, matrix, c.prf_idx, c.seq_idx);
+            max_score_in_ad = max_f32!(
+                max_score_in_ad,
+                matrix[c.m_cell()],
+                matrix[c.i_cell()],
+                matrix[c.d_cell()]
+            );
+            num_cells += 1;
+        });
+
+        max_score = max_score.max(max_score_in_ad);
+        if idx < seed_ad_start {
+            max_score_within = max_score_within.max(max_score)
+        }
+
+        let trim_thresh = (max_score_in_ad - params.alpha).min(max_score - params.beta);
+
+        let trim_fn = |c: &Cell| {
+            let max = max_f32!(matrix[c.m_cell()], matrix[c.i_cell()], matrix[c.d_cell()]);
+            max < trim_thresh
+        };
+
+        let left_trim = bound.iter().take_while(trim_fn).count();
+        bound.0.prf_idx -= left_trim;
+        bound.0.seq_idx += left_trim;
+
+        let right_trim = bound.iter().rev().take_while(trim_fn).count();
+        bound.0.prf_idx += right_trim;
+        bound.0.seq_idx -= right_trim;
+
+        if bound.is_empty() {
+            break;
+        }
+    }
+
+    CloudSearchResults {
+        max_score: Nats(max_score),
+        max_score_within: Nats(max_score_within),
+        num_cells_computed: num_cells,
+    }
+}
+
 pub fn cloud_search_backward(
     profile: &Profile,
     target: &Sequence,
@@ -366,11 +468,11 @@ pub fn cloud_search_backward(
     // the highest score we see before we pass the end seed point
     let mut max_score_within = -f32::INFINITY;
 
-    let target_end = seed.target_end.min(target.length - 1);
-    let profile_end = seed.profile_end.min(profile.length - 1);
+    let target_end = seed.seq_end.min(target.length - 1);
+    let profile_end = seed.prf_end.min(profile.length - 1);
 
     let first_anti_diagonal_idx = target_end + profile_end;
-    let seed_start_anti_diagonal_idx = seed.target_start + seed.profile_start;
+    let seed_start_anti_diagonal_idx = seed.seq_start + seed.prf_start;
     let gamma_anti_diagonal_idx = first_anti_diagonal_idx - params.gamma;
     let min_anti_diagonal_idx = 0usize;
 
@@ -529,9 +631,9 @@ pub fn cloud_search_backward(
 }
 
 #[inline]
-pub fn compute_forward_cells<P, M>(
-    seq: &Sequence,
+pub fn compute_forward_cells<M>(
     profile: &Profile,
+    seq: &Sequence,
     matrix: &mut M,
     prf_idx: usize,
     seq_idx: usize,
@@ -702,26 +804,26 @@ pub fn cloud_search_forward(
     //                          ^
     //                   profile_start = 3
 
-    let first_anti_diagonal_idx = seed.target_start + seed.profile_start;
-    let seed_end_anti_diagonal_idx = seed.target_end + seed.profile_end;
+    let first_anti_diagonal_idx = seed.seq_start + seed.prf_start;
+    let seed_end_anti_diagonal_idx = seed.seq_end + seed.prf_end;
     let gamma_anti_diagonal_idx = first_anti_diagonal_idx + params.gamma;
     let max_anti_diagonal_idx = target.length + profile.length;
 
     let first_cloud_matrix_row_idx = first_anti_diagonal_idx % 3;
     // setting the scores to 0 is like setting
     // the log odds ratio to 1, since log(0) = 1
-    cloud_matrix.set_match(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
-    cloud_matrix.set_insert(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
-    cloud_matrix.set_delete(first_cloud_matrix_row_idx, seed.profile_start, 0.0);
+    cloud_matrix.set_match(first_cloud_matrix_row_idx, seed.prf_start, 0.0);
+    cloud_matrix.set_insert(first_cloud_matrix_row_idx, seed.prf_start, 0.0);
+    cloud_matrix.set_delete(first_cloud_matrix_row_idx, seed.prf_start, 0.0);
 
     // the first bound is just the starting cell
     bounds.ad_start = first_anti_diagonal_idx;
     bounds.set(
         first_anti_diagonal_idx,
-        seed.target_start,
-        seed.profile_start,
-        seed.target_start,
-        seed.profile_start,
+        seed.seq_start,
+        seed.prf_start,
+        seed.seq_start,
+        seed.prf_start,
     );
 
     for anti_diagonal_idx in (first_anti_diagonal_idx + 1)..gamma_anti_diagonal_idx {
@@ -858,5 +960,104 @@ pub fn cloud_search_forward(
         max_score: Nats(max_score),
         max_score_within: Nats(max_score_within),
         num_cells_computed,
+    }
+}
+
+pub fn cloud_search_forward2<M>(
+    profile: &Profile,
+    seq: &Sequence,
+    seed: &Seed,
+    matrix: &mut M,
+    params: &CloudSearchParams,
+    cloud: &mut Cloud,
+) -> CloudSearchResults
+where
+    M: NewDpMatrix,
+{
+    let mut num_cells = 0usize;
+    let mut max_score = -f32::INFINITY;
+    let mut max_score_within = -f32::INFINITY;
+
+    let ad_start = seed.seq_start + seed.prf_start;
+    let seed_ad_end = seed.seq_end + seed.prf_end;
+    let gamma_ad = ad_start + params.gamma;
+    let max_ad = seq.length + profile.length;
+
+    cloud.ad_start = ad_start;
+    let cell_start = Cell {
+        prf_idx: seed.prf_start,
+        seq_idx: seed.seq_start,
+    };
+
+    cloud[Ad(ad_start)] = Bound(cell_start, cell_start);
+
+    // -- initial pass --
+    (ad_start..gamma_ad).for_each(|idx| {
+        cloud.advance_forward();
+        let bound = &cloud[Ad(idx)];
+        bound.iter().for_each(|c| {
+            compute_forward_cells(profile, seq, matrix, c.prf_idx, c.seq_idx);
+            max_score = max_f32!(
+                max_score,
+                matrix[c.m_cell()],
+                matrix[c.i_cell()],
+                matrix[c.d_cell()]
+            );
+            num_cells += 1;
+        });
+    });
+
+    // -- cloud search --
+    for idx in gamma_ad..=max_ad {
+        let co_located_bound = &cloud[Ad(idx - 3)];
+        co_located_bound.iter().for_each(|c| {
+            matrix[c.m_cell()] = -f32::INFINITY;
+            matrix[c.i_cell()] = -f32::INFINITY;
+            matrix[c.d_cell()] = -f32::INFINITY;
+        });
+
+        cloud.advance_forward();
+        let bound = &mut cloud[Ad(idx)];
+        let mut max_score_in_ad = -f32::INFINITY;
+        bound.iter().for_each(|c| {
+            compute_forward_cells(profile, seq, matrix, c.prf_idx, c.seq_idx);
+            max_score_in_ad = max_f32!(
+                max_score_in_ad,
+                matrix[c.m_cell()],
+                matrix[c.i_cell()],
+                matrix[c.d_cell()]
+            );
+            num_cells += 1;
+        });
+
+        max_score = max_score.max(max_score_in_ad);
+        if idx < seed_ad_end {
+            max_score_within = max_score_within.max(max_score)
+        }
+
+        let trim_thresh = (max_score_in_ad - params.alpha).min(max_score - params.beta);
+
+        let trim_fn = |c: &Cell| {
+            let max = max_f32!(matrix[c.m_cell()], matrix[c.i_cell()], matrix[c.d_cell()]);
+            max < trim_thresh
+        };
+
+        let left_trim = bound.iter().take_while(trim_fn).count();
+        bound.0.prf_idx -= left_trim;
+        bound.0.seq_idx += left_trim;
+
+        let right_trim = bound.iter().rev().take_while(trim_fn).count();
+        bound.0.prf_idx += right_trim;
+        bound.0.seq_idx -= right_trim;
+
+        if bound.is_empty() {
+            break;
+        }
+    }
+
+    CloudSearchResults {
+        max_score: Nats(max_score),
+        max_score_within: Nats(max_score_within),
+        num_cells_computed: num_cells,
     }
 }

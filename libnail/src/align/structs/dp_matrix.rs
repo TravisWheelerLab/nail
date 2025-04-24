@@ -56,7 +56,7 @@ impl CoreState {
 
     #[inline(always)]
     pub fn to(&self, other: &Self) -> CoreToCore {
-        CoreToCore(*self, other)
+        CoreToCore(*self, *other)
     }
 }
 
@@ -74,7 +74,7 @@ pub type CoreCell = (CoreState, usize);
 impl From<CoreCell> for Cell {
     fn from(val: CoreCell) -> Self {
         Cell {
-            profile_idx: val.0.profile_idx(),
+            prf_idx: val.0.profile_idx(),
             seq_idx: val.1,
         }
     }
@@ -83,7 +83,7 @@ impl From<CoreCell> for Cell {
 impl From<&CoreCell> for Cell {
     fn from(src: &CoreCell) -> Self {
         Cell {
-            profile_idx: src.0.profile_idx(),
+            prf_idx: src.0.profile_idx(),
             seq_idx: src.1,
         }
     }
@@ -1135,7 +1135,7 @@ mod tests {
                 mx[c.i_cell()] = val + 0.1;
                 mx[c.d_cell()] = val + 0.2;
 
-                let ad_idx = c.profile_idx + c.seq_idx;
+                let ad_idx = c.prf_idx + c.seq_idx;
                 assert!(mx.data[ad_idx][0][c.seq_idx] == val);
                 assert!(mx.data[ad_idx][1][c.seq_idx] == val + 0.1);
                 assert!(mx.data[ad_idx][2][c.seq_idx] == val + 0.2);
@@ -1167,7 +1167,7 @@ mod tests {
                 lin_mx[c.i_cell()] = val + 0.1;
                 lin_mx[c.d_cell()] = val + 0.2;
 
-                let row_idx = (c.profile_idx + c.seq_idx) % 3;
+                let row_idx = (c.prf_idx + c.seq_idx) % 3;
                 assert!(lin_mx.data[row_idx][0][c.seq_idx] == quad_mx[c.m_cell()]);
                 assert!(lin_mx.data[row_idx][1][c.seq_idx] == quad_mx[c.i_cell()]);
                 assert!(lin_mx.data[row_idx][2][c.seq_idx] == quad_mx[c.d_cell()]);
