@@ -1,78 +1,12 @@
-use std::fs::File;
-
 use crate::align::structs::{AntiDiagonal, Cloud, CloudMatrixLinear, Seed};
 use crate::log_sum;
 use crate::max_f32;
 use crate::structs::profile::{AminoAcid, CoreEntry, CoreToCore, Emission};
 use crate::structs::{Profile, Sequence};
-use crate::util::log_add;
+use crate::util::{log_add, CollectionPrint};
 
-use super::structs::{
-    Ad, AdOffset, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix,
-};
-use super::{Nats, Score};
-
-pub fn cloud_search_test(
-    profile: &mut Profile,
-    target: &Sequence,
-    fwd_matrix: &mut impl CloudMatrix,
-    bwd_matrix: &mut impl CloudMatrix,
-) {
-    profile.configure_for_target_length(target.length);
-    let mut bounds = Cloud::new(target.length, profile.length);
-
-    // what: we want to make sure that the seed
-    //       doesn't start at position 0
-    // why:  0 is not a valid target/profile position;
-    //       it is used as kind of an implicit edge guard
-    //       for illegal transitions in the recurrence
-    // let target_start = seed.target_start.max(1);
-    // let profile_start = seed.profile_start.max(1);
-    let target_start = 1;
-    let profile_start = 1;
-
-    // what: we want to make sure we start cloud search
-    //       at least two positions before the end of
-    //       both the target and profile
-    //
-    // why:  since backward uses target[idx + 1]
-    //
-    //       starting one position before doesn't quite do it,
-    //       since the second anti-diagonal will still try to
-    //       pull [idx + 1]
-    // let target_end = seed.target_end.min(target.length - 2);
-    // let profile_end = seed.profile_end.min(profile.length - 2);
-    let target_end = target.length;
-    let profile_end = profile.length;
-
-    bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
-
-    // bounds.bounds().iter().for_each(|ad| {
-    //     ad.cell_zip().for_each(|(target_idx, profile_idx)| {
-    //         compute_forward_cells(target, profile, fwd_matrix, target_idx, profile_idx);
-    //     })
-    // });
-
-    // bounds.bounds().iter().rev().skip(2).for_each(|ad| {
-    //     ad.cell_zip().for_each(|(target_idx, profile_idx)| {
-    //         compute_backward_cells(target, profile, bwd_matrix, target_idx, profile_idx);
-    //     })
-    // });
-
-    fwd_matrix
-        .dump(&mut File::create("nail.cloud.fwd.mat").unwrap())
-        .unwrap();
-
-    bwd_matrix
-        .dump(&mut File::create("nail.cloud.bwd.mat").unwrap())
-        .unwrap();
-
-    println!(
-        "  fwd: {}\n  bwd: {}\n",
-        fwd_matrix.get_match(target_end, profile_end),
-        bwd_matrix.get_match(target_start, profile_start),
-    );
-}
+use super::structs::{Ad, BackgroundState::*, Bound, Cell, CoreState::*, NewDpMatrix};
+use super::Nats;
 
 #[derive(Clone)]
 pub struct CloudSearchParams {
@@ -96,7 +30,7 @@ pub enum PruneStatus {
     PartiallyPruned,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct CloudSearchResults {
     pub max_score: Nats,
     pub max_score_within: Nats,
@@ -370,22 +304,26 @@ where
     let mut max_score = -f32::INFINITY;
     let mut max_score_within = -f32::INFINITY;
 
-    let ad_start = seed.seq_start.min(seq.length - 1) + seed.prf_start.min(profile.length - 1);
+    let prf_end = seed.prf_end.min(profile.length - 1);
+    let seq_end = seed.seq_end.min(seq.length - 1);
+
+    let ad_start = prf_end + seq_end;
     let seed_ad_start = seed.seq_start + seed.prf_start;
     let gamma_ad = ad_start - params.gamma;
-    let max_ad = 0usize;
+    let min_ad = 0usize;
 
-    cloud.ad_start = ad_start;
+    cloud.reuse(seq.length, profile.length);
     let cell_start = Cell {
-        prf_idx: seed.prf_start,
-        seq_idx: seed.seq_start,
+        prf_idx: prf_end,
+        seq_idx: seq_end,
     };
 
-    cloud[Ad(ad_start)] = Bound(cell_start, cell_start);
+    cloud.append(Bound(cell_start, cell_start));
 
     // -- initial pass --
-    (ad_start..gamma_ad).for_each(|idx| {
+    ((gamma_ad + 1)..=ad_start).rev().for_each(|idx| {
         cloud.advance_reverse();
+
         let bound = &cloud[Ad(idx)];
         bound.iter().for_each(|c| {
             compute_backward_cells(profile, seq, matrix, c.prf_idx, c.seq_idx);
@@ -400,8 +338,8 @@ where
     });
 
     // -- cloud search --
-    for idx in gamma_ad..=max_ad {
-        let co_located_bound = &cloud[Ad(idx - 3)];
+    for idx in (min_ad..=gamma_ad).rev() {
+        let co_located_bound = &cloud[Ad(idx + 3)];
         co_located_bound.iter().for_each(|c| {
             matrix[c.m_cell()] = -f32::INFINITY;
             matrix[c.i_cell()] = -f32::INFINITY;
@@ -983,13 +921,13 @@ where
     let gamma_ad = ad_start + params.gamma;
     let max_ad = seq.length + profile.length;
 
-    cloud.ad_start = ad_start;
+    cloud.reuse(seq.length, profile.length);
     let cell_start = Cell {
         prf_idx: seed.prf_start,
         seq_idx: seed.seq_start,
     };
 
-    cloud[Ad(ad_start)] = Bound(cell_start, cell_start);
+    cloud.append(Bound(cell_start, cell_start));
 
     // -- initial pass --
     (ad_start..gamma_ad).for_each(|idx| {

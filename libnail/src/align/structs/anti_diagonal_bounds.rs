@@ -6,6 +6,8 @@ use std::io::{stdout, Write};
 use std::iter::{Rev, Zip};
 use std::ops::{Index, IndexMut, RangeInclusive};
 
+use crate::util::VecUtils;
+
 use super::{BackgroundCell, BackgroundState, CoreCell, CoreState};
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -110,7 +112,7 @@ pub(crate) struct ArrayProfileMajorBound([usize; 4]);
 #[allow(dead_code)]
 pub(crate) struct ArraySeqMajorBound([usize; 4]);
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Copy, Clone, PartialEq)]
 pub struct Bound(pub Cell, pub Cell);
 
 impl From<AntiDiagonal> for Bound {
@@ -130,6 +132,23 @@ impl From<AntiDiagonal> for Bound {
 
 impl From<&AntiDiagonal> for Bound {
     fn from(value: &AntiDiagonal) -> Self {
+        (*value).into()
+    }
+}
+
+impl From<Bound> for AntiDiagonal {
+    fn from(value: Bound) -> Self {
+        Self {
+            left_target_idx: value.1.seq_idx,
+            left_profile_idx: value.1.prf_idx,
+            right_target_idx: value.0.seq_idx,
+            right_profile_idx: value.0.prf_idx,
+        }
+    }
+}
+
+impl From<&Bound> for AntiDiagonal {
+    fn from(value: &Bound) -> Self {
         (*value).into()
     }
 }
@@ -154,7 +173,7 @@ impl Bound {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.prf_idx > self.1.prf_idx
+        self.0.prf_idx < self.1.prf_idx
     }
 
     #[allow(dead_code)]
@@ -250,7 +269,7 @@ pub trait BoundInterpretable {
 
 impl BoundInterpretable for Bound {
     fn interpret(&self) -> Bound {
-        self.clone()
+        *self
     }
 }
 
@@ -510,6 +529,8 @@ impl Index<Ad> for Cloud {
 
 impl IndexMut<Ad> for Cloud {
     fn index_mut(&mut self, index: Ad) -> &mut Self::Output {
+        self.ad_start = self.ad_start.min(index.0);
+        self.ad_end = self.ad_end.max(index.0);
         &mut self.new_bounds[index.0]
     }
 }
@@ -530,44 +551,40 @@ impl IndexMut<AdOffset> for Cloud {
 
 impl Cloud {
     pub fn new(seq_len: usize, prf_len: usize) -> Self {
-        let size = seq_len + prf_len + 1;
-        Self {
-            bounds: vec![AntiDiagonal::default(); size],
-            new_bounds: vec![Bound::default(); size],
-            seq_len,
-            prf_len,
-            size,
-            ad_start: 0,
-            ad_end: 0,
-        }
+        let mut cloud = Self::default();
+        cloud.reuse(seq_len, prf_len);
+        cloud
     }
 
     pub fn resize(&mut self, new_size: usize) {
-        if new_size > self.size {
-            self.bounds.resize(new_size, AntiDiagonal::default());
-            self.size = new_size;
-        }
+        self.bounds
+            .grow_or_shrink(new_size, AntiDiagonal::default());
+        self.new_bounds.grow_or_shrink(new_size, Bound::default());
     }
 
     pub fn reset(&mut self) {
-        self.bounds_mut().iter_mut().for_each(|bound| bound.reset());
-
-        self.bounds
-            .iter()
-            .for_each(|b| debug_assert!(b.is_default()));
+        self.bounds.reset(AntiDiagonal::default());
+        self.new_bounds.reset(Bound::default());
     }
 
     pub fn reuse(&mut self, seq_len: usize, prf_len: usize) {
-        self.reset();
+        let new_size = seq_len + prf_len + 2;
 
-        let new_size = seq_len + prf_len + 1;
-        self.resize(new_size);
+        self.bounds
+            .resize_and_reset(new_size, AntiDiagonal::default());
+        self.new_bounds.resize_and_reset(new_size, Bound::default());
 
         self.ad_start = new_size;
         self.ad_end = 0;
 
         self.seq_len = seq_len;
         self.prf_len = prf_len;
+    }
+
+    pub fn append(&mut self, bound: Bound) {
+        let idx = bound.idx();
+        self.bounds[idx] = bound.into();
+        self[Ad(idx)] = bound;
     }
 
     /// Fill a Cloud with a list of hand-written bounds.
@@ -624,24 +641,17 @@ impl Cloud {
         right_seq_idx: usize,
         right_prf_idx: usize,
     ) {
-        // **NOTE: these asserts always fail currently because
-        //         of the access pattern during cloud search
-        //
-        // make sure the two cells are on the same anti-diagonal
-
-        // debug_assert!(
-        //     left_target_idx + left_profile_idx,
-        //     right_target_idx + right_profile_idx
-        // );
-
-        // make sure we are setting the anti-diagonal that we think we are
-        //debug_assert!(anti_diagonal_idx, left_target_idx + left_profile_idx);
+        // debug_assert!(left_seq_idx + left_prf_idx == right_seq_idx + right_prf_idx);
+        // debug_assert!(ad_idx == left_seq_idx + left_prf_idx);
 
         let bound = &mut self.bounds[ad_idx];
         bound.left_target_idx = left_seq_idx;
         bound.left_profile_idx = left_prf_idx;
         bound.right_target_idx = right_seq_idx;
         bound.right_profile_idx = right_prf_idx;
+
+        self.ad_start = self.ad_start.min(ad_idx);
+        self.ad_end = self.ad_end.max(ad_idx);
     }
 
     pub fn get(&self, idx: usize) -> &AntiDiagonal {
@@ -698,15 +708,6 @@ impl Cloud {
     /// Get the number of anti-diagonals defined in the cloud.
     pub fn num_anti_diagonals(&self) -> usize {
         self.ad_end - self.ad_start + 1
-    }
-
-    /// A temporary function to get the bounds
-    /// as `Vec<Bound>` instead of `&[AntiDiagonal]`
-    pub(crate) fn new_bounds(&self) -> Vec<Bound> {
-        self.bounds[self.ad_start..=self.ad_end]
-            .iter()
-            .map(|ad| Bound(ad.right_target_major(), ad.left_target_major()))
-            .collect()
     }
 
     pub fn bounds(&self) -> &[AntiDiagonal] {
@@ -908,7 +909,6 @@ impl Cloud {
         );
 
         self[Ad(next_idx)] = self.get(next_idx).into();
-
         self.ad_end = next_idx;
     }
 
@@ -940,7 +940,6 @@ impl Cloud {
         );
 
         self[Ad(next_idx)] = self.get(next_idx).into();
-
         self.ad_start = next_idx;
     }
 
@@ -1185,7 +1184,7 @@ impl Cloud {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn image(&self) -> CloudImage {
+    pub fn image(&self) -> CloudImage {
         let img = self.vec_image(None).unwrap();
         CloudImage {
             img_bytes: (0..img.iter().map(Vec::len).max().unwrap_or(0))
@@ -1207,7 +1206,7 @@ pub enum PrintMode {
     DocString,
 }
 
-pub(crate) struct CloudImage {
+pub struct CloudImage {
     img_bytes: Vec<Vec<u8>>,
     print_orientation: ImageOrientation,
     print_mode: PrintMode,

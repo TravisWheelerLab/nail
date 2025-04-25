@@ -17,8 +17,8 @@ use crate::structs::Hmm;
 use crate::util::{f32_vec_argmax, mean_relative_entropy, LogAbuse};
 
 use std::cmp::Ordering;
-use std::fmt;
 use std::fmt::Formatter;
+use std::fmt::{self, Debug};
 use std::ops::Index;
 
 use super::Sequence;
@@ -108,7 +108,26 @@ impl AminoAcid {
 }
 
 pub struct Emission(pub CoreState, pub AminoAcid);
+//
 pub struct CoreToCore(pub CoreState, pub CoreState);
+
+// TODO: use this instead of CoreToCore
+//#[repr(usize)]
+//pub enum CoreTransition {
+//    MatchToMatch(usize) = 1,
+//    MatchToInsert(usize) = 2,
+//    MatchToDelete(usize) = 3,
+//    InsertToInsert(usize) = 4,
+//    InsertToMatch(usize) = 5,
+//    DeleteToDelete(usize) = 6,
+//    DeleteToMatch(usize) = 7,
+//}
+
+impl Debug for CoreToCore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} -> {:?}", self.0, self.1)
+    }
+}
 pub struct BackgroundLoop(pub BackgroundState);
 pub struct CoreEntry(pub CoreState);
 
@@ -118,25 +137,25 @@ pub struct CoreEntry(pub CoreState);
 /// This is used to map each pair of core states
 /// (i.e. a transition) to a unique integer.
 //
-// this happens to work out perfectly for mapping
+// this happens to work out (almost) perfectly for mapping
 // pairs of states for valid core transitions:
-//   +----------+--------+-------------------------------+---------+
-//   | Symbolic |  Pair  |          Computation          | π(a, b) |
-//   +----------+--------+-------------------------------+---------+
-//   |  (M, M)  | (0, 0) | (0 + 0) * (0 + 0 + 1) / 2 + 0 |    0    |
-//   |  (I, M)  | (1, 0) | (1 + 0) * (1 + 0 + 1) / 2 + 0 |    1    |
-//   |  (M, I)  | (0, 1) | (0 + 1) * (0 + 1 + 1) / 2 + 1 |    2    |
-//   |  (D, M)  | (2, 0) | (2 + 0) * (2 + 0 + 1) / 2 + 0 |    3    |
-//   |  (I, I)  | (1, 1) | (1 + 1) * (1 + 1 + 1) / 2 + 1 |    4    |
-//   |  (M, D)  | (0, 2) | (0 + 2) * (0 + 2 + 1) / 2 + 2 |    5    |
-//   |  (D, D)  | (2, 2) | (2 + 2) * (2 + 2 + 1) / 2 + 2 |    6    |
-//   |  (D, I)  | (2, 1) | (2 + 1) * (2 + 1 + 1) / 2 + 1 |    7    |
-//   |  (I, D)  | (1, 2) | (1 + 2) * (1 + 2 + 1) / 2 + 2 |    8    |
-//   +----------+--------+-------------------------------+---------+
+//   +----------+--------+--------------------------------+---------+
+//   | Symbolic |  Pair  |          Computation           | π(a, b) |
+//   +----------+--------+--------------------------------+---------+
+//   |  (M, M)  | (0, 0) | (0 + 0) * (0 + 0 + 1) / 2 + 0  |    0    |
+//   |  (I, M)  | (1, 0) | (1 + 0) * (1 + 0 + 1) / 2 + 0  |    1    |
+//   |  (M, I)  | (0, 1) | (0 + 1) * (0 + 1 + 1) / 2 + 1  |    2    |
+//   |  (D, M)  | (2, 0) | (2 + 0) * (2 + 0 + 1) / 2 + 0  |    3    |
+//   |  (I, I)  | (1, 1) | (1 + 1) * (1 + 1 + 1) / 2 + 1  |    4    |
+//   |  (M, D)  | (0, 2) | (0 + 2) * (0 + 2 + 1) / 2 + 2  |    5    |
+//   |  (D, D)  | (2, 2) | (2 + 2) * (2 + 2 + 1) / 2 + 2  |   12    |
+//   |  (D, I)  | (2, 1) | (2 + 1) * (2 + 1 + 1) / 2 + 1  |    7    |
+//   |  (I, D)  | (1, 2) | (1 + 2) * (1 + 2 + 1) / 2 + 2  |    8    |
+//   +----------+--------+--------------------------------+---------+
 fn cantor(a: usize, b: usize) -> usize {
     // debug guard rails to catch D->I or I->D
-    debug_assert!(a <= 3);
-    debug_assert!(b <= 3);
+    debug_assert!(a < 3);
+    debug_assert!(b < 3);
     (a + b) * (a + b + 1) / 2 + b
 }
 
@@ -145,7 +164,7 @@ impl Index<CoreToCore> for Profile {
 
     fn index(&self, index: CoreToCore) -> &Self::Output {
         let profile_idx = index.0.profile_idx();
-        let transition_idx = cantor(index.0.state_idx(), index.1.state_idx());
+        let transition_idx = cantor(index.0.state_idx(), index.1.state_idx()).min(6);
         &self.core_transitions[profile_idx][transition_idx]
     }
 }

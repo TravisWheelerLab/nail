@@ -113,7 +113,7 @@ pub struct AdMatrixSparse {
 
 impl AdMatrixSparse {
     pub fn layout(&self) {
-        println!("target len:     {}", self.target_len());
+        println!("target len:     {}", self.seq_len());
         println!("profile len:    {}", self.profile_len());
         println!("first AD index: {}", self.ad_start_idx);
 
@@ -266,7 +266,7 @@ impl CoreCellIndexable for AdMatrixSparse {}
 impl BackgroundCellIndexable for AdMatrixSparse {}
 
 impl NewDpMatrix for AdMatrixSparse {
-    fn target_len(&self) -> usize {
+    fn seq_len(&self) -> usize {
         self.target_len
     }
 
@@ -276,14 +276,14 @@ impl NewDpMatrix for AdMatrixSparse {
 }
 
 pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
-    fn target_len(&self) -> usize;
+    fn seq_len(&self) -> usize;
     fn profile_len(&self) -> usize;
 
     fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
         use BackgroundState::*;
         use CoreState::*;
 
-        let t_idx_width = self.target_len().to_string().len();
+        let t_idx_width = self.seq_len().to_string().len();
         let first_column_width = t_idx_width + 3;
         // TODO: configurable?
         const W: usize = 13;
@@ -311,7 +311,7 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
         }
         writeln!(out)?;
 
-        for t_idx in 0..=self.target_len() {
+        for t_idx in 0..=self.seq_len() {
             // -- match
             write!(out, "{:w$} M ", t_idx, w = t_idx_width)?;
             for p_idx in 0..=self.profile_len() {
@@ -347,7 +347,7 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
 
 impl<T: NewDpMatrix> DpMatrix for T {
     fn target_length(&self) -> usize {
-        self.target_len()
+        self.seq_len()
     }
 
     fn profile_length(&self) -> usize {
@@ -882,7 +882,8 @@ impl DpMatrix for DpMatrixSparse {
 pub struct AdMatrixQuadratic {
     profile_len: usize,
     seq_len: usize,
-    data: Vec<[Vec<f32>; 3]>,
+    core_data: Vec<[Vec<f32>; 3]>,
+    background_data: [Vec<f32>; 4],
 }
 
 impl AdMatrixQuadratic {
@@ -894,12 +895,17 @@ impl AdMatrixQuadratic {
 
     pub fn reuse(&mut self, new_profile_len: usize, new_seq_len: usize) {
         let num_ad = new_profile_len + new_seq_len + 1;
-        self.data.grow_or_shrink(num_ad, [vec![], vec![], vec![]]);
+        self.core_data
+            .grow_or_shrink(num_ad, [vec![], vec![], vec![]]);
 
-        self.data.iter_mut().for_each(|ad| {
+        self.core_data.iter_mut().for_each(|ad| {
             ad.iter_mut()
                 .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, -f32::INFINITY))
         });
+
+        self.background_data
+            .iter_mut()
+            .for_each(|v| v.resize_and_reset(new_seq_len + 2, -f32::INFINITY));
 
         self.profile_len = new_profile_len;
         self.seq_len = new_seq_len;
@@ -909,7 +915,7 @@ impl AdMatrixQuadratic {
         println!("target len:     {}", self.seq_len);
         println!("profile len:    {}", self.profile_len);
 
-        self.data.iter().enumerate().for_each(|(idx, ad)| {
+        self.core_data.iter().enumerate().for_each(|(idx, ad)| {
             print!("AD: {:<3} -> ", idx);
             ad[0].iter().for_each(|val| print!("| {val:5.1} "));
             println!();
@@ -965,6 +971,20 @@ impl AdMatrixQuadratic {
     }
 }
 
+impl Index<BackgroundCell> for AdMatrixQuadratic {
+    type Output = f32;
+
+    fn index(&self, cell: BackgroundCell) -> &Self::Output {
+        &self.background_data[cell.0 as usize][cell.1]
+    }
+}
+
+impl IndexMut<BackgroundCell> for AdMatrixQuadratic {
+    fn index_mut(&mut self, cell: BackgroundCell) -> &mut Self::Output {
+        &mut self.background_data[cell.0 as usize][cell.1]
+    }
+}
+
 impl Index<CoreCell> for AdMatrixQuadratic {
     type Output = f32;
 
@@ -972,7 +992,7 @@ impl Index<CoreCell> for AdMatrixQuadratic {
         let state_idx = cell.0.state_idx();
         let seq_idx = cell.1;
         let ad_idx = cell.0.profile_idx() + seq_idx;
-        &self.data[ad_idx][state_idx][seq_idx]
+        &self.core_data[ad_idx][state_idx][seq_idx]
     }
 }
 
@@ -981,16 +1001,27 @@ impl IndexMut<CoreCell> for AdMatrixQuadratic {
         let state_idx = cell.0.state_idx();
         let seq_idx = cell.1;
         let ad_idx = cell.0.profile_idx() + seq_idx;
-        &mut self.data[ad_idx][state_idx][seq_idx]
+        &mut self.core_data[ad_idx][state_idx][seq_idx]
     }
 }
 
+impl BackgroundCellIndexable for AdMatrixQuadratic {}
 impl CoreCellIndexable for AdMatrixQuadratic {}
+impl NewDpMatrix for AdMatrixQuadratic {
+    fn seq_len(&self) -> usize {
+        self.seq_len
+    }
+
+    fn profile_len(&self) -> usize {
+        self.profile_len
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct AdMatrixLinear {
     seq_len: usize,
-    data: [[Vec<f32>; 3]; 3],
+    core_data: [[Vec<f32>; 3]; 3],
+    background_data: [Vec<f32>; 4],
 }
 
 impl AdMatrixLinear {
@@ -1001,11 +1032,30 @@ impl AdMatrixLinear {
     }
 
     pub fn reuse(&mut self, new_seq_len: usize) {
-        self.data.iter_mut().for_each(|ad| {
+        self.core_data.iter_mut().for_each(|ad| {
             ad.iter_mut()
                 .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, -f32::INFINITY))
         });
+
+        self.background_data
+            .iter_mut()
+            .for_each(|v| v.resize_and_reset(new_seq_len + 2, -f32::INFINITY));
+
         self.seq_len = new_seq_len;
+    }
+}
+
+impl Index<BackgroundCell> for AdMatrixLinear {
+    type Output = f32;
+
+    fn index(&self, cell: BackgroundCell) -> &Self::Output {
+        &self.background_data[cell.0 as usize][cell.1]
+    }
+}
+
+impl IndexMut<BackgroundCell> for AdMatrixLinear {
+    fn index_mut(&mut self, cell: BackgroundCell) -> &mut Self::Output {
+        &mut self.background_data[cell.0 as usize][cell.1]
     }
 }
 
@@ -1017,7 +1067,7 @@ impl Index<CoreCell> for AdMatrixLinear {
         let seq_idx = cell.1;
         let ad_idx = cell.0.profile_idx() + seq_idx;
         let row_idx = ad_idx % 3;
-        &self.data[row_idx][state_idx][seq_idx]
+        &self.core_data[row_idx][state_idx][seq_idx]
     }
 }
 
@@ -1027,11 +1077,21 @@ impl IndexMut<CoreCell> for AdMatrixLinear {
         let seq_idx = cell.1;
         let ad_idx = cell.0.profile_idx() + seq_idx;
         let row_idx = ad_idx % 3;
-        &mut self.data[row_idx][state_idx][seq_idx]
+        &mut self.core_data[row_idx][state_idx][seq_idx]
     }
 }
 
+impl BackgroundCellIndexable for AdMatrixLinear {}
 impl CoreCellIndexable for AdMatrixLinear {}
+impl NewDpMatrix for AdMatrixLinear {
+    fn seq_len(&self) -> usize {
+        self.seq_len
+    }
+
+    fn profile_len(&self) -> usize {
+        panic!("AdMatrixLinear has no Profile length")
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1136,9 +1196,9 @@ mod tests {
                 mx[c.d_cell()] = val + 0.2;
 
                 let ad_idx = c.prf_idx + c.seq_idx;
-                assert!(mx.data[ad_idx][0][c.seq_idx] == val);
-                assert!(mx.data[ad_idx][1][c.seq_idx] == val + 0.1);
-                assert!(mx.data[ad_idx][2][c.seq_idx] == val + 0.2);
+                assert!(mx.core_data[ad_idx][0][c.seq_idx] == val);
+                assert!(mx.core_data[ad_idx][1][c.seq_idx] == val + 0.1);
+                assert!(mx.core_data[ad_idx][2][c.seq_idx] == val + 0.2);
                 val += 1.0;
             });
         });
@@ -1168,9 +1228,9 @@ mod tests {
                 lin_mx[c.d_cell()] = val + 0.2;
 
                 let row_idx = (c.prf_idx + c.seq_idx) % 3;
-                assert!(lin_mx.data[row_idx][0][c.seq_idx] == quad_mx[c.m_cell()]);
-                assert!(lin_mx.data[row_idx][1][c.seq_idx] == quad_mx[c.i_cell()]);
-                assert!(lin_mx.data[row_idx][2][c.seq_idx] == quad_mx[c.d_cell()]);
+                assert!(lin_mx.core_data[row_idx][0][c.seq_idx] == quad_mx[c.m_cell()]);
+                assert!(lin_mx.core_data[row_idx][1][c.seq_idx] == quad_mx[c.i_cell()]);
+                assert!(lin_mx.core_data[row_idx][2][c.seq_idx] == quad_mx[c.d_cell()]);
 
                 val += 1.0;
             });

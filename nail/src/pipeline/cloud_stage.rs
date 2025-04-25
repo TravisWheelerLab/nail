@@ -1,17 +1,17 @@
-use std::time::{Duration, Instant};
+use std::{
+    io::stdout,
+    time::{Duration, Instant},
+};
 
 use derive_builder::Builder;
 use libnail::{
     align::{
-        cloud_score, cloud_search_backward, cloud_search_forward, cloud_search_test, forward_test,
-        null_one_score, p_value,
-        structs::{
-            AdMatrixSparse, Cloud, CloudMatrixLinear, CloudMatrixQuadratic, DpMatrixFlat,
-            RowBounds, Seed,
-        },
+        cloud_score, cloud_search_backward, cloud_search_backward2, cloud_search_forward,
+        cloud_search_forward2, null_one_score, p_value,
+        structs::{AdMatrixLinear, AdMatrixQuadratic, Cloud, CloudMatrixLinear, RowBounds, Seed},
         CloudSearchParams, Nats,
     },
-    structs::{sequence, Profile, Sequence},
+    structs::{Profile, Sequence},
 };
 
 use crate::args::SearchArgs;
@@ -64,48 +64,47 @@ dyn_clone::clone_trait_object!(CloudSearchStage);
 pub struct TmpDebugCloudSearchStage {}
 
 impl CloudSearchStage for TmpDebugCloudSearchStage {
-    fn run(&mut self, profile: &Profile, target: &Sequence, _: &Seed) -> CloudStageResult {
+    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult {
+        println!("{seed:?}");
+        let params = CloudSearchParams::default();
         let mut profile = profile.clone();
+        let mut cloud = Cloud::new(target.length, profile.length);
+
         profile.configure_for_target_length(target.length);
 
-        // let mut fwd_lin = CloudMatrixLinear::new(profile.length);
-        // let mut bwd_lin = CloudMatrixLinear::new(profile.length);
-        // cloud_search_test(profile, target, seed, &mut fwd_lin, &mut bwd_lin);
+        let mut fwd_lin = AdMatrixLinear::new(target.length);
+        let mut bwd_lin = AdMatrixLinear::new(target.length);
 
-        // let mut fwd_cloud_quad = CloudMatrixQuadratic::new(target.length, profile.length);
-        // let mut bwd_cloud_quad = CloudMatrixQuadratic::new(target.length, profile.length);
+        let mut fwd_quad = AdMatrixQuadratic::new(profile.length, target.length);
+        let mut bwd_quad = AdMatrixQuadratic::new(profile.length, target.length);
 
-        // cloud_search_test(
-        //     &mut profile,
-        //     target,
-        //     &mut fwd_cloud_quad,
-        //     &mut bwd_cloud_quad,
-        // );
+        println!("-- forward --");
 
-        let mut fwd_matrix_og = DpMatrixFlat::new(target.length, profile.length);
-        let mut bwd_matrix_og = DpMatrixFlat::new(target.length, profile.length);
-        forward_test(
-            &mut profile,
-            target,
-            &mut fwd_matrix_og,
-            &mut bwd_matrix_og,
-            "1",
-        );
+        let fl_res =
+            cloud_search_forward2(&profile, target, seed, &mut fwd_lin, &params, &mut cloud);
 
-        let mut bounds = Cloud::new(target.length, profile.length);
-        bounds.fill_rectangle(0, 0, target.length, profile.length);
-        let mut fwd_matrix_new = AdMatrixSparse::from_cloud(&bounds);
-        let mut bwd_matrix_new = AdMatrixSparse::from_cloud(&bounds);
+        cloud.image().print();
 
-        forward_test(
-            &mut profile,
-            target,
-            &mut fwd_matrix_new,
-            &mut bwd_matrix_new,
-            "2",
-        );
+        println!("-- backward --");
 
-        fwd_matrix_new.layout();
+        let bl_res =
+            cloud_search_backward2(&profile, target, seed, &mut bwd_lin, &params, &mut cloud);
+
+        cloud.image().print();
+
+        let fq_res =
+            cloud_search_forward2(&profile, target, seed, &mut fwd_quad, &params, &mut cloud);
+        let bq_res =
+            cloud_search_backward2(&profile, target, seed, &mut bwd_quad, &params, &mut cloud);
+
+        println!();
+
+        println!("{fl_res:?}");
+        println!("{bl_res:?}");
+        println!("{fq_res:?}");
+        println!("{bq_res:?}");
+
+        println!();
 
         StageResult::Filtered {
             stats: CloudStageStatsBuilder::default().build().unwrap(),

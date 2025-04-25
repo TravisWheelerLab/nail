@@ -156,6 +156,7 @@ pub trait VecUtils<T>
 where
     T: Clone,
 {
+    fn reset(&mut self, value: T);
     fn grow_or_shrink(&mut self, new_len: usize, value: T);
     fn resize_and_reset(&mut self, new_len: usize, value: T);
 }
@@ -164,6 +165,10 @@ impl<T> VecUtils<T> for Vec<T>
 where
     T: Clone,
 {
+    fn reset(&mut self, value: T) {
+        self.iter_mut().for_each(|v| *v = value.clone());
+    }
+
     fn resize_and_reset(&mut self, new_len: usize, value: T) {
         match new_len.cmp(&self.len()) {
             Less => {
