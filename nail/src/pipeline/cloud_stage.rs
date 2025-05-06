@@ -1,4 +1,5 @@
 use std::{
+    fs::File,
     io::stdout,
     time::{Duration, Instant},
 };
@@ -8,10 +9,14 @@ use libnail::{
     align::{
         cloud_score, cloud_search_backward, cloud_search_backward2, cloud_search_forward,
         cloud_search_forward2, null_one_score, p_value,
-        structs::{AdMatrixLinear, AdMatrixQuadratic, Cloud, CloudMatrixLinear, RowBounds, Seed},
+        structs::{
+            AdMatrixLinear, AdMatrixQuadratic, Cloud, CloudMatrixLinear, NewDpMatrix, RowBounds,
+            Seed,
+        },
         CloudSearchParams, Nats,
     },
     structs::{Profile, Sequence},
+    util::CollectionPrint,
 };
 
 use crate::args::SearchArgs;
@@ -72,40 +77,43 @@ impl CloudSearchStage for TmpDebugCloudSearchStage {
 
         profile.configure_for_target_length(target.length);
 
-        let mut fwd_lin = AdMatrixLinear::new(target.length);
-        let mut bwd_lin = AdMatrixLinear::new(target.length);
+        let mut fwd_lin = AdMatrixLinear::default();
+        let mut bwd_lin = AdMatrixLinear::default();
 
-        let mut fwd_quad = AdMatrixQuadratic::new(profile.length, target.length);
-        let mut bwd_quad = AdMatrixQuadratic::new(profile.length, target.length);
+        let mut fwd_quad = AdMatrixQuadratic::default();
+        let mut bwd_quad = AdMatrixQuadratic::default();
 
         println!("-- forward --");
-
-        let fl_res =
-            cloud_search_forward2(&profile, target, seed, &mut fwd_lin, &params, &mut cloud);
-
-        cloud.image().print();
-
-        println!("-- backward --");
-
-        let bl_res =
-            cloud_search_backward2(&profile, target, seed, &mut bwd_lin, &params, &mut cloud);
-
-        cloud.image().print();
+        // let fl_res =
+        //     cloud_search_forward2(&profile, target, seed, &mut fwd_lin, &params, &mut cloud);
 
         let fq_res =
             cloud_search_forward2(&profile, target, seed, &mut fwd_quad, &params, &mut cloud);
+
+        // println!("{fl_res:?}");
+        println!("{fq_res:?}");
+        println!();
+
+        println!("-- backward --");
+        // let bl_res =
+        //     cloud_search_backward2(&profile, target, seed, &mut bwd_lin, &params, &mut cloud);
+
         let bq_res =
             cloud_search_backward2(&profile, target, seed, &mut bwd_quad, &params, &mut cloud);
 
-        println!();
-
-        println!("{fl_res:?}");
-        println!("{bl_res:?}");
-        println!("{fq_res:?}");
+        // println!("{bl_res:?}");
         println!("{bq_res:?}");
-
         println!();
 
+        fwd_quad
+            .dump(&mut File::create("nail.fwd.mat").unwrap())
+            .unwrap();
+
+        bwd_quad
+            .dump(&mut File::create("nail.bwd.mat").unwrap())
+            .unwrap();
+
+        println!();
         StageResult::Filtered {
             stats: CloudStageStatsBuilder::default().build().unwrap(),
         }

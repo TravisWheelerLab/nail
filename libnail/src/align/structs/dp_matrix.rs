@@ -3,7 +3,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use super::{Cell, Cloud, RowBounds};
+use super::{Bound, Cell, Cloud, RowBounds};
 use crate::{
     structs::{profile::CoreToCore, Profile},
     util::VecUtils,
@@ -65,8 +65,8 @@ impl CoreState {
 pub enum BackgroundState {
     N = 0,
     B = 1,
-    C = 2,
-    E = 3,
+    E = 2,
+    C = 3,
 }
 
 pub type CoreCell = (CoreState, usize);
@@ -286,7 +286,7 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
         let t_idx_width = self.seq_len().to_string().len();
         let first_column_width = t_idx_width + 3;
         // TODO: configurable?
-        const W: usize = 13;
+        const W: usize = 10;
         const P: usize = 3;
 
         // -- profile indices
@@ -318,12 +318,11 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
                 write!(out, "{:w$.p$} ", self[(M(p_idx), t_idx)], w = W, p = P)?;
             }
 
-            // -- special
-            write!(out, "{:w$.p$} ", self[(E, t_idx)], w = W, p = P)?;
             write!(out, "{:w$.p$} ", self[(N, t_idx)], w = W, p = P)?;
-            write!(out, "{:w$.p$} ", -f32::INFINITY, w = W, p = P)?;
             write!(out, "{:w$.p$} ", self[(B, t_idx)], w = W, p = P)?;
+            write!(out, "{:w$.p$} ", self[(E, t_idx)], w = W, p = P)?;
             write!(out, "{:w$.p$} ", self[(C, t_idx)], w = W, p = P)?;
+            write!(out, "{:w$.p$} ", -f32::INFINITY, w = W, p = P)?;
             writeln!(out)?;
 
             // -- insert
@@ -343,6 +342,11 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
 
         Ok(())
     }
+}
+
+pub trait NewCloudMatrix: NewDpMatrix {
+    fn reset_ad(&mut self, bound: &Bound);
+    fn reuse(&mut self, prf_len: usize, seq_len: usize);
 }
 
 impl<T: NewDpMatrix> DpMatrix for T {
@@ -893,8 +897,8 @@ impl AdMatrixQuadratic {
         mx
     }
 
-    pub fn reuse(&mut self, new_profile_len: usize, new_seq_len: usize) {
-        let num_ad = new_profile_len + new_seq_len + 1;
+    pub fn reuse(&mut self, new_prf_len: usize, new_seq_len: usize) {
+        let num_ad = new_prf_len + new_seq_len + 1;
         self.core_data
             .grow_or_shrink(num_ad, [vec![], vec![], vec![]]);
 
@@ -907,7 +911,7 @@ impl AdMatrixQuadratic {
             .iter_mut()
             .for_each(|v| v.resize_and_reset(new_seq_len + 2, -f32::INFINITY));
 
-        self.profile_len = new_profile_len;
+        self.profile_len = new_prf_len;
         self.seq_len = new_seq_len;
     }
 
@@ -920,54 +924,6 @@ impl AdMatrixQuadratic {
             ad[0].iter().for_each(|val| print!("| {val:5.1} "));
             println!();
         })
-    }
-
-    pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
-        use CoreState::*;
-
-        let s_idx_width = self.seq_len.to_string().len();
-        let first_column_width = s_idx_width + 3;
-        // TODO: configurable?
-        const W: usize = 13;
-        const P: usize = 3;
-
-        // -- profile indices
-        write!(out, "{}", " ".repeat(first_column_width - 1))?;
-        for p_idx in 0..=self.profile_len {
-            write!(out, "{:w$} ", p_idx, w = W)?;
-        }
-        writeln!(out)?;
-
-        write!(out, "{}", " ".repeat(first_column_width))?;
-        for _ in 0..=self.profile_len {
-            write!(out, "   {} ", "-".repeat(W - 3))?;
-        }
-        writeln!(out)?;
-
-        for p_idx in 0..=self.profile_len {
-            // -- match
-            write!(out, "{:w$} M ", p_idx, w = s_idx_width)?;
-            for s_idx in 0..=self.seq_len {
-                write!(out, "{:w$.p$} ", self[(M(p_idx), s_idx)], w = W, p = P)?;
-            }
-            writeln!(out)?;
-
-            // -- insert
-            write!(out, "{:w$} I ", p_idx, w = s_idx_width)?;
-            for s_idx in 0..=self.seq_len {
-                write!(out, "{:w$.p$} ", self[(I(p_idx), s_idx)], w = W, p = P)?;
-            }
-            writeln!(out)?;
-
-            // -- delete
-            write!(out, "{:w$} D ", p_idx, w = s_idx_width)?;
-            for s_idx in 0..=self.seq_len {
-                write!(out, "{:w$.p$} ", self[(D(p_idx), s_idx)], w = W, p = P)?;
-            }
-            writeln!(out, "\n")?;
-        }
-
-        Ok(())
     }
 }
 
@@ -1014,6 +970,16 @@ impl NewDpMatrix for AdMatrixQuadratic {
 
     fn profile_len(&self) -> usize {
         self.profile_len
+    }
+}
+
+impl NewCloudMatrix for AdMatrixQuadratic {
+    fn reuse(&mut self, prf_len: usize, seq_len: usize) {
+        self.reuse(prf_len, seq_len);
+    }
+
+    fn reset_ad(&mut self, _: &Bound) {
+        // no-op
     }
 }
 
@@ -1090,6 +1056,20 @@ impl NewDpMatrix for AdMatrixLinear {
 
     fn profile_len(&self) -> usize {
         panic!("AdMatrixLinear has no Profile length")
+    }
+}
+
+impl NewCloudMatrix for AdMatrixLinear {
+    fn reuse(&mut self, _: usize, seq_len: usize) {
+        self.reuse(seq_len);
+    }
+
+    fn reset_ad(&mut self, bound: &Bound) {
+        bound.iter().for_each(|c| {
+            self[c.m_cell()] = -f32::INFINITY;
+            self[c.i_cell()] = -f32::INFINITY;
+            self[c.d_cell()] = -f32::INFINITY;
+        });
     }
 }
 
@@ -1189,7 +1169,7 @@ mod tests {
         let mut mx = AdMatrixQuadratic::new(S, P);
 
         let mut val = 1.0;
-        cloud.new_bounds().iter().for_each(|b| {
+        cloud.new_bounds.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 mx[c.m_cell()] = val;
                 mx[c.i_cell()] = val + 0.1;
@@ -1217,7 +1197,7 @@ mod tests {
         let mut lin_mx = AdMatrixLinear::new(S);
 
         let mut val = 1.0;
-        cloud.new_bounds().iter().for_each(|b| {
+        cloud.new_bounds.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 quad_mx[c.m_cell()] = val;
                 quad_mx[c.i_cell()] = val + 0.1;
@@ -1292,7 +1272,7 @@ mod tests {
         let mut mx = AdMatrixSparse::from_cloud(&cloud);
 
         let mut val = 1.0;
-        cloud.new_bounds().iter().for_each(|b| {
+        cloud.new_bounds.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 mx[c.m_cell()] = val;
                 mx[c.i_cell()] = val + 0.1;

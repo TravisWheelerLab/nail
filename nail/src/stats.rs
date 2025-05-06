@@ -123,15 +123,15 @@ impl AllocationSize for Profile {
             + self.max_length.size()
             + Bytes(self.core_transitions.capacity() * std::mem::size_of::<[f32; 8]>())
             + Bytes(
-                self.match_scores.capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.match_scores
+                self.emission_scores[Self::MATCH_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
+                    + self.emission_scores[Self::MATCH_IDX]
                         .iter()
                         .map(|s| s.capacity() * std::mem::size_of::<f32>())
                         .sum::<usize>(),
             )
             + Bytes(
-                self.insert_scores.capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.insert_scores
+                self.emission_scores[Self::INSERT_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
+                    + self.emission_scores[Self::INSERT_IDX]
                         .iter()
                         .map(|s| s.capacity() * std::mem::size_of::<f32>())
                         .sum::<usize>(),

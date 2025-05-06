@@ -281,9 +281,9 @@ pub fn null_two_score(
         // the posterior probability of being in a special
         // state at this target position is the sum of
         // the individual posteriors of each special state
-        let special_posterior = posterior_matrix.get_special(target_idx, Profile::SPECIAL_N_IDX)
-            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
-            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX);
+        let special_posterior = posterior_matrix.get_special(target_idx, Profile::N_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::J_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::C_IDX);
 
         let core_posterior = 1.0 - special_posterior;
         core_posteriors[target_idx] = core_posterior;

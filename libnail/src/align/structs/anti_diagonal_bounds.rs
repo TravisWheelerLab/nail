@@ -112,8 +112,23 @@ pub(crate) struct ArrayProfileMajorBound([usize; 4]);
 #[allow(dead_code)]
 pub(crate) struct ArraySeqMajorBound([usize; 4]);
 
-#[derive(Default, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Bound(pub Cell, pub Cell);
+
+impl Default for Bound {
+    fn default() -> Self {
+        Self(
+            Cell {
+                prf_idx: 0,
+                seq_idx: 0,
+            },
+            Cell {
+                prf_idx: 0,
+                seq_idx: 0,
+            },
+        )
+    }
+}
 
 impl From<AntiDiagonal> for Bound {
     fn from(value: AntiDiagonal) -> Self {
@@ -193,6 +208,20 @@ impl Bound {
     }
 }
 
+impl Display for Bound {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(p{}, s{}), (p{}, s{}) | AD: {}",
+            self.0.prf_idx,
+            self.0.seq_idx,
+            self.1.prf_idx,
+            self.1.seq_idx,
+            self.idx()
+        )
+    }
+}
+
 impl Debug for Bound {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -233,12 +262,13 @@ impl Iterator for BoundIter {
     type Item = Cell;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.profile_start >= self.profile_end {
+        if self.seq_start <= self.seq_end {
             let cell = Cell {
                 prf_idx: self.profile_start,
                 seq_idx: self.seq_start,
             };
-            self.profile_start -= 1;
+            // saturating sub catches edge case (p0, s<n>)
+            self.profile_start = self.profile_start.saturating_sub(1);
             self.seq_start += 1;
             Some(cell)
         } else {
@@ -255,7 +285,8 @@ impl DoubleEndedIterator for BoundIter {
                 seq_idx: self.seq_end,
             };
             self.profile_end += 1;
-            self.seq_end -= 1;
+            // saturating sub catches edge case (p<n>, s0)
+            self.seq_end = self.seq_end.saturating_sub(1);
             Some(cell)
         } else {
             None
