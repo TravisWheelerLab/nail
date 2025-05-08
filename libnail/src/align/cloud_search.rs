@@ -140,9 +140,9 @@ pub fn scrub_co_located(
 
 #[inline]
 pub fn compute_backward_cells<M>(
-    profile: &Profile,
+    prf: &Profile,
     seq: &Sequence,
-    matrix: &mut M,
+    mx: &mut M,
     prf_idx: usize,
     seq_idx: usize,
 ) where
@@ -169,32 +169,56 @@ pub fn compute_backward_cells<M>(
     let d_src_cell = d_src.cell_at(seq_idx);
 
     // -- match state
+    // MMX(i,k) = MMX(i+1,k+1) + TSC(p7P_MM,k) + MSC(k+1)
+    //            IMX(i+1,k)   + TSC(p7P_MI,k) + ISC(k)
+    //            DMX(i,  k+1) + TSC(p7P_MD,k))
+    //            XMX(i,p7G_E) + esc
     let m_dest = M(prf_idx);
     let m_cell = m_dest.cell_at(seq_idx);
 
-    matrix[m_cell] = log_sum!(
-        matrix[m_src_cell] + profile[CoreToCore(m_dest, m_src)] + profile[Emission(m_src, residue)],
-        matrix[i_src_cell] + profile[CoreToCore(m_dest, i_src)] + profile[Emission(i_src, residue)],
-        matrix[d_src_cell] + profile[CoreToCore(m_dest, d_src)],
-        matrix[(C, seq_idx)]
+    mx[m_cell] = log_sum!(
+        mx[m_src_cell] + prf[CoreToCore(m_dest, m_src)] + prf[Emission(m_src, residue)],
+        mx[i_src_cell] + prf[CoreToCore(m_dest, i_src)] + prf[Emission(i_src, residue)],
+        mx[d_src_cell] + prf[CoreToCore(m_dest, d_src)],
+        mx[(E, seq_idx)]
     );
 
     // -- insert state
+    // IMX(i,k) = MMX(i+1,k+1) + TSC(p7P_IM,k) + MSC(k+1),
+    //            IMX(i+1,k)   + TSC(p7P_II,k) + ISC(k)
     let i_dest = I(prf_idx);
     let i_cell = i_dest.cell_at(seq_idx);
 
-    matrix[i_cell] = log_sum!(
-        matrix[m_src_cell] + profile[CoreToCore(i_dest, m_src)] + profile[Emission(m_src, residue)],
-        matrix[i_src_cell] + profile[CoreToCore(i_dest, i_src)] + profile[Emission(i_src, residue)]
+    mx[i_cell] = log_sum!(
+        mx[m_src_cell] + prf[CoreToCore(i_dest, m_src)] + prf[Emission(m_src, residue)],
+        mx[i_src_cell] + prf[CoreToCore(i_dest, i_src)] + prf[Emission(i_src, residue)]
     );
 
     // -- delete state
+    // DMX(i,k) = MMX(i+1,k+1)  + TSC(p7P_DM,k) + MSC(k+1)
+    //            DMX(i,  k+1)  + TSC(p7P_DD,k)
+    //            XMX(i, p7G_E) + esc
     let d_dest = D(prf_idx);
     let d_cell = d_dest.cell_at(seq_idx);
 
-    matrix[d_cell] = log_sum!(
-        matrix[m_src_cell] + profile[CoreToCore(d_dest, m_src)] + profile[Emission(m_src, residue)],
-        matrix[d_src_cell] + profile[CoreToCore(d_dest, d_src)]
+    mx[d_cell] = log_sum!(
+        mx[m_src_cell] + prf[CoreToCore(d_dest, m_src)] + prf[Emission(m_src, residue)],
+        mx[d_src_cell] + prf[CoreToCore(d_dest, d_src)],
+        mx[(E, seq_idx)]
+    );
+
+    // XMX(i,p7G_B) = MMX(i+1,1) + TSC(p7P_BM,0) + MSC(1); /* t_BM index is 0 because it's stored off-by-one. */
+    // for (k = 2; k <= M; k++) {
+    //   XMX(i,p7G_B) = p7_FLogsum(
+    //      XMX(i, p7G_B),
+    //      MMX(i+1,k) + TSC(p7P_BM,k-1) + MSC(k)
+    //   );
+    // }
+    mx[(B, seq_idx)] = log_sum!(
+        mx[(B, seq_idx)],
+        mx[m_src_cell]
+            + prf.transition_score(Profile::B_M_IDX, prf_idx - 1)
+            + prf[Emission(m_src, residue)]
     );
 }
 
@@ -328,10 +352,14 @@ where
 
     // precompute background (C) scores
     let seq_idx = cell_start.seq_idx + 1;
-    let num_loops = seq.length - cell_start.seq_idx + 1;
-    mx[(C, seq_idx)] = num_loops as f32 * prf[BackgroundLoop(C)];
-    (0..=cell_start.seq_idx).rev().for_each(|seq_idx| {
+    let num_loops = seq.length - cell_start.seq_idx - 1;
+    mx[(C, seq_idx)] = num_loops as f32 * prf[BackgroundLoop(C)]
+        + prf.special_transitions[Profile::C_IDX][Profile::SPECIAL_MOVE_IDX];
+
+    (1..=cell_start.seq_idx).rev().for_each(|seq_idx| {
         mx[(C, seq_idx)] = mx[(C, seq_idx + 1)] + prf[BackgroundLoop(C)];
+        mx[(E, seq_idx)] =
+            mx[(C, seq_idx)] + prf.special_transitions[Profile::E_IDX][Profile::SPECIAL_MOVE_IDX];
     });
 
     for idx in (min_ad..=cell_start.idx()).rev() {
@@ -379,6 +407,16 @@ where
         }
     }
 
+    (0..=cell_start.seq_idx).rev().for_each(|seq_idx| {
+        // XMX(i,p7G_N) = p7_FLogsum(
+        //     XMX(i+1,p7G_N) + gm->xsc[p7P_N][p7P_LOOP],
+        //     XMX(i,  p7G_B) + gm->xsc[p7P_N][p7P_MOVE]
+        // );
+        mx[(N, seq_idx)] = log_sum!(
+            mx[(N, seq_idx + 1)] + prf[BackgroundLoop(N)],
+            mx[(B, seq_idx)] + prf.special_transitions[Profile::N_IDX][Profile::SPECIAL_MOVE_IDX]
+        );
+    });
     CloudSearchResults {
         max_score: Nats(max_score),
         max_score_within: Nats(max_score_within),
