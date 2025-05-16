@@ -913,65 +913,69 @@ impl Cloud {
     }
 
     pub fn advance_forward(&mut self) {
-        let last_bound = self.last();
-
-        let next_idx = self.ad_end + 1;
+        let last = &self.new_bounds[self.ad_end];
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move past the target length, and 0 otherwise
-        let profile_addend = ((last_bound.left_target_idx + 1) > self.seq_len) as usize;
+        let prf_add = ((last.1.seq_idx + 1) > self.seq_len) as usize;
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move past the profile length, and 0 otherwise
-        let target_addend = ((last_bound.right_profile_idx + 1) > self.prf_len) as usize;
+        let seq_add = ((last.0.prf_idx + 1) > self.prf_len) as usize;
 
-        self.set(
-            next_idx,
-            // prevent moving past the target length
-            (last_bound.left_target_idx + 1).min(self.seq_len),
-            // if we hit the target length, then the
-            // addend is 1 and we'll move right a cell
-            last_bound.left_profile_idx + profile_addend,
-            // if we hit the profile length, then the
-            // addend is 1 and we'll drop down a cell
-            last_bound.right_target_idx + target_addend,
-            // prevent moving past the profile length
-            (last_bound.right_profile_idx + 1).min(self.prf_len),
+        self.new_bounds[self.ad_end + 1] = Bound(
+            Cell {
+                prf_idx: (last.0.prf_idx + 1).min(self.prf_len),
+                seq_idx: last.0.seq_idx + seq_add,
+            },
+            Cell {
+                prf_idx: last.1.prf_idx + prf_add,
+                seq_idx: (last.1.seq_idx + 1).min(self.seq_len),
+            },
         );
 
-        self[Ad(next_idx)] = self.get(next_idx).into();
-        self.ad_end = next_idx;
+        self.ad_end += 1;
+
+        self.set(
+            self.ad_end,
+            self.new_bounds[self.ad_end].1.seq_idx,
+            self.new_bounds[self.ad_end].1.prf_idx,
+            self.new_bounds[self.ad_end].0.seq_idx,
+            self.new_bounds[self.ad_end].0.prf_idx,
+        )
     }
 
     pub fn advance_reverse(&mut self) {
-        let first_bound = self.first();
-
-        let next_idx = self.ad_start - 1;
+        let first = &self.new_bounds[self.ad_start];
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move before target index 1, and 0 otherwise
-        let profile_subtrahend = ((first_bound.right_target_idx.saturating_sub(1)) < 1) as usize;
+        let prf_sub = ((first.0.seq_idx.saturating_sub(1)) < 1) as usize;
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move before profle index 1, and 0 otherwise
-        let target_subtrahend = ((first_bound.left_profile_idx.saturating_sub(1)) < 1) as usize;
+        let seq_sub = ((first.1.prf_idx.saturating_sub(1)) < 1) as usize;
 
-        self.set(
-            next_idx,
-            // if we hit the profile index 1, then the
-            // subtrahend is 1 and we'll move up a cell
-            first_bound.left_target_idx - target_subtrahend,
-            // prevent moving before profile index 1
-            (first_bound.left_profile_idx - 1).max(1),
-            // prevent moving before target index 1
-            (first_bound.right_target_idx - 1).max(1),
-            // if we hit the target index 1, then the
-            // subtrahend is 1 and we'll move left a cell
-            first_bound.right_profile_idx - profile_subtrahend,
+        self.new_bounds[self.ad_start - 1] = Bound(
+            Cell {
+                prf_idx: first.0.prf_idx - prf_sub,
+                seq_idx: (first.0.seq_idx - 1).max(1),
+            },
+            Cell {
+                prf_idx: (first.1.prf_idx - 1).max(1),
+                seq_idx: first.1.seq_idx - seq_sub,
+            },
         );
 
-        self[Ad(next_idx)] = self.get(next_idx).into();
-        self.ad_start = next_idx;
+        self.ad_start -= 1;
+
+        self.set(
+            self.ad_start,
+            self.new_bounds[self.ad_start].1.seq_idx,
+            self.new_bounds[self.ad_start].1.prf_idx,
+            self.new_bounds[self.ad_start].0.seq_idx,
+            self.new_bounds[self.ad_start].0.prf_idx,
+        )
     }
 
     pub fn fill_rectangle(
@@ -1346,6 +1350,7 @@ pub mod debug {
             other: Option<&Self>,
             path: impl AsRef<Path>,
         ) -> anyhow::Result<()> {
+            let path = path.as_ref();
             let vec_img = self.vec_image(other)?;
 
             let mut img = RgbImage::new(vec_img[0].len() as u32, vec_img.len() as u32);
@@ -1366,7 +1371,8 @@ pub mod debug {
                 }
             }
 
-            img.save(path).context("failed to write image")
+            img.save(path)
+                .with_context(|| format!("failed to write image to: {}", path.to_string_lossy()))
         }
     }
 }

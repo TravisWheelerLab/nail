@@ -1,3 +1,4 @@
+use core::f32;
 use std::{
     io::Write,
     ops::{Index, IndexMut},
@@ -291,9 +292,11 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
 
         // -- profile indices
         write!(out, "{}", " ".repeat(first_column_width - 1))?;
-        for p_idx in 0..=self.profile_len() {
+        write!(out, "{:>w$} ", "∅", w = W)?;
+        for p_idx in 1..=self.profile_len() {
             write!(out, "{:w$} ", p_idx, w = W)?;
         }
+        write!(out, "{:>w$} ", "∅", w = W)?;
 
         for s_idx in 0..Profile::NUM_SPECIAL_STATES {
             write!(
@@ -306,15 +309,21 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
         writeln!(out)?;
 
         write!(out, "{}", " ".repeat(first_column_width))?;
-        for _ in 0..=self.profile_len() + Profile::NUM_SPECIAL_STATES {
+        for _ in 0..=self.profile_len() + 1 + Profile::NUM_SPECIAL_STATES {
             write!(out, "   {} ", "-".repeat(W - 3))?;
         }
         writeln!(out)?;
 
-        for t_idx in 0..=self.seq_len() {
+        for t_idx in 0..=self.seq_len() + 1 {
             // -- match
-            write!(out, "{:w$} M ", t_idx, w = t_idx_width)?;
-            for p_idx in 0..=self.profile_len() {
+            let idx_str = if t_idx == 0 || t_idx > self.seq_len() {
+                format!("{:>w$}", "∅", w = t_idx_width)
+            } else {
+                format!("{t_idx:w$}", w = t_idx_width)
+            };
+
+            write!(out, "{idx_str} M ")?;
+            for p_idx in 0..=self.profile_len() + 1 {
                 write!(out, "{:w$.p$} ", self[(M(p_idx), t_idx)], w = W, p = P)?;
             }
 
@@ -326,15 +335,15 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
             writeln!(out)?;
 
             // -- insert
-            write!(out, "{:w$} I ", t_idx, w = t_idx_width)?;
-            for p_idx in 0..=self.profile_len() {
+            write!(out, "{idx_str} I ")?;
+            for p_idx in 0..=self.profile_len() + 1 {
                 write!(out, "{:w$.p$} ", self[(I(p_idx), t_idx)], w = W, p = P)?;
             }
             writeln!(out)?;
 
             // -- delete
-            write!(out, "{:w$} D ", t_idx, w = t_idx_width)?;
-            for p_idx in 0..=self.profile_len() {
+            write!(out, "{idx_str} D ")?;
+            for p_idx in 0..=self.profile_len() + 1 {
                 write!(out, "{:w$.p$} ", self[(D(p_idx), t_idx)], w = W, p = P)?;
             }
             writeln!(out, "\n")?;
@@ -898,18 +907,21 @@ impl AdMatrixQuadratic {
     }
 
     pub fn reuse(&mut self, new_prf_len: usize, new_seq_len: usize) {
-        let num_ad = new_prf_len + new_seq_len + 1;
+        // +1 for left-pad & +2 for right-pad
+        let num_ad = new_prf_len + new_seq_len + 3;
+        // +1 for left-pad & +1 right-pad
+        let ad_len = new_seq_len + 2;
         self.core_data
             .grow_or_shrink(num_ad, [vec![], vec![], vec![]]);
 
         self.core_data.iter_mut().for_each(|ad| {
             ad.iter_mut()
-                .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, -f32::INFINITY))
+                .for_each(|core_vec| core_vec.resize_and_reset(ad_len, -f32::INFINITY))
         });
 
         self.background_data
             .iter_mut()
-            .for_each(|v| v.resize_and_reset(new_seq_len + 2, -f32::INFINITY));
+            .for_each(|v| v.resize_and_reset(ad_len, -f32::INFINITY));
 
         self.profile_len = new_prf_len;
         self.seq_len = new_seq_len;

@@ -329,6 +329,7 @@ impl Hmm {
             .iter()
             .enumerate()
             .skip(1)
+            .take(seq.length)
             .for_each(|(pos, &residue)| {
                 match_probabilities[pos] =
                     BLOSUM_62_CONDITIONAL_PROB[residue as usize][0..AMINO_ALPHABET.len()].to_vec();

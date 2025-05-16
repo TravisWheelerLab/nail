@@ -157,11 +157,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let ok = targets.clone();
     let mut pipeline = Pipeline {
         targets,
-        // seed: Box::new(DefaultSeedStage::new(seeds)),
-        seed: Box::new(MaxSeedStage::new(&queries, &ok)),
+        seed: Box::new(DefaultSeedStage::new(seeds)),
+        // seed: Box::new(MaxSeedStage::new(&queries, &ok)),
         cloud_search: Box::new(TmpDebugCloudSearchStage::default()),
         // cloud_search: match args.dev_args.full_dp {
         //     true => Box::<FullDpCloudSearchStage>::default(),

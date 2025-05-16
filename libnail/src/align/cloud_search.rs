@@ -1,7 +1,7 @@
 use crate::align::structs::{AntiDiagonal, Cloud, CloudMatrixLinear, Seed};
 use crate::log_sum;
 use crate::max_f32;
-use crate::structs::profile::{AminoAcid, BackgroundLoop, CoreEntry, CoreToCore, Emission};
+use crate::structs::profile::{AminoAcid, BackgroundLoop, CoreToCore, Emission};
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
@@ -32,7 +32,7 @@ pub enum PruneStatus {
     PartiallyPruned,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 pub struct CloudSearchResults {
     pub max_score: Nats,
     pub max_score_within: Nats,
@@ -168,11 +168,6 @@ pub fn compute_backward_cells<M>(
     let i_src_cell = i_src.cell_at(seq_idx + 1);
     let d_src_cell = d_src.cell_at(seq_idx);
 
-    // -- match state
-    // MMX(i,k) = MMX(i+1,k+1) + TSC(p7P_MM,k) + MSC(k+1)
-    //            IMX(i+1,k)   + TSC(p7P_MI,k) + ISC(k)
-    //            DMX(i,  k+1) + TSC(p7P_MD,k))
-    //            XMX(i,p7G_E) + esc
     let m_dest = M(prf_idx);
     let m_cell = m_dest.cell_at(seq_idx);
 
@@ -183,9 +178,6 @@ pub fn compute_backward_cells<M>(
         mx[(E, seq_idx)]
     );
 
-    // -- insert state
-    // IMX(i,k) = MMX(i+1,k+1) + TSC(p7P_IM,k) + MSC(k+1),
-    //            IMX(i+1,k)   + TSC(p7P_II,k) + ISC(k)
     let i_dest = I(prf_idx);
     let i_cell = i_dest.cell_at(seq_idx);
 
@@ -194,10 +186,6 @@ pub fn compute_backward_cells<M>(
         mx[i_src_cell] + prf[CoreToCore(i_dest, i_src)] + prf[Emission(i_src, residue)]
     );
 
-    // -- delete state
-    // DMX(i,k) = MMX(i+1,k+1)  + TSC(p7P_DM,k) + MSC(k+1)
-    //            DMX(i,  k+1)  + TSC(p7P_DD,k)
-    //            XMX(i, p7G_E) + esc
     let d_dest = D(prf_idx);
     let d_cell = d_dest.cell_at(seq_idx);
 
@@ -207,17 +195,10 @@ pub fn compute_backward_cells<M>(
         mx[(E, seq_idx)]
     );
 
-    // XMX(i,p7G_B) = MMX(i+1,1) + TSC(p7P_BM,0) + MSC(1); /* t_BM index is 0 because it's stored off-by-one. */
-    // for (k = 2; k <= M; k++) {
-    //   XMX(i,p7G_B) = p7_FLogsum(
-    //      XMX(i, p7G_B),
-    //      MMX(i+1,k) + TSC(p7P_BM,k-1) + MSC(k)
-    //   );
-    // }
     mx[(B, seq_idx)] = log_sum!(
         mx[(B, seq_idx)],
         mx[m_src_cell]
-            + prf.transition_score(Profile::B_M_IDX, prf_idx - 1)
+            + prf.transition_score(Profile::B_M_IDX, prf_idx)
             + prf[Emission(m_src, residue)]
     );
 }
@@ -327,15 +308,12 @@ pub fn cloud_search_backward2<M>(
 where
     M: NewCloudMatrix,
 {
-    mx.reuse(prf.length, seq.length);
-    cloud.reuse(seq.length, prf.length);
-
     let mut num_cells = 0usize;
     let mut max_score = -f32::INFINITY;
     let mut max_score_within = -f32::INFINITY;
 
-    let prf_end = seed.prf_end.min(prf.length - 1);
-    let seq_end = seed.seq_end.min(seq.length - 1);
+    let prf_end = seed.prf_end.min(prf.length);
+    let seq_end = seed.seq_end.min(seq.length);
 
     let ad_start = prf_end + seq_end;
     let seed_ad_start = seed.seq_start + seed.prf_start;
@@ -352,8 +330,8 @@ where
 
     // precompute background (C) scores
     let seq_idx = cell_start.seq_idx + 1;
-    let num_loops = seq.length - cell_start.seq_idx - 1;
-    mx[(C, seq_idx)] = num_loops as f32 * prf[BackgroundLoop(C)]
+    let num_loops = seq.length as f32 - cell_start.seq_idx as f32 - 1.0;
+    mx[(C, seq_idx)] = num_loops * prf[BackgroundLoop(C)]
         + prf.special_transitions[Profile::C_IDX][Profile::SPECIAL_MOVE_IDX];
 
     (1..=cell_start.seq_idx).rev().for_each(|seq_idx| {
@@ -363,10 +341,9 @@ where
     });
 
     for idx in (min_ad..=cell_start.idx()).rev() {
-        let co_located_bound = &cloud[Ad((idx + 3).min(seq.length))];
+        let co_located_bound = &cloud[Ad((idx + 3).min(seq.length + prf.length))];
         mx.reset_ad(co_located_bound);
 
-        cloud.advance_reverse();
         let bound = &mut cloud[Ad(idx)];
         let mut max_score_in_ad = -f32::INFINITY;
         bound.iter().for_each(|c| {
@@ -386,32 +363,36 @@ where
         }
 
         if idx <= gamma_ad {
-            let trim_thresh = (max_score_in_ad - params.alpha).min(max_score - params.beta);
-
-            let trim_fn = |c: &Cell| {
+            let trim_thresh = (max_score_in_ad - params.alpha).max(max_score - params.beta);
+            let trim_fn = |mx: &mut M, c: &Cell| {
                 let max = max_f32!(mx[c.m_cell()], mx[c.i_cell()], mx[c.d_cell()]);
-                max < trim_thresh
+                if max < trim_thresh {
+                    mx[c.m_cell()] = -f32::INFINITY;
+                    mx[c.i_cell()] = -f32::INFINITY;
+                    mx[c.d_cell()] = -f32::INFINITY;
+                    true
+                } else {
+                    false
+                }
             };
 
-            let left_trim = bound.iter().take_while(trim_fn).count();
+            let left_trim = bound.iter().take_while(|c| trim_fn(mx, c)).count();
             bound.0.prf_idx -= left_trim;
             bound.0.seq_idx += left_trim;
 
-            let right_trim = bound.iter().rev().take_while(trim_fn).count();
-            bound.0.prf_idx += right_trim;
-            bound.0.seq_idx -= right_trim;
+            let right_trim = bound.iter().rev().take_while(|c| trim_fn(mx, c)).count();
+            bound.1.prf_idx += right_trim;
+            bound.1.seq_idx -= right_trim;
 
             if bound.is_empty() {
                 break;
             }
         }
+
+        cloud.advance_reverse();
     }
 
-    (0..=cell_start.seq_idx).rev().for_each(|seq_idx| {
-        // XMX(i,p7G_N) = p7_FLogsum(
-        //     XMX(i+1,p7G_N) + gm->xsc[p7P_N][p7P_LOOP],
-        //     XMX(i,  p7G_B) + gm->xsc[p7P_N][p7P_MOVE]
-        // );
+    (1..=cell_start.seq_idx).rev().for_each(|seq_idx| {
         mx[(N, seq_idx)] = log_sum!(
             mx[(N, seq_idx + 1)] + prf[BackgroundLoop(N)],
             mx[(B, seq_idx)] + prf.special_transitions[Profile::N_IDX][Profile::SPECIAL_MOVE_IDX]
@@ -628,7 +609,6 @@ pub fn compute_forward_cells<M>(
         mx[m_src_cell] + prf[CoreToCore(m_src, m_dest)],
         mx[i_src_cell] + prf[CoreToCore(i_src, m_dest)],
         mx[d_src_cell] + prf[CoreToCore(d_src, m_dest)],
-        // matrix[(N, seq_idx - 1)] + profile[CoreEntry(m_src)]
         mx[(B, seq_idx - 1)] + prf.transition_score(Profile::B_M_IDX, prf_idx - 1)
     ) + prf[Emission(m_dest, residue)];
 
@@ -947,9 +927,6 @@ pub fn cloud_search_forward2<M>(
 where
     M: NewCloudMatrix,
 {
-    mx.reuse(prf.length, seq.length);
-    cloud.reuse(seq.length, prf.length);
-
     let mut num_cells = 0usize;
     let mut max_score = -f32::INFINITY;
     let mut max_score_within = -f32::INFINITY;
@@ -1001,24 +978,30 @@ where
         }
 
         if idx >= gamma_ad {
-            let trim_thresh = (max_score_in_ad - params.alpha).min(max_score - params.beta);
-
-            let trim_fn = |c: &Cell| {
+            let trim_thresh = (max_score_in_ad - params.alpha).max(max_score - params.beta);
+            let trim_fn = |mx: &mut M, c: &Cell| {
                 let max = max_f32!(mx[c.m_cell()], mx[c.i_cell()], mx[c.d_cell()]);
-                max < trim_thresh
+                if max < trim_thresh {
+                    mx[c.m_cell()] = -f32::INFINITY;
+                    mx[c.i_cell()] = -f32::INFINITY;
+                    mx[c.d_cell()] = -f32::INFINITY;
+                    true
+                } else {
+                    false
+                }
             };
 
-            let left_trim = bound.iter().take_while(trim_fn).count();
+            let left_trim = bound.iter().take_while(|c| trim_fn(mx, c)).count();
             bound.0.prf_idx -= left_trim;
             bound.0.seq_idx += left_trim;
 
-            let right_trim = bound.iter().rev().take_while(trim_fn).count();
-            bound.0.prf_idx += right_trim;
-            bound.0.seq_idx -= right_trim;
-        }
+            let right_trim = bound.iter().rev().take_while(|c| trim_fn(mx, c)).count();
+            bound.1.prf_idx += right_trim;
+            bound.1.seq_idx -= right_trim;
 
-        if bound.is_empty() {
-            break;
+            if bound.is_empty() {
+                break;
+            }
         }
 
         cloud.advance_forward();
