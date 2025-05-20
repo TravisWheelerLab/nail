@@ -10,7 +10,7 @@ use crate::io::Fasta;
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
     seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, MaxSeedStage, OutputStage, Pipeline, SeedMap, TmpDebugCloudSearchStage,
+    FullDpCloudSearchStage, OutputStage, Pipeline, SeedMap,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -160,12 +160,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let mut pipeline = Pipeline {
         targets,
         seed: Box::new(DefaultSeedStage::new(seeds)),
-        // seed: Box::new(MaxSeedStage::new(&queries, &ok)),
-        cloud_search: Box::new(TmpDebugCloudSearchStage::default()),
-        // cloud_search: match args.dev_args.full_dp {
-        //     true => Box::<FullDpCloudSearchStage>::default(),
-        //     false => Box::new(DefaultCloudSearchStage::new(&args)),
-        // },
+        cloud_search: match args.dev_args.full_dp {
+            true => Box::<FullDpCloudSearchStage>::default(),
+            false => Box::new(DefaultCloudSearchStage::new(&args)),
+        },
         align: Box::new(
             DefaultAlignStage::new(&args).context("failed to create DefaultAlignStage")?,
         ),

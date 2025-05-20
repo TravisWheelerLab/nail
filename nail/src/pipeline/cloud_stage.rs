@@ -3,9 +3,8 @@ use std::time::{Duration, Instant};
 use derive_builder::Builder;
 use libnail::{
     align::{
-        cloud_score, cloud_search_backward, cloud_search_backward2, cloud_search_forward,
-        cloud_search_forward2, null_one_score, p_value,
-        structs::{AdMatrixLinear, Cloud, CloudMatrixLinear, RowBounds, Seed},
+        cloud_score, cloud_search_backward, cloud_search_forward, null_one_score, p_value,
+        structs::{AdMatrixLinear, Cloud, RowBounds, Seed},
         CloudSearchParams, Nats,
     },
     structs::{Profile, Sequence},
@@ -52,44 +51,10 @@ pub struct CloudStageStats {
 }
 
 pub trait CloudSearchStage: dyn_clone::DynClone + Send + Sync {
-    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult;
+    fn run(&mut self, prf: &Profile, seq: &Sequence, seed: &Seed) -> CloudStageResult;
 }
 
 dyn_clone::clone_trait_object!(CloudSearchStage);
-
-#[derive(Default, Clone)]
-pub struct TmpDebugCloudSearchStage {}
-
-impl CloudSearchStage for TmpDebugCloudSearchStage {
-    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult {
-        let mut stats = CloudStageStatsBuilder::default();
-
-        let params = CloudSearchParams::default();
-        let mut profile = profile.clone();
-
-        let mut fc = Cloud::new(target.length, profile.length);
-        let mut bc = Cloud::new(target.length, profile.length);
-
-        let mut fwd_mx = AdMatrixLinear::default();
-        let mut bwd_mx = AdMatrixLinear::default();
-
-        profile.configure_for_target_length(target.length);
-        fwd_mx.reuse(target.length);
-        bwd_mx.reuse(target.length);
-        fc.reuse(target.length, profile.length);
-        bc.reuse(target.length, profile.length);
-
-        let f = cloud_search_forward2(&profile, target, seed, &mut fwd_mx, &params, &mut fc);
-        let b = cloud_search_backward2(&profile, target, seed, &mut bwd_mx, &params, &mut bc);
-
-        stats.forward_cells(f.num_cells_computed);
-        stats.backward_cells(b.num_cells_computed);
-
-        StageResult::Filtered {
-            stats: stats.build().unwrap(),
-        }
-    }
-}
 
 #[derive(Default, Clone)]
 pub struct FullDpCloudSearchStage {}
@@ -108,9 +73,9 @@ impl CloudSearchStage for FullDpCloudSearchStage {
 
 #[derive(Default, Clone)]
 pub struct DefaultCloudSearchStage {
-    cloud_matrix: CloudMatrixLinear,
-    forward_bounds: Cloud,
-    reverse_bounds: Cloud,
+    mx: AdMatrixLinear,
+    fwd_cloud: Cloud,
+    bwd_cloud: Cloud,
     params: CloudSearchParams,
     p_value_threshold: f64,
 }
@@ -130,35 +95,39 @@ impl DefaultCloudSearchStage {
 }
 
 impl CloudSearchStage for DefaultCloudSearchStage {
-    fn run(&mut self, profile: &Profile, target: &Sequence, seed: &Seed) -> CloudStageResult {
+    fn run(&mut self, prf: &Profile, seq: &Sequence, seed: &Seed) -> CloudStageResult {
         let now = Instant::now();
         let mut stats = CloudStageStatsBuilder::default();
-        self.cloud_matrix.reuse(profile.length);
-        self.forward_bounds.reuse(target.length, profile.length);
-        self.reverse_bounds.reuse(target.length, profile.length);
-        let mut row_bounds = RowBounds::new(target.length);
+        self.mx.reuse(seq.length);
+        self.fwd_cloud.reuse(seq.length, prf.length);
+        self.bwd_cloud.reuse(seq.length, prf.length);
+        let mut row_bounds = RowBounds::new(seq.length);
         stats.memory_init_time(now.elapsed());
 
         let now = Instant::now();
         let forward_results = cloud_search_forward(
-            profile,
-            target,
+            prf,
+            seq,
             seed,
-            &mut self.cloud_matrix,
+            &mut self.mx,
             &self.params,
-            &mut self.forward_bounds,
+            &mut self.fwd_cloud,
         );
         stats.forward_time(now.elapsed());
         stats.forward_cells(forward_results.num_cells_computed);
 
         let now = Instant::now();
+        self.mx.reuse(seq.length);
+        stats.memory_init_time(now.elapsed());
+
+        let now = Instant::now();
         let backward_results = cloud_search_backward(
-            profile,
-            target,
+            prf,
+            seq,
             seed,
-            &mut self.cloud_matrix,
+            &mut self.mx,
             &self.params,
-            &mut self.reverse_bounds,
+            &mut self.bwd_cloud,
         );
         stats.backward_time(now.elapsed());
         stats.backward_cells(backward_results.num_cells_computed);
@@ -167,8 +136,8 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         let raw_cloud_score = cloud_score(&forward_results, &backward_results);
 
         // TODO: put this score adjustment somewhere else
-        let target_length = target.length as f32;
-        let profile_length = profile.length as f32;
+        let target_length = seq.length as f32;
+        let profile_length = prf.length as f32;
         let cloud_score_adjustment = Nats(
             // L * log(L / (L + 2))          [ N->N | C->C ] non-homologous states
             target_length * (target_length / (target_length + 2.0)).ln()
@@ -180,11 +149,11 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         );
 
         // the null one is the denominator in the probability ratio
-        let null_one = null_one_score(target.length);
+        let null_one = null_one_score(seq.length);
 
         let cloud_score = raw_cloud_score + cloud_score_adjustment - null_one;
 
-        let cloud_p_value = p_value(cloud_score, profile.forward_lambda, profile.forward_tau);
+        let cloud_p_value = p_value(cloud_score, prf.forward_lambda, prf.forward_tau);
 
         stats.score(cloud_score);
         stats.p_value(cloud_p_value);
@@ -196,19 +165,19 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         }
 
         let now = Instant::now();
-        self.forward_bounds.merge(&self.reverse_bounds);
+        self.fwd_cloud.merge(&self.bwd_cloud);
         stats.merge_time(now.elapsed());
 
-        self.forward_bounds.square_corners();
+        self.fwd_cloud.square_corners();
 
         let now = Instant::now();
-        let trim_result = self.forward_bounds.trim_wings();
+        let trim_result = self.fwd_cloud.trim_wings();
         stats.trim_time(now.elapsed());
 
         match trim_result {
             Ok(_) => {
                 let now = Instant::now();
-                row_bounds.fill_from_anti_diagonal_bounds(&self.forward_bounds);
+                row_bounds.fill_from_anti_diagonal_bounds(&self.fwd_cloud);
                 stats.reorient_time(now.elapsed());
             }
             // TODO: probably want to do something else/extra here
