@@ -6,6 +6,30 @@ use std::{
 
 use lazy_static::lazy_static;
 
+pub trait MaxAssign {
+    fn max_assign(&mut self, other: Self);
+}
+
+pub trait MinAssign {
+    fn min_assign(&mut self, other: Self);
+}
+
+impl<T: PartialOrd + Copy> MaxAssign for T {
+    fn max_assign(&mut self, other: Self) {
+        if *self < other {
+            *self = other.clone();
+        }
+    }
+}
+
+impl<T: PartialOrd + Copy> MinAssign for T {
+    fn min_assign(&mut self, other: Self) {
+        if *self > other {
+            *self = other.clone();
+        }
+    }
+}
+
 #[cfg(test)]
 #[ctor::ctor]
 fn init_backtrace() {
@@ -43,6 +67,34 @@ impl<T: Display + Debug> CollectionPrint for Vec<T> {
         self.iter()
             .enumerate()
             .for_each(|(i, e)| println!("{i}: {e:?}"));
+    }
+}
+
+pub trait IterPrint {
+    fn print_each(self);
+}
+
+pub trait IterDebug {
+    fn debug_each(self);
+}
+
+impl<I, T> IterPrint for I
+where
+    I: Iterator<Item = T>,
+    T: Display,
+{
+    fn print_each(self) {
+        self.for_each(|i| println!("{i}"));
+    }
+}
+
+impl<I, T> IterDebug for I
+where
+    I: Iterator<Item = T>,
+    T: Debug,
+{
+    fn debug_each(self) {
+        self.for_each(|i| println!("{i:?}"));
     }
 }
 

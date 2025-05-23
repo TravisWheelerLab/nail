@@ -8,27 +8,27 @@ pub fn posterior(
     posterior_matrix: &mut impl DpMatrix,
     row_bounds: &RowBounds,
 ) {
-    let overall_score: f32 = forward_matrix.get_special(row_bounds.target_end, Profile::C_IDX)
+    let overall_score: f32 = forward_matrix.get_special(row_bounds.seq_end, Profile::C_IDX)
         + profile.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX);
 
     let mut denominator: f32;
 
-    posterior_matrix.set_special(row_bounds.target_start - 1, Profile::E_IDX, 0.0);
-    posterior_matrix.set_special(row_bounds.target_start - 1, Profile::N_IDX, 0.0);
-    posterior_matrix.set_special(row_bounds.target_start - 1, Profile::J_IDX, 0.0);
-    posterior_matrix.set_special(row_bounds.target_start - 1, Profile::B_IDX, 0.0);
-    posterior_matrix.set_special(row_bounds.target_start - 1, Profile::C_IDX, 0.0);
+    posterior_matrix.set_special(row_bounds.seq_start - 1, Profile::E_IDX, 0.0);
+    posterior_matrix.set_special(row_bounds.seq_start - 1, Profile::N_IDX, 0.0);
+    posterior_matrix.set_special(row_bounds.seq_start - 1, Profile::J_IDX, 0.0);
+    posterior_matrix.set_special(row_bounds.seq_start - 1, Profile::B_IDX, 0.0);
+    posterior_matrix.set_special(row_bounds.seq_start - 1, Profile::C_IDX, 0.0);
 
-    let profile_start_in_first_row = row_bounds.left_row_bounds[row_bounds.target_start];
-    let profile_end_in_first_row = row_bounds.right_row_bounds[row_bounds.target_start];
+    let profile_start_in_first_row = row_bounds.left_row_bounds[row_bounds.seq_start];
+    let profile_end_in_first_row = row_bounds.right_row_bounds[row_bounds.seq_start];
 
     for profile_idx in (profile_start_in_first_row - 1)..=profile_end_in_first_row {
-        posterior_matrix.set_match(row_bounds.target_start - 1, profile_idx, 0.0);
-        posterior_matrix.set_insert(row_bounds.target_start - 1, profile_idx, 0.0);
-        posterior_matrix.set_delete(row_bounds.target_start - 1, profile_idx, 0.0);
+        posterior_matrix.set_match(row_bounds.seq_start - 1, profile_idx, 0.0);
+        posterior_matrix.set_insert(row_bounds.seq_start - 1, profile_idx, 0.0);
+        posterior_matrix.set_delete(row_bounds.seq_start - 1, profile_idx, 0.0);
     }
 
-    for target_idx in row_bounds.target_start..=row_bounds.target_end {
+    for target_idx in row_bounds.seq_start..=row_bounds.seq_end {
         denominator = 0.0;
 
         let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];

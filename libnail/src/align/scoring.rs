@@ -269,7 +269,7 @@ pub fn null_two_score(
     //              these are the expected numbers
     //              of times each state is used
     //
-    for target_idx in row_bounds.target_start..=row_bounds.target_end {
+    for target_idx in row_bounds.seq_start..=row_bounds.seq_end {
         let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];
         let profile_end_in_current_row = row_bounds.right_row_bounds[target_idx];
 
@@ -347,7 +347,7 @@ pub fn null_two_score(
     let expected_scores: Vec<_> = expected_prob_ratios.into_iter().map(|r| r.ln()).collect();
 
     let mut null_two_score = 0.0;
-    (row_bounds.target_start..=row_bounds.target_end)
+    (row_bounds.seq_start..=row_bounds.seq_end)
         .map(|idx| {
             (
                 core_posteriors[idx],

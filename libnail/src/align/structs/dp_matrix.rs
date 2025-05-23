@@ -6,6 +6,7 @@ use std::{
 
 use super::{Bound, Cell, Cloud, RowBounds};
 use crate::{
+    max_f32,
     structs::{profile::CoreToCore, Profile},
     util::VecUtils,
 };
@@ -160,15 +161,14 @@ impl AdMatrixSparse {
         // peeling off the first pair of offsets so
         // that the following iterator stays clean
         self.block_offsets[0] = 0;
-        self.ad_start_offsets[0] = self.sparse_cell_idx(&cloud.first().right_target_major());
+        self.ad_start_offsets[0] = self.sparse_cell_idx(&cloud.first().0);
 
         cloud
-            .bounds()
             .iter()
             .enumerate()
-            .zip(cloud.bounds().iter().enumerate().skip(1))
+            .zip(cloud.iter().enumerate().skip(1))
             .for_each(|((prev_idx, prev_bound), (idx, bound))| {
-                self.ad_start_offsets[idx] = self.sparse_cell_idx(&bound.right_target_major());
+                self.ad_start_offsets[idx] = self.sparse_cell_idx(&bound.0);
                 let block_offset = self.block_offsets[prev_idx] + prev_bound.len() + 1;
                 self.block_offsets[idx] = block_offset;
             });
@@ -356,6 +356,27 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
 pub trait NewCloudMatrix: NewDpMatrix {
     fn reset_ad(&mut self, bound: &Bound);
     fn reuse(&mut self, prf_len: usize, seq_len: usize);
+    fn trim_ad(&mut self, bound: &mut Bound, trim_thresh: f32) {
+        let trim_fn = |mx: &mut Self, c: &Cell| {
+            let max = max_f32!(mx[c.m_cell()], mx[c.i_cell()], mx[c.d_cell()]);
+            if max < trim_thresh {
+                mx[c.m_cell()] = -f32::INFINITY;
+                mx[c.i_cell()] = -f32::INFINITY;
+                mx[c.d_cell()] = -f32::INFINITY;
+                true
+            } else {
+                false
+            }
+        };
+
+        let left_trim = bound.iter().take_while(|c| trim_fn(self, c)).count();
+        bound.0.prf_idx -= left_trim;
+        bound.0.seq_idx += left_trim;
+
+        let right_trim = bound.iter().rev().take_while(|c| trim_fn(self, c)).count();
+        bound.1.prf_idx += right_trim;
+        bound.1.seq_idx -= right_trim;
+    }
 }
 
 impl<T: NewDpMatrix> DpMatrix for T {
@@ -723,8 +744,8 @@ impl DpMatrixSparse {
 
         // the first row in the sparse matrix is a row consisting entirely of pad cells
         // it should cover dependencies to the (target_start) row
-        let first_row_idx = row_bounds.target_start - 1;
-        let second_row_idx = row_bounds.target_start;
+        let first_row_idx = row_bounds.seq_start - 1;
+        let second_row_idx = row_bounds.seq_start;
 
         // -1 to shift to the left one
         let first_row_start = row_bounds.left_row_bounds[second_row_idx] - 1;
@@ -741,7 +762,7 @@ impl DpMatrixSparse {
         block_offsets[first_row_idx] = 0;
         block_offsets[second_row_idx] = first_row_length * 3;
 
-        for row_idx in row_bounds.target_start..=row_bounds.target_end {
+        for row_idx in row_bounds.seq_start..=row_bounds.seq_end {
             // -1 to add a pad cell
             let row_start = row_bounds.left_row_bounds[row_idx] - 1;
             let row_end = row_bounds.right_row_bounds[row_idx];
@@ -758,8 +779,8 @@ impl DpMatrixSparse {
             block_offsets[row_idx + 1] = block_offsets[row_idx] + (row_length * 3);
         }
 
-        let last_row_idx = row_bounds.target_end + 1;
-        let second_to_last_row_idx = row_bounds.target_end;
+        let last_row_idx = row_bounds.seq_end + 1;
+        let second_to_last_row_idx = row_bounds.seq_end;
 
         let last_row_start = row_bounds.left_row_bounds[second_to_last_row_idx];
         // +1 to shift to the right one
@@ -774,15 +795,14 @@ impl DpMatrixSparse {
 
         // the last block offset (target_end + 1) points to
         // the end of the last valid row in the matrix
-        let last_block_offset_length =
-            block_offsets[row_bounds.target_end + 1] + last_row_length * 3;
+        let last_block_offset_length = block_offsets[row_bounds.seq_end + 1] + last_row_length * 3;
 
-        let last_block_offset_idx = (row_bounds.target_end + 1).min(block_offsets.len());
+        let last_block_offset_idx = (row_bounds.seq_end + 1).min(block_offsets.len());
 
         // we want to set everything past (target_end + 1) to point to the last block offset
         // this guarantees we can index into the entire logical matrix coordinate space
         for block_offset in
-            block_offsets[(row_bounds.target_end + 1)..last_block_offset_idx].iter_mut()
+            block_offsets[(row_bounds.seq_end + 1)..last_block_offset_idx].iter_mut()
         {
             *block_offset = last_block_offset_length;
         }
@@ -800,8 +820,8 @@ impl DpMatrixSparse {
         self.target_length = new_target_length;
         self.profile_length = new_profile_length;
 
-        self.target_start = row_bounds.target_start;
-        self.target_end = row_bounds.target_end;
+        self.target_start = row_bounds.seq_start;
+        self.target_end = row_bounds.seq_end;
 
         self.reset();
     }
@@ -1133,17 +1153,17 @@ mod tests {
         let mut d = [[-f32::INFINITY; 6]; 6];
 
         let bounds = RowBounds {
-            target_length: 1,
-            profile_length: 5,
-            target_start: 1,
-            target_end: 5,
+            seq_len: 1,
+            prf_len: 5,
+            seq_start: 1,
+            seq_end: 5,
             row_capacity: 0,
             left_row_bounds: vec![0, 1, 1, 2, 3, 4],
             right_row_bounds: vec![0, 2, 3, 4, 5, 5],
             num_cells: 0,
         };
 
-        (bounds.target_start..=bounds.target_end).for_each(|row| {
+        (bounds.seq_start..=bounds.seq_end).for_each(|row| {
             (bounds.left_row_bounds[row]..=bounds.right_row_bounds[row]).for_each(|col| {
                 m[row][col] = (row * 10 + col) as f32 / 10.0;
                 i[row][col] = ((row + 5) * 10 + col) as f32 / 10.0;
@@ -1153,7 +1173,7 @@ mod tests {
 
         let mut matrix = DpMatrixSparse::new(5, 5, &bounds);
 
-        (bounds.target_start..=bounds.target_end).for_each(|row| {
+        (bounds.seq_start..=bounds.seq_end).for_each(|row| {
             (bounds.left_row_bounds[row]..=bounds.right_row_bounds[row]).for_each(|col| {
                 matrix.set_match(row, col, m[row][col]);
                 matrix.set_insert(row, col, i[row][col]);
@@ -1181,7 +1201,7 @@ mod tests {
         let mut mx = AdMatrixQuadratic::new(S, P);
 
         let mut val = 1.0;
-        cloud.new_bounds.iter().for_each(|b| {
+        cloud.bounds.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 mx[c.m_cell()] = val;
                 mx[c.i_cell()] = val + 0.1;
@@ -1209,7 +1229,7 @@ mod tests {
         let mut lin_mx = AdMatrixLinear::new(S);
 
         let mut val = 1.0;
-        cloud.new_bounds.iter().for_each(|b| {
+        cloud.bounds.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 quad_mx[c.m_cell()] = val;
                 quad_mx[c.i_cell()] = val + 0.1;
@@ -1284,7 +1304,7 @@ mod tests {
         let mut mx = AdMatrixSparse::from_cloud(&cloud);
 
         let mut val = 1.0;
-        cloud.new_bounds.iter().for_each(|b| {
+        cloud.bounds.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 mx[c.m_cell()] = val;
                 mx[c.i_cell()] = val + 0.1;

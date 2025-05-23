@@ -56,17 +56,17 @@ pub fn forward(
 ) -> Nats {
     let end_score: f32 = 0.0;
 
-    dp_matrix.set_special(bounds.target_start - 1, Profile::N_IDX, 0.0);
+    dp_matrix.set_special(bounds.seq_start - 1, Profile::N_IDX, 0.0);
 
     dp_matrix.set_special(
-        bounds.target_start - 1,
+        bounds.seq_start - 1,
         Profile::B_IDX,
         profile.special_transition_score(Profile::N_IDX, Profile::SPECIAL_MOVE_IDX),
     );
-    dp_matrix.set_special(bounds.target_start - 1, Profile::E_IDX, -f32::INFINITY);
-    dp_matrix.set_special(bounds.target_start - 1, Profile::C_IDX, -f32::INFINITY);
+    dp_matrix.set_special(bounds.seq_start - 1, Profile::E_IDX, -f32::INFINITY);
+    dp_matrix.set_special(bounds.seq_start - 1, Profile::C_IDX, -f32::INFINITY);
 
-    for target_idx in bounds.target_start..=bounds.target_end {
+    for target_idx in bounds.seq_start..=bounds.seq_end {
         let current_target_character = target.digital_bytes[target_idx];
 
         for profile_idx in bounds.left_row_bounds[target_idx]..bounds.right_row_bounds[target_idx] {
@@ -201,12 +201,12 @@ pub fn forward(
     //       once for every position in the target sequence that
     //       isn't included in the cloud
     // why: we want the best approximation of the full Forward score
-    let aligned_target_length = bounds.target_end - bounds.target_start + 1;
+    let aligned_target_length = bounds.seq_end - bounds.seq_start + 1;
     let unaligned_target_length = target.length - aligned_target_length;
     let background_correction = unaligned_target_length as f32
         * profile.special_transition_score(Profile::N_IDX, Profile::SPECIAL_LOOP_IDX);
 
-    let final_c_state_score = dp_matrix.get_special(bounds.target_end, Profile::C_IDX);
+    let final_c_state_score = dp_matrix.get_special(bounds.seq_end, Profile::C_IDX);
     let c_to_exit_score =
         profile.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX);
 

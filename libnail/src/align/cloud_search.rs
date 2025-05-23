@@ -3,7 +3,7 @@ use crate::log_sum;
 use crate::max_f32;
 use crate::structs::profile::{AminoAcid, BackgroundLoop, CoreToCore, Emission};
 use crate::structs::{Profile, Sequence};
-use crate::util::log_add;
+use crate::util::{log_add, MaxAssign};
 
 use super::structs::{
     Ad, BackgroundState::*, Bound, Cell, CoreState::*, NewCloudMatrix, NewDpMatrix,
@@ -24,6 +24,12 @@ impl Default for CloudSearchParams {
             alpha: 12.0,
             beta: 20.0,
         }
+    }
+}
+
+impl CloudSearchParams {
+    pub fn trim_thresh(&self, a: f32, b: f32) -> f32 {
+        (a - self.alpha).max(b - self.beta)
     }
 }
 
@@ -159,32 +165,13 @@ where
             num_cells += 1;
         });
 
-        max_score = max_score.max(max_score_in_ad);
+        max_score.max_assign(max_score_in_ad);
         if idx > seed_ad_start {
-            max_score_within = max_score_within.max(max_score)
+            max_score_within.max_assign(max_score)
         }
 
         if idx <= gamma_ad {
-            let trim_thresh = (max_score_in_ad - params.alpha).max(max_score - params.beta);
-            let trim_fn = |mx: &mut M, c: &Cell| {
-                let max = max_f32!(mx[c.m_cell()], mx[c.i_cell()], mx[c.d_cell()]);
-                if max < trim_thresh {
-                    mx[c.m_cell()] = -f32::INFINITY;
-                    mx[c.i_cell()] = -f32::INFINITY;
-                    mx[c.d_cell()] = -f32::INFINITY;
-                    true
-                } else {
-                    false
-                }
-            };
-
-            let left_trim = bound.iter().take_while(|c| trim_fn(mx, c)).count();
-            bound.0.prf_idx -= left_trim;
-            bound.0.seq_idx += left_trim;
-
-            let right_trim = bound.iter().rev().take_while(|c| trim_fn(mx, c)).count();
-            bound.1.prf_idx += right_trim;
-            bound.1.seq_idx -= right_trim;
+            mx.trim_ad(bound, params.trim_thresh(max_score_in_ad, max_score));
 
             if bound.is_empty() {
                 break;
@@ -193,6 +180,8 @@ where
 
         cloud.advance_reverse();
     }
+
+    cloud.ad_start += 1;
 
     (1..=cell_start.seq_idx).rev().for_each(|seq_idx| {
         mx[(N, seq_idx)] = log_sum!(
@@ -327,32 +316,13 @@ where
             num_cells += 1;
         });
 
-        max_score = max_score.max(max_score_in_ad);
+        max_score.max_assign(max_score_in_ad);
         if idx < seed_ad_end {
-            max_score_within = max_score_within.max(max_score)
+            max_score_within.max_assign(max_score)
         }
 
         if idx >= gamma_ad {
-            let trim_thresh = (max_score_in_ad - params.alpha).max(max_score - params.beta);
-            let trim_fn = |mx: &mut M, c: &Cell| {
-                let max = max_f32!(mx[c.m_cell()], mx[c.i_cell()], mx[c.d_cell()]);
-                if max < trim_thresh {
-                    mx[c.m_cell()] = -f32::INFINITY;
-                    mx[c.i_cell()] = -f32::INFINITY;
-                    mx[c.d_cell()] = -f32::INFINITY;
-                    true
-                } else {
-                    false
-                }
-            };
-
-            let left_trim = bound.iter().take_while(|c| trim_fn(mx, c)).count();
-            bound.0.prf_idx -= left_trim;
-            bound.0.seq_idx += left_trim;
-
-            let right_trim = bound.iter().rev().take_while(|c| trim_fn(mx, c)).count();
-            bound.1.prf_idx += right_trim;
-            bound.1.seq_idx -= right_trim;
+            mx.trim_ad(bound, params.trim_thresh(max_score_in_ad, max_score));
 
             if bound.is_empty() {
                 break;
@@ -361,6 +331,8 @@ where
 
         cloud.advance_forward();
     }
+
+    cloud.ad_end -= 1;
 
     (cell_start.seq_idx..=seq.length).for_each(|seq_idx| {
         mx[(C, seq_idx)] = log_sum!(

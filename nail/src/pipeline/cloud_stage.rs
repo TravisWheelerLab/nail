@@ -8,6 +8,7 @@ use libnail::{
         CloudSearchParams, Nats,
     },
     structs::{Profile, Sequence},
+    util::{IterDebug, IterPrint},
 };
 
 use crate::args::SearchArgs;
@@ -135,23 +136,10 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         // cloud search does not compute any special state scores
         let raw_cloud_score = cloud_score(&forward_results, &backward_results);
 
-        // TODO: put this score adjustment somewhere else
-        let target_length = seq.length as f32;
-        let profile_length = prf.length as f32;
-        let cloud_score_adjustment = Nats(
-            // L * log(L / (L + 2))          [ N->N | C->C ] non-homologous states
-            target_length * (target_length / (target_length + 2.0)).ln()
-                // NOTE: no longer adding this here
-                // // 2 * log(2 / (L + 2))      [ N->B + C->T ] start/end transitions
-                // + 2.0 * (2.0 / (target_length + 2.0)).ln()
-                // log(2 / (M * (M + 1)))    [ B->M + M->E ] core model entry approximation
-                + (2.0 / (profile_length * (profile_length + 1.0))).ln(),
-        );
-
         // the null one is the denominator in the probability ratio
         let null_one = null_one_score(seq.length);
 
-        let cloud_score = raw_cloud_score + cloud_score_adjustment - null_one;
+        let cloud_score = raw_cloud_score - null_one;
 
         let cloud_p_value = p_value(cloud_score, prf.forward_lambda, prf.forward_tau);
 
@@ -177,7 +165,7 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         match trim_result {
             Ok(_) => {
                 let now = Instant::now();
-                row_bounds.fill_from_anti_diagonal_bounds(&self.fwd_cloud);
+                row_bounds.fill_from_cloud(&self.fwd_cloud);
                 stats.reorient_time(now.elapsed());
             }
             // TODO: probably want to do something else/extra here

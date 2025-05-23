@@ -3,10 +3,9 @@ use anyhow::{anyhow, bail};
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{stdout, Write};
-use std::iter::{Rev, Zip};
-use std::ops::{Index, IndexMut, RangeInclusive};
+use std::ops::{Index, IndexMut};
 
-use crate::util::VecUtils;
+use crate::util::{MaxAssign, MinAssign, VecUtils};
 
 use super::{BackgroundCell, BackgroundState, CoreCell, CoreState};
 
@@ -130,44 +129,6 @@ impl Default for Bound {
     }
 }
 
-impl From<AntiDiagonal> for Bound {
-    fn from(value: AntiDiagonal) -> Self {
-        Self(
-            Cell {
-                prf_idx: value.right_profile_idx,
-                seq_idx: value.right_target_idx,
-            },
-            Cell {
-                prf_idx: value.left_profile_idx,
-                seq_idx: value.left_target_idx,
-            },
-        )
-    }
-}
-
-impl From<&AntiDiagonal> for Bound {
-    fn from(value: &AntiDiagonal) -> Self {
-        (*value).into()
-    }
-}
-
-impl From<Bound> for AntiDiagonal {
-    fn from(value: Bound) -> Self {
-        Self {
-            left_target_idx: value.1.seq_idx,
-            left_profile_idx: value.1.prf_idx,
-            right_target_idx: value.0.seq_idx,
-            right_profile_idx: value.0.prf_idx,
-        }
-    }
-}
-
-impl From<&Bound> for AntiDiagonal {
-    fn from(value: &Bound) -> Self {
-        (*value).into()
-    }
-}
-
 impl Bound {
     pub fn idx(&self) -> usize {
         debug_assert!(self.0.idx() == self.1.idx());
@@ -189,6 +150,60 @@ impl Bound {
 
     pub fn is_empty(&self) -> bool {
         self.0.prf_idx < self.1.prf_idx
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.0.prf_idx >= self.1.prf_idx
+            && self.1.seq_idx >= self.0.seq_idx
+            && (self.0.prf_idx + self.0.seq_idx) == (self.1.prf_idx + self.1.seq_idx)
+    }
+
+    pub fn intersects(&self, other: &Self) -> bool {
+        if self.idx() != other.idx() {
+            false
+        } else {
+            self.1.prf_idx <= other.0.prf_idx && self.0.prf_idx >= other.1.prf_idx
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn replace_with(&mut self, other: &Self) {
+        self.0 = other.0;
+        self.1 = other.1;
+    }
+
+    pub fn grow_down_seq(&mut self, seq_idx: usize) {
+        let idx = self.idx();
+        self.0.seq_idx.min_assign(seq_idx.max(1));
+        self.0.prf_idx = idx - self.0.seq_idx;
+    }
+
+    pub fn grow_up_seq(&mut self, seq_idx: usize) {
+        let idx = self.idx();
+        self.1.seq_idx.max_assign(seq_idx);
+        self.0.seq_idx = idx - self.1.seq_idx;
+    }
+
+    pub fn grow_up_prf(&mut self, prf_idx: usize) {
+        let idx = self.idx();
+        self.0.seq_idx.min_assign(prf_idx.max(1));
+        self.1.seq_idx = idx - self.0.seq_idx;
+    }
+
+    pub fn grow_down_prf(&mut self, prf_idx: usize) {
+        let idx = self.idx();
+        self.0.prf_idx.max_assign(prf_idx);
+        self.0.seq_idx = idx - self.0.prf_idx;
+    }
+
+    pub fn merge(&mut self, other: &Self) {
+        self.0.prf_idx.max_assign(other.0.prf_idx);
+        self.0.seq_idx.min_assign(other.0.seq_idx);
+        self.1.prf_idx.min_assign(other.1.prf_idx);
+        self.1.seq_idx.max_assign(other.1.seq_idx);
     }
 
     #[allow(dead_code)]
@@ -316,200 +331,6 @@ impl BoundInterpretable for ArraySeqMajorBound {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct AntiDiagonal {
-    pub left_target_idx: usize,
-    pub left_profile_idx: usize,
-    pub right_target_idx: usize,
-    pub right_profile_idx: usize,
-}
-
-impl Default for AntiDiagonal {
-    fn default() -> Self {
-        // set the default to a simple invalid bound
-        // (the left bound is on the right, and vice versa)
-        AntiDiagonal {
-            left_target_idx: 0,
-            left_profile_idx: 1,
-            right_target_idx: 1,
-            right_profile_idx: 0,
-        }
-    }
-}
-
-impl Display for AntiDiagonal {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{},{} : {},{}",
-            self.left_target_idx,
-            self.left_profile_idx,
-            self.right_target_idx,
-            self.right_profile_idx
-        )
-    }
-}
-
-impl Debug for AntiDiagonal {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{},{} : {},{}",
-            self.left_target_idx,
-            self.left_profile_idx,
-            self.right_target_idx,
-            self.right_profile_idx
-        )
-    }
-}
-
-impl AntiDiagonal {
-    #[allow(dead_code)]
-    fn new(
-        left_target_idx: usize,
-        left_profile_idx: usize,
-        right_target_idx: usize,
-        right_profile_idx: usize,
-    ) -> Self {
-        Self {
-            left_target_idx,
-            left_profile_idx,
-            right_target_idx,
-            right_profile_idx,
-        }
-    }
-
-    // TODO: better API for this
-    pub fn left_target_major(&self) -> Cell {
-        Cell {
-            seq_idx: self.left_target_idx,
-            prf_idx: self.left_profile_idx,
-        }
-    }
-
-    pub fn right_target_major(&self) -> Cell {
-        Cell {
-            seq_idx: self.right_target_idx,
-            prf_idx: self.right_profile_idx,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.left_target_idx = 0;
-        self.left_profile_idx = 1;
-        self.right_target_idx = 1;
-        self.right_profile_idx = 0;
-    }
-
-    pub fn is_default(&self) -> bool {
-        self.left_target_idx == 0
-            && self.left_profile_idx == 1
-            && self.right_target_idx == 1
-            && self.right_profile_idx == 0
-    }
-
-    pub fn is_single_cell(&self) -> bool {
-        self.left_target_idx == self.right_target_idx
-            && self.left_profile_idx == self.right_profile_idx
-    }
-
-    pub fn was_pruned(&self) -> bool {
-        self.left_target_idx < self.right_target_idx
-    }
-
-    pub fn valid(&self) -> bool {
-        // the computed anti-diagonal indices should match
-        self.left_target_idx + self.left_profile_idx
-            == self.right_target_idx + self.right_profile_idx
-            // the left cell should be lower than the right cell
-            && self.left_target_idx >= self.right_target_idx
-            // the left cell should be left of the right cell
-            && self.left_profile_idx <= self.right_profile_idx
-    }
-
-    pub fn len(&self) -> usize {
-        self.right_profile_idx - self.left_profile_idx + 1
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn idx(&self) -> usize {
-        self.left_target_idx + self.left_profile_idx
-    }
-
-    pub fn cell_zip(&self) -> Zip<Rev<RangeInclusive<usize>>, RangeInclusive<usize>> {
-        let target_range = (self.right_target_idx..=self.left_target_idx).rev();
-        let profile_range = self.left_profile_idx..=self.right_profile_idx;
-        target_range.zip(profile_range)
-    }
-
-    pub fn intersects(&self, other: &Self) -> bool {
-        if self.idx() != other.idx() {
-            false
-        } else {
-            self.left_profile_idx <= other.right_profile_idx
-                && self.right_profile_idx >= other.left_profile_idx
-        }
-    }
-
-    pub fn merge(&mut self, other: &Self) {
-        self.left_target_idx = self.left_target_idx.max(other.left_target_idx);
-        self.left_profile_idx = self.left_profile_idx.min(other.left_profile_idx);
-        self.right_target_idx = self.right_target_idx.min(other.right_target_idx);
-        self.right_profile_idx = self.right_profile_idx.max(other.right_profile_idx);
-    }
-
-    pub fn replace_with(&mut self, other: &Self) {
-        self.left_target_idx = other.left_target_idx;
-        self.left_profile_idx = other.left_profile_idx;
-        self.right_target_idx = other.right_target_idx;
-        self.right_profile_idx = other.right_profile_idx;
-    }
-
-    pub fn grow_target(&mut self, target_idx: usize) {
-        debug_assert!(self.valid());
-
-        let idx = self.idx();
-        self.right_target_idx = self.right_target_idx.min(target_idx).max(1);
-        self.right_profile_idx = idx - self.right_target_idx;
-
-        debug_assert!(idx == self.idx())
-    }
-
-    pub fn grow_down(&mut self, target_idx: usize) {
-        debug_assert!(self.valid());
-
-        let idx = self.idx();
-        self.left_target_idx = self.left_target_idx.max(target_idx);
-        self.left_profile_idx = idx - self.left_target_idx;
-
-        debug_assert!(idx == self.idx())
-    }
-
-    pub fn grow_left(&mut self, profile_idx: usize) {
-        debug_assert!(self.valid());
-
-        let idx = self.idx();
-        self.left_profile_idx = self.left_profile_idx.min(profile_idx).max(1);
-        self.left_target_idx = idx - self.left_profile_idx;
-
-        debug_assert!(idx == self.idx())
-    }
-
-    pub fn grow_right(&mut self, profile_idx: usize) {
-        debug_assert!(self.valid());
-
-        let idx = self.idx();
-        self.right_profile_idx = self.right_profile_idx.max(profile_idx);
-        self.right_target_idx = idx - self.right_profile_idx;
-
-        debug_assert!(idx == self.idx())
-    }
-}
-
 pub enum CloudValidity {
     Valid,
     BoundInvalid {
@@ -524,8 +345,7 @@ pub enum CloudValidity {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Cloud {
-    pub bounds: Vec<AntiDiagonal>,
-    pub new_bounds: Vec<Bound>,
+    pub bounds: Vec<Bound>,
     pub seq_len: usize,
     pub prf_len: usize,
     pub size: usize,
@@ -536,8 +356,7 @@ pub struct Cloud {
 impl Default for Cloud {
     fn default() -> Self {
         Self {
-            bounds: vec![AntiDiagonal::default()],
-            new_bounds: vec![Bound::default()],
+            bounds: vec![Bound::default()],
             seq_len: 0,
             prf_len: 0,
             size: 1,
@@ -554,7 +373,7 @@ impl Index<Ad> for Cloud {
     type Output = Bound;
 
     fn index(&self, index: Ad) -> &Self::Output {
-        &self.new_bounds[index.0]
+        &self.bounds[index.0]
     }
 }
 
@@ -562,7 +381,7 @@ impl IndexMut<Ad> for Cloud {
     fn index_mut(&mut self, index: Ad) -> &mut Self::Output {
         self.ad_start = self.ad_start.min(index.0);
         self.ad_end = self.ad_end.max(index.0);
-        &mut self.new_bounds[index.0]
+        &mut self.bounds[index.0]
     }
 }
 
@@ -570,13 +389,13 @@ impl Index<AdOffset> for Cloud {
     type Output = Bound;
 
     fn index(&self, index: AdOffset) -> &Self::Output {
-        &self.new_bounds[self.ad_start + index.0]
+        &self.bounds[self.ad_start + index.0]
     }
 }
 
 impl IndexMut<AdOffset> for Cloud {
     fn index_mut(&mut self, index: AdOffset) -> &mut Self::Output {
-        &mut self.new_bounds[self.ad_start + index.0]
+        &mut self.bounds[self.ad_start + index.0]
     }
 }
 
@@ -587,23 +406,30 @@ impl Cloud {
         cloud
     }
 
+    pub fn iter(&self) -> std::slice::Iter<Bound> {
+        self.bounds[self.ad_start..=self.ad_end].iter()
+    }
+
+    pub fn first(&self) -> &Bound {
+        &self.bounds[self.ad_start]
+    }
+
+    pub fn last(&self) -> &Bound {
+        &self.bounds[self.ad_end]
+    }
+
     pub fn resize(&mut self, new_size: usize) {
-        self.bounds
-            .grow_or_shrink(new_size, AntiDiagonal::default());
-        self.new_bounds.grow_or_shrink(new_size, Bound::default());
+        self.bounds.grow_or_shrink(new_size, Bound::default());
     }
 
     pub fn reset(&mut self) {
-        self.bounds.reset(AntiDiagonal::default());
-        self.new_bounds.reset(Bound::default());
+        self.bounds.reset(Bound::default());
     }
 
     pub fn reuse(&mut self, seq_len: usize, prf_len: usize) {
         let new_size = seq_len + prf_len + 2;
 
-        self.bounds
-            .resize_and_reset(new_size, AntiDiagonal::default());
-        self.new_bounds.resize_and_reset(new_size, Bound::default());
+        self.bounds.resize_and_reset(new_size, Bound::default());
 
         self.ad_start = new_size;
         self.ad_end = 0;
@@ -614,7 +440,6 @@ impl Cloud {
 
     pub fn append(&mut self, bound: Bound) {
         let idx = bound.idx();
-        self.bounds[idx] = bound.into();
         self[Ad(idx)] = bound;
     }
 
@@ -633,15 +458,9 @@ impl Cloud {
         self.ad_start = first.idx();
         self.ad_end = last.idx();
 
-        bounds.iter().for_each(|bound| {
-            self.set(
-                bound.idx(),
-                bound.1.seq_idx,
-                bound.1.prf_idx,
-                bound.0.seq_idx,
-                bound.0.prf_idx,
-            );
-        });
+        bounds
+            .into_iter()
+            .for_each(|bound| self[Ad(bound.idx())] = bound);
 
         match self.validity() {
             CloudValidity::Valid => Ok(()),
@@ -664,45 +483,8 @@ impl Cloud {
         self.prf_len
     }
 
-    pub fn set(
-        &mut self,
-        ad_idx: usize,
-        left_seq_idx: usize,
-        left_prf_idx: usize,
-        right_seq_idx: usize,
-        right_prf_idx: usize,
-    ) {
-        // debug_assert!(left_seq_idx + left_prf_idx == right_seq_idx + right_prf_idx);
-        // debug_assert!(ad_idx == left_seq_idx + left_prf_idx);
-
-        let bound = &mut self.bounds[ad_idx];
-        bound.left_target_idx = left_seq_idx;
-        bound.left_profile_idx = left_prf_idx;
-        bound.right_target_idx = right_seq_idx;
-        bound.right_profile_idx = right_prf_idx;
-
-        self.ad_start = self.ad_start.min(ad_idx);
-        self.ad_end = self.ad_end.max(ad_idx);
-    }
-
-    pub fn get(&self, idx: usize) -> &AntiDiagonal {
-        &self.bounds[idx]
-    }
-
-    pub fn get_mut(&mut self, idx: usize) -> &mut AntiDiagonal {
-        &mut self.bounds[idx]
-    }
-
-    pub fn first(&self) -> &AntiDiagonal {
-        self.get(self.ad_start)
-    }
-
-    pub fn last(&self) -> &AntiDiagonal {
-        self.get(self.ad_end)
-    }
-
     pub fn valid(&self) -> bool {
-        self.bounds().iter().all(|bound| bound.valid())
+        self.bounds.iter().all(|bound| bound.is_valid())
     }
 
     pub fn validity(&self) -> CloudValidity {
@@ -710,18 +492,16 @@ impl Cloud {
             .iter()
             .chain(self.bounds[self.ad_end + 1..].iter());
 
-        let mut in_range = self.bounds().iter();
+        let mut in_range = self.bounds[self.ad_start..=self.ad_end].iter();
 
         if let Some(ad) = out_of_range.find(|b| !b.is_default()) {
             CloudValidity::BoundOutOfRange {
                 ad_start: self.ad_start,
                 ad_end: self.ad_end,
-                bound: (*ad).into(),
+                bound: *ad,
             }
-        } else if let Some(ad) = in_range.find(|b| !b.valid()) {
-            CloudValidity::BoundInvalid {
-                bound: (*ad).into(),
-            }
+        } else if let Some(ad) = in_range.find(|b| !b.is_valid()) {
+            CloudValidity::BoundInvalid { bound: *ad }
         } else {
             CloudValidity::Valid
         }
@@ -731,7 +511,7 @@ impl Cloud {
     pub fn cloud_size(&self) -> usize {
         let mut cloud_size = 0usize;
         for bound in self.bounds[self.ad_start..=self.ad_end].iter() {
-            cloud_size += bound.left_target_idx - bound.right_target_idx;
+            cloud_size += bound.len()
         }
         cloud_size
     }
@@ -741,102 +521,65 @@ impl Cloud {
         self.ad_end - self.ad_start + 1
     }
 
-    pub fn bounds(&self) -> &[AntiDiagonal] {
-        &self.bounds[self.ad_start..=self.ad_end]
-    }
-
-    pub fn bounds_mut(&mut self) -> &mut [AntiDiagonal] {
-        &mut self.bounds[self.ad_start..=self.ad_end]
-    }
-
     /// This removes all of the protruding regions in the cloud that are
     /// unreachable from a traceback that traverses the entire cloud.
     pub fn trim_wings(&mut self) -> anyhow::Result<()> {
-        for anti_diagonal_idx in self.ad_start + 1..=self.ad_end {
-            let previous_bound = self.get(anti_diagonal_idx - 1);
-            let current_bound = self.get(anti_diagonal_idx);
-
-            // right wings identifiable from a forward pass look like:
-            //            c
-            //         c  c
-            //   c  c  c  c
-            //   c  c  c  c
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c  c
+        for idx in self.ad_start + 1..=self.ad_end {
+            let prev = self[Ad(idx - 1)];
+            let bound = &mut self[Ad(idx)];
 
             // the number of cells the right bound
             // is above the previous right bound
-            let right_distance = previous_bound
-                .right_target_idx
-                .saturating_sub(current_bound.right_target_idx);
-
-            // left wings identifiable from a forward pass look like:
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c  c
-            //         c  c  c  c
-            //      c  c  c  c  c
-            //   c  c  c  c  c  c
+            let right_distance = prev.0.seq_idx.saturating_sub(bound.0.seq_idx);
 
             // the number of cells the left bound
             // is below the previous left bound
-            let left_distance =
-                (previous_bound.left_profile_idx).saturating_sub(current_bound.left_profile_idx);
+            let left_distance = (prev.1.prf_idx).saturating_sub(bound.1.prf_idx);
 
-            self.set(
-                anti_diagonal_idx,
-                current_bound.left_target_idx - left_distance,
-                current_bound.left_profile_idx + left_distance,
-                current_bound.right_target_idx + right_distance,
-                current_bound.right_profile_idx - right_distance,
-            );
+            bound.1.seq_idx -= left_distance;
+            bound.1.prf_idx += left_distance;
+            bound.0.seq_idx += right_distance;
+            bound.0.prf_idx -= right_distance;
 
-            if !self.get(anti_diagonal_idx).valid() {
-                bail!("cloud trimming failed");
+            if !bound.is_valid() {
+                bail!("forward cloud trimming failed: invalid bound: {bound:?}");
+            } else if bound.idx() - 1 != prev.idx() {
+                println!("{prev}");
+                println!("{bound}");
+                println!("{left_distance} | {right_distance}");
+                panic!(
+                    "forward cloud trimming failed: AD index mismatch: {} | {}",
+                    bound.idx(),
+                    prev.idx()
+                );
             }
         }
 
-        for anti_diagonal_idx in (self.ad_start..self.ad_end).rev() {
-            let previous_bound = self.get(anti_diagonal_idx + 1);
-            let current_bound = self.get(anti_diagonal_idx);
-
-            // right wings identifiable from a backward pass look like:
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c
-            //   c  c  c  c
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c  c
+        for idx in (self.ad_start..self.ad_end).rev() {
+            let next = self[Ad(idx + 1)];
+            let bound = &mut self[Ad(idx)];
 
             // the number of cells the right bound
             // is above the previous right bound
-            let right_distance = current_bound
-                .right_profile_idx
-                .saturating_sub(previous_bound.right_profile_idx);
-
-            // left wings identifiable from a backward pass look like:
-            //   c  c  c  c  c  c
-            //   c  c  c  c  c  c
-            //         c  c  c  c
-            //         c  c  c  c
-            //         c  c
-            //         c
+            let right_distance = bound.0.prf_idx.saturating_sub(next.0.prf_idx);
 
             // the number of cells the left bound
             // is below the previous left bound
-            let left_distance =
-                (current_bound.left_target_idx).saturating_sub(previous_bound.left_target_idx);
+            let left_distance = (bound.1.seq_idx).saturating_sub(next.1.seq_idx);
 
-            self.set(
-                anti_diagonal_idx,
-                current_bound.left_target_idx - left_distance,
-                current_bound.left_profile_idx + left_distance,
-                current_bound.right_target_idx + right_distance,
-                current_bound.right_profile_idx - right_distance,
-            );
+            bound.1.seq_idx -= left_distance;
+            bound.1.prf_idx += left_distance;
+            bound.0.seq_idx += right_distance;
+            bound.0.prf_idx -= right_distance;
 
-            if !self.get(anti_diagonal_idx).valid() {
-                bail!("cloud trimming failed");
+            if !bound.is_valid() {
+                bail!("reverse cloud trimming failed: invalid bound: {bound:?}");
+            } else if bound.idx() + 1 != next.idx() {
+                panic!(
+                    "reverse cloud trimming failed: AD index mismatch: {} | {}",
+                    bound.idx(),
+                    next.idx()
+                );
             }
         }
 
@@ -844,76 +587,45 @@ impl Cloud {
     }
 
     pub fn square_corners(&mut self) {
-        // this is a bit of jumping through hoops
-        // to appease the borrow checker
-        let (
-            left_distance,
-            first_anti_diagonal_idx,
-            first_left_target_idx,
-            first_left_profile_idx,
-            first_right_target_idx,
-            first_right_profile_idx,
-        ) = {
-            let first_bound = self.first();
-            (
-                first_bound.left_target_idx - first_bound.right_target_idx,
-                first_bound.idx(),
-                first_bound.left_target_idx,
-                first_bound.left_profile_idx,
-                first_bound.right_target_idx,
-                first_bound.right_profile_idx,
-            )
-        };
-
-        (1..=left_distance)
-            .map(|offset| (offset, first_anti_diagonal_idx - offset))
-            .for_each(|(offset, anti_diagonal_idx)| {
-                self.set(
-                    anti_diagonal_idx,
-                    first_left_target_idx - offset,
-                    first_left_profile_idx,
-                    first_right_target_idx,
-                    first_right_profile_idx - offset,
+        let first = *self.first();
+        let distance = first.1.seq_idx - first.0.seq_idx;
+        let ad_start = self.ad_start;
+        (1..=distance)
+            .map(|offset| (offset, ad_start - offset))
+            .for_each(|(offset, idx)| {
+                self.bounds[idx] = Bound(
+                    Cell {
+                        prf_idx: first.0.prf_idx - offset,
+                        seq_idx: first.0.seq_idx,
+                    },
+                    Cell {
+                        prf_idx: first.1.prf_idx,
+                        seq_idx: first.1.seq_idx - offset,
+                    },
                 );
             });
 
-        let (
-            right_distance,
-            last_anti_diagonal_idx,
-            last_left_target_idx,
-            last_left_profile_idx,
-            last_right_target_idx,
-            last_right_profile_idx,
-        ) = {
-            let last_bound = self.last();
-            (
-                last_bound.left_target_idx - last_bound.right_target_idx,
-                last_bound.idx(),
-                last_bound.left_target_idx,
-                last_bound.left_profile_idx,
-                last_bound.right_target_idx,
-                last_bound.right_profile_idx,
-            )
-        };
-
-        (1..=right_distance)
-            .map(|offset| (offset, last_anti_diagonal_idx + offset))
-            .for_each(|(offset, anti_diagonal_idx)| {
-                self.set(
-                    anti_diagonal_idx,
-                    last_left_target_idx,
-                    last_left_profile_idx + offset,
-                    last_right_target_idx + offset,
-                    last_right_profile_idx,
+        let last = *self.last();
+        let distance = last.1.seq_idx - last.0.seq_idx;
+        let ad_end = self.ad_end;
+        (1..=distance)
+            .map(|offset| (offset, ad_end + offset))
+            .for_each(|(offset, idx)| {
+                self[Ad(idx)] = Bound(
+                    Cell {
+                        prf_idx: last.0.prf_idx,
+                        seq_idx: last.0.seq_idx + offset,
+                    },
+                    Cell {
+                        prf_idx: last.1.prf_idx + offset,
+                        seq_idx: last.1.seq_idx,
+                    },
                 );
             });
-
-        self.ad_start = first_anti_diagonal_idx - left_distance;
-        self.ad_end = last_anti_diagonal_idx + right_distance;
     }
 
     pub fn advance_forward(&mut self) {
-        let last = &self.new_bounds[self.ad_end];
+        let last = self.bounds[self.ad_end];
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move past the target length, and 0 otherwise
@@ -923,30 +635,16 @@ impl Cloud {
         // to try to move past the profile length, and 0 otherwise
         let seq_add = ((last.0.prf_idx + 1) > self.prf_len) as usize;
 
-        self.new_bounds[self.ad_end + 1] = Bound(
-            Cell {
-                prf_idx: (last.0.prf_idx + 1).min(self.prf_len),
-                seq_idx: last.0.seq_idx + seq_add,
-            },
-            Cell {
-                prf_idx: last.1.prf_idx + prf_add,
-                seq_idx: (last.1.seq_idx + 1).min(self.seq_len),
-            },
-        );
+        self.bounds[self.ad_end + 1].0.prf_idx = (last.0.prf_idx + 1).min(self.prf_len);
+        self.bounds[self.ad_end + 1].0.seq_idx = last.0.seq_idx + seq_add;
+        self.bounds[self.ad_end + 1].1.prf_idx = last.1.prf_idx + prf_add;
+        self.bounds[self.ad_end + 1].1.seq_idx = (last.1.seq_idx + 1).min(self.seq_len);
 
         self.ad_end += 1;
-
-        self.set(
-            self.ad_end,
-            self.new_bounds[self.ad_end].1.seq_idx,
-            self.new_bounds[self.ad_end].1.prf_idx,
-            self.new_bounds[self.ad_end].0.seq_idx,
-            self.new_bounds[self.ad_end].0.prf_idx,
-        )
     }
 
     pub fn advance_reverse(&mut self) {
-        let first = &self.new_bounds[self.ad_start];
+        let first = self.bounds[self.ad_start];
 
         // this is going to be 1 if the anti-diagonal is going
         // to try to move before target index 1, and 0 otherwise
@@ -956,73 +654,53 @@ impl Cloud {
         // to try to move before profle index 1, and 0 otherwise
         let seq_sub = ((first.1.prf_idx.saturating_sub(1)) < 1) as usize;
 
-        self.new_bounds[self.ad_start - 1] = Bound(
-            Cell {
-                prf_idx: first.0.prf_idx - prf_sub,
-                seq_idx: (first.0.seq_idx - 1).max(1),
-            },
-            Cell {
-                prf_idx: (first.1.prf_idx - 1).max(1),
-                seq_idx: first.1.seq_idx - seq_sub,
-            },
-        );
+        self.bounds[self.ad_start - 1].0.prf_idx = first.0.prf_idx - prf_sub;
+        self.bounds[self.ad_start - 1].0.seq_idx = (first.0.seq_idx - 1).max(1);
+        self.bounds[self.ad_start - 1].1.prf_idx = (first.1.prf_idx - 1).max(1);
+        self.bounds[self.ad_start - 1].1.seq_idx = first.1.seq_idx - seq_sub;
 
         self.ad_start -= 1;
-
-        self.set(
-            self.ad_start,
-            self.new_bounds[self.ad_start].1.seq_idx,
-            self.new_bounds[self.ad_start].1.prf_idx,
-            self.new_bounds[self.ad_start].0.seq_idx,
-            self.new_bounds[self.ad_start].0.prf_idx,
-        )
     }
 
     pub fn fill_rectangle(
         &mut self,
-        target_start: usize,
-        profile_start: usize,
-        target_end: usize,
-        profile_end: usize,
+        seq_start: usize,
+        prf_start: usize,
+        seq_end: usize,
+        prf_end: usize,
     ) {
         self.reset();
 
-        let target_distance = target_end - target_start;
-        let profile_distance = profile_end - profile_start;
+        let seq_distance = seq_end - seq_start;
+        let prf_distance = prf_end - prf_start;
 
-        let anti_diagonal_start = target_start + profile_start;
-        let anti_diagonal_end = target_end + profile_end;
+        let ad_start = seq_start + prf_start;
+        let ad_end = seq_end + prf_end;
 
-        for idx in anti_diagonal_start..=anti_diagonal_end {
+        for idx in ad_start..=ad_end {
             // relative_idx is the number of antidiagonals we have moved
             // forward relative to the starting antidiagonal index
-            let relative_idx = idx - anti_diagonal_start;
-            let bound = self.get_mut(idx);
+            let relative_idx = idx - ad_start;
 
-            bound.left_target_idx = target_end.min(target_start + relative_idx);
-            bound.left_profile_idx = profile_start + relative_idx.saturating_sub(target_distance);
+            self.bounds[idx].0.seq_idx = seq_start + relative_idx.saturating_sub(prf_distance);
+            self.bounds[idx].0.prf_idx = prf_end.min(prf_start + relative_idx);
 
-            bound.right_target_idx = target_start + relative_idx.saturating_sub(profile_distance);
-            bound.right_profile_idx = profile_end.min(profile_start + relative_idx);
-
-            debug_assert_eq!(
-                bound.left_target_idx + bound.left_profile_idx,
-                bound.right_target_idx + bound.right_profile_idx
-            );
+            self.bounds[idx].1.seq_idx = seq_end.min(seq_start + relative_idx);
+            self.bounds[idx].1.prf_idx = prf_start + relative_idx.saturating_sub(seq_distance);
         }
 
-        self.ad_start = anti_diagonal_start;
-        self.ad_end = anti_diagonal_end;
+        self.ad_start = ad_start;
+        self.ad_end = ad_end;
     }
 
     pub fn bounding_box(&self) -> BoundingBox {
         let mut bbox = BoundingBox::default();
 
-        self.bounds().iter().for_each(|bound| {
-            bbox.target_start = bbox.target_start.min(bound.left_target_idx);
-            bbox.target_end = bbox.target_start.max(bound.right_target_idx);
-            bbox.profile_start = bbox.profile_start.min(bound.left_profile_idx);
-            bbox.profile_end = bbox.profile_start.max(bound.right_profile_idx);
+        self.bounds.iter().for_each(|bound| {
+            bbox.target_start = bbox.target_start.min(bound.1.seq_idx);
+            bbox.target_end = bbox.target_start.max(bound.0.seq_idx);
+            bbox.profile_start = bbox.profile_start.min(bound.1.prf_idx);
+            bbox.profile_end = bbox.profile_start.max(bound.0.prf_idx);
         });
 
         bbox
@@ -1046,12 +724,9 @@ impl Cloud {
             let self_slice = &mut self.bounds[other.ad_start..interval.start];
             let other_slice = &other.bounds[other.ad_start..interval.start];
 
-            self_slice
-                .iter_mut()
-                .zip(other_slice)
-                .for_each(|(self_bound, other_bound)| {
-                    self_bound.replace_with(other_bound);
-                });
+            self_slice.iter_mut().zip(other_slice).for_each(|(b1, b2)| {
+                b1.replace_with(b2);
+            });
 
             self.ad_start = other.ad_start;
         }
@@ -1074,65 +749,53 @@ impl Cloud {
 
         match relationship {
             Relationship::Intersecting(_) => {
-                // merge along the overlapping anti-diagonals
-                let self_slice = &mut self.bounds[interval.start..=interval.end];
-                let other_slice = &other.bounds[interval.start..=interval.end];
-
-                self_slice
+                // merge along the intersecting anti-diagonals
+                self.bounds[interval.start..=interval.end]
                     .iter_mut()
-                    .zip(other_slice)
-                    .for_each(|(self_bound, other_bound)| self_bound.merge(other_bound));
+                    .zip(other.bounds[interval.start..=interval.end].iter())
+                    .for_each(|(b1, b2)| b1.merge(b2));
 
-                let min_target_idx = self.get(interval.start).right_target_idx;
-                let min_profile_idx = self.get(interval.start).left_profile_idx;
+                // // fix the 'left' non-intersecting range
+                // let min_prf_idx = self.bounds[interval.start].1.prf_idx;
+                // let min_seq_idx = self.bounds[interval.start].0.seq_idx;
+                // self.bounds[self.ad_start..interval.start]
+                //     .iter_mut()
+                //     .for_each(|bound| {
+                //         bound.grow_down_seq(min_seq_idx);
+                //         bound.grow_up_prf(min_prf_idx);
+                //     });
 
-                let self_slice = &mut self.bounds[self.ad_start..interval.start];
-
-                self_slice.iter_mut().for_each(|bound| {
-                    bound.grow_target(min_target_idx);
-                    bound.grow_left(min_profile_idx);
-
-                    debug_assert!(bound.right_target_idx >= 1);
-                    debug_assert!(bound.left_profile_idx >= 1);
-                });
-
-                let max_target_idx = self.get(interval.end).left_target_idx;
-                let max_profile_idx = self.get(interval.end).right_profile_idx;
-
-                let self_slice = &mut self.bounds[(interval.end + 1)..=self.ad_end];
-
-                self_slice.iter_mut().for_each(|bound| {
-                    bound.grow_right(max_profile_idx);
-                    bound.grow_down(max_target_idx);
-
-                    debug_assert!(bound.left_target_idx <= self.seq_len);
-                    debug_assert!(bound.left_profile_idx <= self.prf_len);
-                });
+                // // fix the 'right' non-intersecting range
+                // let max_prf_idx = self.bounds[interval.end].0.prf_idx;
+                // let max_seq_idx = self.bounds[interval.end].1.seq_idx;
+                // self.bounds[(interval.end + 1)..=self.ad_end]
+                //     .iter_mut()
+                //     .for_each(|bound| {
+                //         bound.grow_down_prf(max_prf_idx);
+                //         bound.grow_up_seq(max_seq_idx);
+                //     });
             }
             Relationship::Disjoint(_) => {
-                let target_start = self.get(interval.start - 1).right_target_idx;
-                let profile_start = self.get(interval.start - 1).left_profile_idx;
-                let target_end = self.get(interval.end + 1).left_target_idx;
-                let profile_end = self.get(interval.end + 1).right_profile_idx;
+                let prf_start = self.bounds[interval.start - 1].0.prf_idx;
+                let seq_start = self.bounds[interval.start - 1].1.seq_idx;
+                let prf_end = self.bounds[interval.end + 1].1.prf_idx;
+                let seq_end = self.bounds[interval.end + 1].0.seq_idx;
 
-                let target_distance = target_end - target_start;
-                let profile_distance = profile_end - profile_start;
-                let left_corner_idx = target_start + profile_start;
+                let seq_distance = seq_end - seq_start;
+                let prf_distance = prf_end - prf_start;
+                let left_corner_idx = seq_start + prf_start;
 
-                self.bounds
+                self.bounds[self.ad_start..=self.ad_end]
                     .iter_mut()
                     .enumerate()
                     .skip(interval.start)
                     .take(interval.length())
                     .for_each(|(idx, bound)| {
                         let relative_idx = idx - left_corner_idx;
-
-                        bound.left_target_idx = target_end.min(target_start + relative_idx);
-                        bound.left_profile_idx =
-                            profile_start + relative_idx.saturating_sub(target_distance);
-                        bound.right_target_idx =
-                            target_start + relative_idx.saturating_sub(profile_distance);
-                        bound.right_profile_idx = profile_end.min(profile_start + relative_idx);
+                        bound.0.seq_idx = seq_start + relative_idx.saturating_sub(prf_distance);
+                        bound.0.prf_idx = prf_end.min(prf_start + relative_idx);
+                        bound.1.seq_idx = seq_end.min(seq_start + relative_idx);
+                        bound.1.prf_idx = prf_start + relative_idx.saturating_sub(seq_distance);
                     });
             }
         }
@@ -1164,12 +827,12 @@ impl Cloud {
             // the interval properly intersect one another
             Relationship::Intersecting(interval) => {
                 let mut maybe_start = None;
-                for anti_diagonal_idx in interval.start..=interval.end {
-                    let self_bound = self.get(anti_diagonal_idx);
-                    let other_bound = other.get(anti_diagonal_idx);
+                for idx in interval.start..=interval.end {
+                    let self_bound = &self[Ad(idx)];
+                    let other_bound = &other[Ad(idx)];
 
                     if self_bound.intersects(other_bound) {
-                        maybe_start = Some(anti_diagonal_idx);
+                        maybe_start = Some(idx);
                         break;
                     }
                 }
@@ -1180,12 +843,12 @@ impl Cloud {
                     Some(start) => {
                         let mut end = start;
 
-                        for anti_diagonal_idx in (interval.start..=interval.end).rev() {
-                            let self_bound = self.get(anti_diagonal_idx);
-                            let other_bound = other.get(anti_diagonal_idx);
+                        for idx in (interval.start..=interval.end).rev() {
+                            let self_bound = &self[Ad(idx)];
+                            let other_bound = &other[Ad(idx)];
 
                             if self_bound.intersects(other_bound) {
-                                end = anti_diagonal_idx;
+                                end = idx;
                                 break;
                             }
                         }
@@ -1200,19 +863,18 @@ impl Cloud {
     }
 
     pub fn vec_image(&self, other: Option<&Self>) -> anyhow::Result<Vec<Vec<u8>>> {
-        let mut img = vec![vec![0; self.prf_len + 1]; self.seq_len + 1];
+        let mut img = vec![vec![0; self.seq_len + 2]; self.prf_len + 2];
 
-        self.bounds().iter().for_each(|b| {
-            b.cell_zip().for_each(|(t, p)| img[t][p] += 1);
+        self.iter().for_each(|b| {
+            b.iter().for_each(|c| img[c.prf_idx][c.seq_idx] += 1);
         });
-
         if let Some(other) = other {
             if self.prf_len != other.prf_len || self.seq_len != other.seq_len {
                 bail!("dimension mismatch")
             }
 
-            other.bounds().iter().for_each(|b| {
-                b.cell_zip().for_each(|(t, p)| img[t][p] += 2);
+            other.iter().for_each(|b| {
+                b.iter().for_each(|c| img[c.prf_idx][c.seq_idx] += 2);
             });
         };
         Ok(img)
@@ -1220,11 +882,9 @@ impl Cloud {
 
     #[allow(dead_code)]
     pub fn image(&self) -> CloudImage {
-        let img = self.vec_image(None).unwrap();
+        let img_bytes = self.vec_image(None).unwrap();
         CloudImage {
-            img_bytes: (0..img.iter().map(Vec::len).max().unwrap_or(0))
-                .map(|i| img.iter().filter_map(|row| row.get(i).copied()).collect())
-                .collect(),
+            img_bytes,
             print_orientation: ImageOrientation::ProfileMajor,
             print_mode: PrintMode::Default,
         }
@@ -1366,7 +1026,7 @@ pub mod debug {
                     } else if val == 3 {
                         img.put_pixel(x as u32, y as u32, GREEN)
                     } else {
-                        bail!("cloud cell error")
+                        bail!("cloud cell error: {val}");
                     }
                 }
             }

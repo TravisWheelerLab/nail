@@ -162,10 +162,10 @@ impl AllocationSize for DpMatrixSparse {
 
 impl AllocationSize for RowBounds {
     fn size(&self) -> Bytes {
-        self.target_length.size()
-            + self.profile_length.size()
-            + self.target_start.size()
-            + self.target_end.size()
+        self.seq_len.size()
+            + self.prf_len.size()
+            + self.seq_start.size()
+            + self.seq_end.size()
             + self.row_capacity.size()
             + Bytes(self.left_row_bounds.capacity() * std::mem::size_of::<usize>())
             + Bytes(self.right_row_bounds.capacity() * std::mem::size_of::<usize>())
