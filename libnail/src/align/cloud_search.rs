@@ -31,6 +31,14 @@ impl CloudSearchParams {
     pub fn trim_thresh(&self, a: f32, b: f32) -> f32 {
         (a - self.alpha).max(b - self.beta)
     }
+
+    pub fn scale(&self, scalar: f32) -> Self {
+        Self {
+            gamma: (self.gamma as f32 * scalar) as usize,
+            alpha: self.alpha * scalar,
+            beta: self.beta * scalar,
+        }
+    }
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -105,7 +113,7 @@ pub fn compute_backward_cells<M>(
     );
 }
 
-pub fn cloud_search_backward<M>(
+pub fn cloud_search_bwd<M>(
     prf: &Profile,
     seq: &Sequence,
     seed: &Seed,
@@ -260,7 +268,7 @@ pub fn compute_forward_cells<M>(
     mx[(E, seq_idx)] = log_sum!(mx[m_cell], mx[d_cell], mx[(E, seq_idx)])
 }
 
-pub fn cloud_search_forward<M>(
+pub fn cloud_search_fwd<M>(
     prf: &Profile,
     seq: &Sequence,
     seed: &Seed,

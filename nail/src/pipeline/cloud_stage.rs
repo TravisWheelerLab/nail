@@ -3,12 +3,15 @@ use std::time::{Duration, Instant};
 use derive_builder::Builder;
 use libnail::{
     align::{
-        cloud_score, cloud_search_backward, cloud_search_forward, null_one_score, p_value,
-        structs::{AdMatrixLinear, Cloud, RowBounds, Seed},
+        cloud_score, cloud_search_bwd, cloud_search_fwd, null_one_score, p_value,
+        structs::{
+            AdMatrixLinear, Cloud,
+            Relationship::{Disjoint, Intersecting},
+            RowBounds, Seed,
+        },
         CloudSearchParams, Nats,
     },
     structs::{Profile, Sequence},
-    util::{IterDebug, IterPrint},
 };
 
 use crate::args::SearchArgs;
@@ -99,42 +102,66 @@ impl CloudSearchStage for DefaultCloudSearchStage {
     fn run(&mut self, prf: &Profile, seq: &Sequence, seed: &Seed) -> CloudStageResult {
         let now = Instant::now();
         let mut stats = CloudStageStatsBuilder::default();
-        self.mx.reuse(seq.length);
-        self.fwd_cloud.reuse(seq.length, prf.length);
-        self.bwd_cloud.reuse(seq.length, prf.length);
         let mut row_bounds = RowBounds::new(seq.length);
         stats.memory_init_time(now.elapsed());
 
-        let now = Instant::now();
-        let forward_results = cloud_search_forward(
-            prf,
-            seq,
-            seed,
-            &mut self.mx,
-            &self.params,
-            &mut self.fwd_cloud,
-        );
-        stats.forward_time(now.elapsed());
-        stats.forward_cells(forward_results.num_cells_computed);
+        let mut fwd_results = None;
+        let mut bwd_results = None;
+        for attempts in 0..5 {
+            let now = Instant::now();
+            self.mx.reuse(seq.length);
+            self.fwd_cloud.reuse(seq.length, prf.length);
+            self.bwd_cloud.reuse(seq.length, prf.length);
+            stats.memory_init_time(now.elapsed());
 
-        let now = Instant::now();
-        self.mx.reuse(seq.length);
-        stats.memory_init_time(now.elapsed());
+            let params = self.params.scale(1.0 + (attempts as f32 * 0.5));
+            let now = Instant::now();
+            fwd_results = Some(cloud_search_fwd(
+                prf,
+                seq,
+                seed,
+                &mut self.mx,
+                &params,
+                &mut self.fwd_cloud,
+            ));
+            stats.forward_time(now.elapsed());
 
-        let now = Instant::now();
-        let backward_results = cloud_search_backward(
-            prf,
-            seq,
-            seed,
-            &mut self.mx,
-            &self.params,
-            &mut self.bwd_cloud,
-        );
-        stats.backward_time(now.elapsed());
-        stats.backward_cells(backward_results.num_cells_computed);
+            let now = Instant::now();
+            self.mx.reuse(seq.length);
+            stats.memory_init_time(now.elapsed());
 
-        // cloud search does not compute any special state scores
-        let raw_cloud_score = cloud_score(&forward_results, &backward_results);
+            let now = Instant::now();
+            bwd_results = Some(cloud_search_bwd(
+                prf,
+                seq,
+                seed,
+                &mut self.mx,
+                &params,
+                &mut self.bwd_cloud,
+            ));
+            stats.backward_time(now.elapsed());
+
+            match self.fwd_cloud.anti_diagonal_relationship(&self.bwd_cloud) {
+                Disjoint(_) => {
+                    if attempts >= 4 {
+                        return StageResult::Filtered {
+                            stats: stats.build().unwrap(),
+                        };
+                    }
+                }
+                Intersecting(_) => break,
+            };
+        }
+
+        let (fwd_results, bwd_results) = match (fwd_results, bwd_results) {
+            (Some(f), Some(b)) => (f, b),
+            _ => unreachable!("finished cloud search without results"),
+        };
+
+        stats.backward_cells(bwd_results.num_cells_computed);
+        stats.forward_cells(fwd_results.num_cells_computed);
+
+        let raw_cloud_score = cloud_score(&fwd_results, &bwd_results);
 
         // the null one is the denominator in the probability ratio
         let null_one = null_one_score(seq.length);
