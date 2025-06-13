@@ -236,6 +236,10 @@ impl Profile {
     pub fn relative_entropy(&self) -> f32 {
         let probs: Vec<Vec<f32>> = self.emission_scores[Self::MATCH_IDX]
             .iter()
+            // skip profile index 0
+            .skip(1)
+            // skip profile index L + 1
+            .take(self.length)
             .map(|scores| {
                 scores
                     .iter()
@@ -246,7 +250,7 @@ impl Profile {
             })
             .collect();
 
-        mean_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
+        mean_relative_entropy(&probs, &AMINO_BACKGROUND_FREQUENCIES)
     }
 
     pub fn adjust_mean_relative_entropy(&mut self, target_mre: f32) -> anyhow::Result<f32> {
@@ -282,6 +286,7 @@ impl Profile {
         // of the distribution below the LOWER_PROB_LIMIT
         let mut max_weights_by_pos: Vec<f32> = vec![0.0; self.length + 1];
 
+        #[derive(Debug)]
         enum Mode {
             Raise,
             Lower,
@@ -298,6 +303,7 @@ impl Profile {
                 max_weights_by_pos
                     .iter_mut()
                     .enumerate()
+                    // skip profile index 0
                     .skip(1)
                     .try_for_each(|(pos, weight)| {
                         *weight = start_probs_by_pos[pos]
@@ -322,6 +328,7 @@ impl Profile {
                 // the lower bound is the min of the max weights
                 let lower_bound = max_weights_by_pos
                     .iter()
+                    // skip profile index 0
                     .skip(1)
                     .min_by(|a, b| a.total_cmp(b))
                     .ok_or(anyhow!("empty weights"))?;
@@ -338,6 +345,7 @@ impl Profile {
                         .zip(&start_probs_by_pos)
                         // skip model position 0
                         .skip(1)
+                        .take(self.length)
                         .for_each(|(new_probs, start_probs)| {
                             new_probs
                                 .iter_mut()
@@ -405,8 +413,11 @@ impl Profile {
                             / (1.0 + clamped_weight)
                     });
             });
-            current_mre =
-                mean_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
+
+            current_mre = mean_relative_entropy(
+                &new_probs_by_pos[1..=self.length],
+                &AMINO_BACKGROUND_FREQUENCIES,
+            );
 
             let ordering = if (current_mre - target_mre).abs() < TARGET_TOLERANCE {
                 Ordering::Equal
@@ -426,11 +437,14 @@ impl Profile {
 
             weight = (lower_bound + upper_bound) / 2.0;
         }
+
         self.emission_scores[Self::MATCH_IDX]
             .iter_mut()
             .zip(new_probs_by_pos)
             // skip model position 0
             .skip(1)
+            // skip model position L + 1
+            .take(self.length)
             .for_each(|(scores, probs)| {
                 scores
                     .iter_mut()
