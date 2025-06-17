@@ -175,30 +175,6 @@ impl Bound {
         self.1 = other.1;
     }
 
-    pub fn grow_down_seq(&mut self, seq_idx: usize) {
-        let idx = self.idx();
-        self.0.seq_idx.min_assign(seq_idx.max(1));
-        self.0.prf_idx = idx - self.0.seq_idx;
-    }
-
-    pub fn grow_up_seq(&mut self, seq_idx: usize) {
-        let idx = self.idx();
-        self.1.seq_idx.max_assign(seq_idx);
-        self.0.seq_idx = idx - self.1.seq_idx;
-    }
-
-    pub fn grow_up_prf(&mut self, prf_idx: usize) {
-        let idx = self.idx();
-        self.0.seq_idx.min_assign(prf_idx.max(1));
-        self.1.seq_idx = idx - self.0.seq_idx;
-    }
-
-    pub fn grow_down_prf(&mut self, prf_idx: usize) {
-        let idx = self.idx();
-        self.0.prf_idx.max_assign(prf_idx);
-        self.0.seq_idx = idx - self.0.prf_idx;
-    }
-
     pub fn merge(&mut self, other: &Self) {
         self.0.prf_idx.max_assign(other.0.prf_idx);
         self.0.seq_idx.min_assign(other.0.seq_idx);
@@ -1546,7 +1522,7 @@ mod tests {
     #[test]
     pub fn test_advance_forward() {
         let mut cloud = Cloud::new(10, 10);
-        cloud.set(2, 1, 1, 1, 1);
+        cloud[Ad(2)] = Bound::from_seq_major(&[1, 1, 1, 1]);
         cloud.ad_start = 2;
         cloud.ad_end = 2;
 
@@ -1561,7 +1537,7 @@ mod tests {
     #[test]
     pub fn test_advance_reverse() {
         let mut cloud = Cloud::new(10, 10);
-        cloud.set(20, 10, 10, 10, 10);
+        cloud[Ad(20)] = Bound::from_seq_major(&[10, 10, 10, 10]);
         cloud.ad_start = 20;
         cloud.ad_end = 20;
 
@@ -1691,109 +1667,143 @@ mod tests {
     }
 
     #[test]
-    fn test_anti_diagonal_grow_up() {
-        let mut a = AntiDiagonal::new(5, 5, 5, 5);
-
-        // make sure we can't grow
-        // in the wrong direction
-        a.grow_target(6);
-        assert!(a.right_target_idx == 5);
-        assert!(a.right_profile_idx == 5);
-
-        // make sure we grow properly
-        a.grow_target(1);
-        assert!(a.right_target_idx == 1);
-        assert!(a.right_profile_idx == 9);
-
-        // make sure we can't grow past 1
-        a.grow_target(0);
-        assert!(a.right_target_idx == 1);
-        assert!(a.right_profile_idx == 9);
-    }
-
-    #[test]
-    fn test_anti_diagonal_grow_down() {
-        let mut a = AntiDiagonal::new(5, 5, 5, 5);
-
-        // make sure we can't grow
-        // in the wrong direction
-        a.grow_down(4);
-        assert!(a.left_target_idx == 5);
-        assert!(a.left_profile_idx == 5);
-
-        // make sure we grow properly
-        a.grow_down(9);
-        assert!(a.left_target_idx == 9);
-        assert!(a.left_profile_idx == 1);
-    }
-
-    #[test]
-    fn test_anti_diagonal_grow_left() {
-        let mut a = AntiDiagonal::new(5, 5, 5, 5);
-
-        // make sure we can't grow
-        // in the wrong direction
-        a.grow_left(6);
-        assert!(a.left_target_idx == 5);
-        assert!(a.left_profile_idx == 5);
-
-        // make sure we grow properly
-        a.grow_left(1);
-        assert!(a.left_target_idx == 9);
-        assert!(a.left_profile_idx == 1);
-
-        // make sure we can't grow past 1
-        a.grow_left(0);
-        assert!(a.left_target_idx == 9);
-        assert!(a.left_profile_idx == 1);
-    }
-
-    #[test]
-    fn test_anti_diagonal_grow_right() {
-        let mut a = AntiDiagonal::new(5, 5, 5, 5);
-
-        // make sure we can't grow
-        // in the wrong direction
-        a.grow_right(4);
-        assert!(a.right_target_idx == 5);
-        assert!(a.right_profile_idx == 5);
-
-        // make sure we grow properly
-        a.grow_right(9);
-        assert!(a.right_target_idx == 1);
-        assert!(a.right_profile_idx == 9);
-    }
-
-    #[test]
     fn test_anti_diagonal_intersects() {
         // different anti-diagonals
-        let a = AntiDiagonal::new(9, 1, 1, 9);
-        let b = AntiDiagonal::new(9, 2, 2, 9);
+        let a = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
+        let b = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 2,
+            },
+            Cell {
+                prf_idx: 2,
+                seq_idx: 9,
+            },
+        );
         assert!(!a.intersects(&b));
 
         // same antidiagonal ovlerap
-        let a = AntiDiagonal::new(9, 1, 1, 9);
-        let b = AntiDiagonal::new(9, 1, 1, 9);
+        let a = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
+        let b = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
         assert!(a.intersects(&b));
 
         // single cell overlap
-        let a = AntiDiagonal::new(9, 1, 5, 5);
-        let b = AntiDiagonal::new(5, 5, 1, 9);
+        let a = Bound(
+            Cell {
+                prf_idx: 5,
+                seq_idx: 5,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
+        let b = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 5,
+                seq_idx: 5,
+            },
+        );
         assert!(a.intersects(&b));
 
         // single cell difference
-        let a = AntiDiagonal::new(9, 1, 6, 4);
-        let b = AntiDiagonal::new(5, 5, 1, 9);
+        let a = Bound(
+            Cell {
+                prf_idx: 4,
+                seq_idx: 6,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
+        let b = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 5,
+                seq_idx: 5,
+            },
+        );
         assert!(!a.intersects(&b));
 
         // several cell overlap
-        let a = AntiDiagonal::new(9, 1, 3, 7);
-        let b = AntiDiagonal::new(7, 3, 1, 9);
+        let a = Bound(
+            Cell {
+                prf_idx: 7,
+                seq_idx: 3,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
+        let b = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 3,
+                seq_idx: 7,
+            },
+        );
         assert!(a.intersects(&b));
 
         // several cell difference
-        let a = AntiDiagonal::new(9, 1, 7, 3);
-        let b = AntiDiagonal::new(3, 7, 1, 9);
+        let a = Bound(
+            Cell {
+                prf_idx: 3,
+                seq_idx: 7,
+            },
+            Cell {
+                prf_idx: 1,
+                seq_idx: 9,
+            },
+        );
+        let b = Bound(
+            Cell {
+                prf_idx: 9,
+                seq_idx: 1,
+            },
+            Cell {
+                prf_idx: 7,
+                seq_idx: 3,
+            },
+        );
         assert!(!a.intersects(&b));
     }
 
