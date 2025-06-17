@@ -754,50 +754,8 @@ impl Cloud {
                     .iter_mut()
                     .zip(other.bounds[interval.start..=interval.end].iter())
                     .for_each(|(b1, b2)| b1.merge(b2));
-
-                // // fix the 'left' non-intersecting range
-                // let min_prf_idx = self.bounds[interval.start].1.prf_idx;
-                // let min_seq_idx = self.bounds[interval.start].0.seq_idx;
-                // self.bounds[self.ad_start..interval.start]
-                //     .iter_mut()
-                //     .for_each(|bound| {
-                //         bound.grow_down_seq(min_seq_idx);
-                //         bound.grow_up_prf(min_prf_idx);
-                //     });
-
-                // // fix the 'right' non-intersecting range
-                // let max_prf_idx = self.bounds[interval.end].0.prf_idx;
-                // let max_seq_idx = self.bounds[interval.end].1.seq_idx;
-                // self.bounds[(interval.end + 1)..=self.ad_end]
-                //     .iter_mut()
-                //     .for_each(|bound| {
-                //         bound.grow_down_prf(max_prf_idx);
-                //         bound.grow_up_seq(max_seq_idx);
-                //     });
             }
-            Relationship::Disjoint(_) => {
-                let prf_start = self.bounds[interval.start - 1].0.prf_idx;
-                let seq_start = self.bounds[interval.start - 1].1.seq_idx;
-                let prf_end = self.bounds[interval.end + 1].1.prf_idx;
-                let seq_end = self.bounds[interval.end + 1].0.seq_idx;
-
-                let seq_distance = seq_end - seq_start;
-                let prf_distance = prf_end - prf_start;
-                let left_corner_idx = seq_start + prf_start;
-
-                self.bounds[self.ad_start..=self.ad_end]
-                    .iter_mut()
-                    .enumerate()
-                    .skip(interval.start)
-                    .take(interval.length())
-                    .for_each(|(idx, bound)| {
-                        let relative_idx = idx - left_corner_idx;
-                        bound.0.seq_idx = seq_start + relative_idx.saturating_sub(prf_distance);
-                        bound.0.prf_idx = prf_end.min(prf_start + relative_idx);
-                        bound.1.seq_idx = seq_end.min(seq_start + relative_idx);
-                        bound.1.prf_idx = prf_start + relative_idx.saturating_sub(seq_distance);
-                    });
-            }
+            Relationship::Disjoint(_) => panic!("tried to merge disjoint cloud"),
         }
     }
 
