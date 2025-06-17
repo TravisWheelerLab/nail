@@ -253,8 +253,10 @@ mod tests {
 
         (0..1_000).for_each(|_| {
             let s = Sequence::random_amino(100, &mut rng);
-            s.digital_bytes[1..]
+            s.digital_bytes
                 .iter()
+                .skip(1)
+                .take(100)
                 .for_each(|&b| counts[b as usize] += 1);
         });
 
