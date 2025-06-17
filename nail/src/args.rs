@@ -9,6 +9,7 @@ pub enum NailSubCommands {
 }
 
 #[derive(Parser)]
+#[command(version)]
 #[command(name = "nail")]
 #[command(
     about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
@@ -94,7 +95,7 @@ pub struct PipelineArgs {
     /// Pruning parameter alpha
     #[arg(
         short = 'A',
-        default_value_t = 12.0,
+        default_value_t = 10.0,
         value_name = "X",
         help = "Cloud search parameter α:\n  \
                 local score pruning threshold"
@@ -104,7 +105,7 @@ pub struct PipelineArgs {
     /// Pruning parameter beta
     #[arg(
         short = 'B',
-        default_value_t = 20.0,
+        default_value_t = 16.0,
         value_name = "X",
         help = "Cloud search parameter β:\n  \
                 global score pruning threshold"
