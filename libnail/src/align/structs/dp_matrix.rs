@@ -1304,7 +1304,7 @@ mod tests {
         let mut mx = AdMatrixSparse::from_cloud(&cloud);
 
         let mut val = 1.0;
-        cloud.bounds.iter().for_each(|b| {
+        cloud.iter().for_each(|b| {
             b.iter().for_each(|c| {
                 mx[c.m_cell()] = val;
                 mx[c.i_cell()] = val + 0.1;
