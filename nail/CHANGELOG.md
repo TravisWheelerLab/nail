@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [0.4.0] - 2025-6-18
+
+### Added
+- added `--version` commmand to CLI
+- added `--max-seed` command to dev CLI
+- added `MaxSeedStage` to force a seed for every alignment
+- added support for `--double-seed` for sequence to sequence search
+- added `Fasta.names_iter()`
+- added `mmseqs::consts::{BLOSUM_62, BLOSUM_80}`
+- added `MmseqsScoreModel`
+- added `MmseqsDbPaths.dir()`
+
+### Changed
+- changed default `alpha` and `beta` parameters to `10.0` and `16.0`
+
 ## [0.3.0] - 2024-12-23
 
 ### Added

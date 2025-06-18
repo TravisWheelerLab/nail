@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -->
 
 
+## [0.4.0] - 2025-6-18
+
+### Added
+- added `PartialEq` and `PartialOrd` impls for `Bits` and `Nats`
+- added struct `Cell`
+- added struct `CloudImage` for better cloud visualization API
+- added structs `AdMatrixSparse`, `AdMatrixLinear`, `AdMatrixQuadratic`
+- added enum `AminoAcid`
+- added traits `CoreCellIndexable`, `BackgroundCellIndexable`
+- added enums `CoreState`, `BackgroundState`
+- added structs `Emission`, `CoreToCore`, `BackgroundLoop`, `CoreEntry`
+- added traits `MinAssign`, `MaxAssign` and blanket impls
+- added macro `assert_eq_pairs!`
+### Changed
+- `Profile.match_scores` and `Profile.insert_scores` vectors combined into `Profile.emission_scores`
+- structs `Sequence`, `Profile` now have an ending pad position
+- changed field names on `Seed` struct to use "seq" and "prf" instead of "target" and "profile"
+- renamed struct `AntiDiagonal` to `Bound`
+- renamed struct `AntiDiagonalBounds` to `Cloud`
+- changed cloud search implementation to better match the Forward/Backward recurrence
+- renamed trait `VecUtils` to `VecMath`
+### Removed
+- removed structs `CloudAntiDiagonal`, `CloudMatrixLinear`
+
 ## [0.3.0] - 2024-12-23
 
 ### Added

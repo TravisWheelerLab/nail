@@ -1,6 +1,6 @@
 [package]
 name = "libnail"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
 license = "BSD-3-Clause"
@@ -29,4 +29,7 @@ rand_pcg = "0.3.1"
 image = { version = "0.25.1" , optional = true }
 
 [dev-dependencies]
-pretty_assertions = "1.4"
+ctor = "0.4.1"
+colored = "3.0.0"
+assert2 = "0.3.15"
+color-backtrace =  "0.7.0" 

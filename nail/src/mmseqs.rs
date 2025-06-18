@@ -8,7 +8,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 
 use libnail::{
     align::{structs::Seed, Nats},
@@ -24,9 +24,44 @@ use crate::{
 };
 
 pub mod consts {
+
     pub const AMINO_DBTYPE: &[u8] = &[0, 0, 0, 0];
     pub const PROFILE_DBTYPE: &[u8] = &[2, 0, 0, 0];
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
+    #[cfg(not(target_os = "windows"))]
+    pub const BLOSUM_62: &str = include_str!("../mat/blosum62.mat");
+    #[cfg(not(target_os = "windows"))]
+    pub const BLOSUM_80: &str = include_str!("../mat/blosum80.mat");
+    #[cfg(target_os = "windows")]
+    pub const BLOSUM_62: &str = include_str!("..\\mat\\blosum62.mat");
+    #[cfg(target_os = "windows")]
+    pub const BLOSUM_80: &str = include_str!("..\\mat\\blosum80.mat");
+}
+
+pub enum MmseqsScoreModel {
+    Profile,
+    Blosum62,
+    Blosum80,
+}
+
+impl MmseqsScoreModel {
+    pub fn write(&self, dir: impl AsRef<Path>) -> anyhow::Result<Option<PathBuf>> {
+        let dir = dir.as_ref();
+
+        if !dir.is_dir() {
+            bail!("path: {} is not a directory", dir.to_string_lossy());
+        }
+
+        let (mat_str, mat_path) = match self {
+            MmseqsScoreModel::Profile => return Ok(None),
+            MmseqsScoreModel::Blosum62 => (BLOSUM_62, dir.join("blosum62.out")),
+            MmseqsScoreModel::Blosum80 => (BLOSUM_80, dir.join("blosum80.out")),
+        };
+
+        mat_path.open(true)?.write_all(mat_str.as_bytes())?;
+
+        Ok(Some(mat_path))
+    }
 }
 
 pub struct MmseqsDbPaths {
@@ -46,6 +81,13 @@ impl MmseqsDbPaths {
             prefilter_db: dir.join("prefilterDB"),
             align_db: dir.join("alignDB"),
             align_tsv: dir.join("align.tsv"),
+        }
+    }
+
+    pub fn dir(&self) -> anyhow::Result<&Path> {
+        match self.query_db.parent() {
+            Some(path) => Ok(path),
+            None => bail!("no parent directory found in call to MmseqsDbPaths::write()"),
         }
     }
 }
@@ -190,7 +232,11 @@ pub fn write_mmseqs_profile_database(
     Ok(())
 }
 
-pub fn run_mmseqs_search(paths: &MmseqsDbPaths, args: &SearchArgs) -> anyhow::Result<()> {
+pub fn run_mmseqs_search(
+    paths: &MmseqsDbPaths,
+    args: &SearchArgs,
+    score_model: MmseqsScoreModel,
+) -> anyhow::Result<()> {
     let effective_e_value = args.pipeline_args.seed_pvalue_threshold
         * args
             .expert_args
@@ -201,33 +247,54 @@ pub fn run_mmseqs_search(paths: &MmseqsDbPaths, args: &SearchArgs) -> anyhow::Re
     let _ = paths.align_db.with_extension("dbtype").remove();
     let _ = paths.align_db.with_extension("index").remove();
 
-    Command::new("mmseqs")
-        .arg("prefilter")
-        .arg(&paths.query_db)
-        .arg(&paths.target_db)
-        .arg(&paths.prefilter_db)
-        .args(["--threads", &args.num_threads.to_string()])
-        .args(["-k", &args.mmseqs_args.k.to_string()])
-        .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
-        .args([
-            "--min-ungapped-score",
-            &args.mmseqs_args.min_ungapped_score.to_string(),
-        ])
-        .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
-        .run()?;
+    let score_mat_path = score_model.write(paths.dir()?)?;
 
-    Command::new("mmseqs")
-        .arg("align")
-        .arg(&paths.query_db)
-        .arg(&paths.target_db)
-        .arg(&paths.prefilter_db)
-        .arg(&paths.align_db)
-        .args(["--threads", &args.num_threads.to_string()])
-        .args(["-e", &effective_e_value.to_string()])
-        // the '-a' argument enables alignment backtraces in mmseqs2
-        // it is required to get start positions for alignments
-        .args(["-a", "1"])
-        .run()?;
+    {
+        let mut prefilter = Command::new("mmseqs");
+
+        prefilter
+            .arg("prefilter")
+            .arg(&paths.query_db)
+            .arg(&paths.target_db)
+            .arg(&paths.prefilter_db)
+            .args(["--threads", &args.num_threads.to_string()])
+            .args(["-k", &args.mmseqs_args.k.to_string()])
+            .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
+            .args([
+                "--min-ungapped-score",
+                &args.mmseqs_args.min_ungapped_score.to_string(),
+            ])
+            .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
+
+        if let Some(ref path) = score_mat_path {
+            prefilter.arg("--sub-mat");
+            prefilter.arg(path);
+        };
+
+        prefilter.run()?;
+    }
+
+    {
+        let mut align = Command::new("mmseqs");
+        align
+            .arg("align")
+            .arg(&paths.query_db)
+            .arg(&paths.target_db)
+            .arg(&paths.prefilter_db)
+            .arg(&paths.align_db)
+            .args(["--threads", &args.num_threads.to_string()])
+            .args(["-e", &effective_e_value.to_string()])
+            // the '-a' argument enables alignment backtraces in mmseqs2
+            // it is required to get start positions for alignments
+            .args(["-a", "1"]);
+
+        if let Some(path) = score_mat_path {
+            align.arg("--sub-mat");
+            align.arg(path);
+        };
+
+        align.run()?;
+    }
 
     Command::new("mmseqs")
         .arg("convertalis")
@@ -277,10 +344,10 @@ pub fn seeds_from_mmseqs_align_tsv(path: impl AsRef<Path>) -> anyhow::Result<See
         profile_map.insert(
             target_name,
             Seed {
-                target_start,
-                target_end,
-                profile_start,
-                profile_end,
+                seq_start: target_start,
+                seq_end: target_end,
+                prf_start: profile_start,
+                prf_end: profile_end,
                 score,
             },
         );

@@ -1,48 +1,100 @@
-use std::ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign};
+use std::{
+    cmp::Ordering::{Equal, Greater, Less},
+    fmt::{Debug, Display},
+    ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign},
+};
 
 use lazy_static::lazy_static;
 
-pub trait PrintMe {
+pub trait MaxAssign {
+    fn max_assign(&mut self, other: Self);
+}
+
+pub trait MinAssign {
+    fn min_assign(&mut self, other: Self);
+}
+
+impl<T: PartialOrd + Copy> MaxAssign for T {
+    fn max_assign(&mut self, other: Self) {
+        if *self < other {
+            *self = other.clone();
+        }
+    }
+}
+
+impl<T: PartialOrd + Copy> MinAssign for T {
+    fn min_assign(&mut self, other: Self) {
+        if *self > other {
+            *self = other.clone();
+        }
+    }
+}
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_backtrace() {
+    color_backtrace::install();
+}
+
+pub trait Print {
     fn print(&self);
+    fn print_debug(&self);
 }
 
-impl<T: PrintMe> PrintMe for Vec<T> {
+impl<T: Display + Debug> Print for T {
     fn print(&self) {
-        for val in self.iter() {
-            val.print();
-        }
+        println!("{self}");
+    }
+
+    fn print_debug(&self) {
+        println!("{self:?}");
     }
 }
 
-impl<T: PrintMe> PrintMe for &[T] {
+pub trait CollectionPrint {
+    fn print(&self);
+    fn print_debug(&self);
+}
+
+impl<T: Display + Debug> CollectionPrint for Vec<T> {
     fn print(&self) {
-        for val in self.iter() {
-            val.print();
-        }
+        self.iter()
+            .enumerate()
+            .for_each(|(i, e)| println!("{i}: {e}"));
+    }
+
+    fn print_debug(&self) {
+        self.iter()
+            .enumerate()
+            .for_each(|(i, e)| println!("{i}: {e:?}"));
     }
 }
 
-impl PrintMe for String {
-    fn print(&self) {
-        println!("{}", self)
+pub trait IterPrint {
+    fn print_each(self);
+}
+
+pub trait IterDebug {
+    fn debug_each(self);
+}
+
+impl<I, T> IterPrint for I
+where
+    I: Iterator<Item = T>,
+    T: Display,
+{
+    fn print_each(self) {
+        self.for_each(|i| println!("{i}"));
     }
 }
 
-impl PrintMe for usize {
-    fn print(&self) {
-        println!("{}", self)
-    }
-}
-
-impl PrintMe for i32 {
-    fn print(&self) {
-        println!("{}", self)
-    }
-}
-
-impl PrintMe for f32 {
-    fn print(&self) {
-        println!("{:.3}", self)
+impl<I, T> IterDebug for I
+where
+    I: Iterator<Item = T>,
+    T: Debug,
+{
+    fn debug_each(self) {
+        self.for_each(|i| println!("{i:?}"));
     }
 }
 
@@ -87,7 +139,7 @@ impl Float for f64 {
     }
 }
 
-pub trait VecUtils<T>
+pub trait VecMath<T>
 where
     T: Float,
 {
@@ -100,7 +152,7 @@ where
     fn saturate_lower(&mut self, min: T);
 }
 
-impl<T> VecUtils<T> for Vec<T>
+impl<T> VecMath<T> for Vec<T>
 where
     T: Float,
 {
@@ -149,6 +201,52 @@ where
                 *item = min
             }
         });
+    }
+}
+
+pub trait VecUtils<T>
+where
+    T: Clone,
+{
+    fn reset(&mut self, value: T);
+    fn grow_or_shrink(&mut self, new_len: usize, value: T);
+    fn resize_and_reset(&mut self, new_len: usize, value: T);
+}
+
+impl<T> VecUtils<T> for Vec<T>
+where
+    T: Clone,
+{
+    fn reset(&mut self, value: T) {
+        self.iter_mut().for_each(|v| *v = value.clone());
+    }
+
+    fn resize_and_reset(&mut self, new_len: usize, value: T) {
+        match new_len.cmp(&self.len()) {
+            Less => {
+                self.truncate(new_len);
+                self.shrink_to_fit();
+                self.iter_mut().for_each(|v| *v = value.clone());
+            }
+            Equal => self.iter_mut().for_each(|v| *v = value.clone()),
+            Greater => {
+                self.iter_mut().for_each(|v| *v = value.clone());
+                self.resize(new_len, value);
+            }
+        }
+    }
+
+    fn grow_or_shrink(&mut self, new_len: usize, value: T) {
+        match new_len.cmp(&self.len()) {
+            Less => {
+                self.truncate(new_len);
+                self.shrink_to_fit();
+            }
+            Equal => {}
+            Greater => {
+                self.resize(new_len, value);
+            }
+        }
     }
 }
 
@@ -231,6 +329,15 @@ macro_rules! max_f32 {
         // Call `max_f32!` on the tail `$y`
         $x.max(max_f32!($($y),+))
     )
+}
+
+#[macro_export]
+macro_rules! assert_eq_pairs {
+    ($( $left:expr, $right:expr );+ $(;)?) => {
+        $(
+            assert!($left == $right);
+        )+
+    };
 }
 
 #[cfg(feature = "debug")]

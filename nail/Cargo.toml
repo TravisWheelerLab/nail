@@ -1,6 +1,6 @@
 [package]
 name = "nail"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
 license = "BSD-3-Clause"
@@ -20,7 +20,7 @@ jemalloc = ["jemallocator"]
 [dependencies]
 jemallocator = { version = "0.3", optional = true }
 clap = { version = "4.5.23", features = ["derive", "wrap_help"] }
-libnail = { path = "../libnail", version = "0.3.0" }
+libnail = { path = "../libnail", version = "0.4.0" }
 anyhow = "1.0.66"
 thiserror = "1.0.37"
 serde = { version = "1.0", features = ["derive"] }
@@ -32,3 +32,5 @@ strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 derive_builder = "0.20.1"
 indexmap = "2.7.0"
+colored = "3.0.0"
+color-backtrace = "0.7.0"

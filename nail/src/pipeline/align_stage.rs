@@ -144,9 +144,14 @@ impl AlignStage for DefaultAlignStage {
 
         // we use the forward score to compute the final bit score (later)
         let now = Instant::now();
-        let forward_score = forward(profile, target, &mut self.forward_matrix, bounds).to_bits()
-            // the denominator is the null one score
-            - null_one_score(target.length);
+
+        let raw_forward_score = forward(profile, target, &mut self.forward_matrix, bounds);
+
+        // the denominator is the null one score
+        let null_one = null_one_score(target.length);
+
+        let forward_score = (raw_forward_score - null_one).to_bits();
+
         stats.forward_time(now.elapsed());
         stats.forward_cells(bounds.num_cells);
 
@@ -201,7 +206,7 @@ impl AlignStage for DefaultAlignStage {
             &self.posterior_matrix,
             &self.optimal_matrix,
             &mut trace,
-            bounds.target_end,
+            bounds.seq_end,
         );
         stats.traceback_time(now.elapsed());
 

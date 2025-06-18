@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Seed {
-    pub target_start: usize,
-    pub target_end: usize,
-    pub profile_start: usize,
-    pub profile_end: usize,
+    pub seq_start: usize,
+    pub seq_end: usize,
+    pub prf_start: usize,
+    pub prf_end: usize,
     pub score: f32,
 }

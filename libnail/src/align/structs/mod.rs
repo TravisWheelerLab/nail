@@ -1,22 +1,17 @@
 mod alignment;
-pub use alignment::{
-    Alignment, AlignmentBuilder, Boundaries, CellStats, DisplayStrings, ScoreParams, Scores,
-};
+pub use alignment::*;
 
-mod anti_diagonal_bounds;
-pub use anti_diagonal_bounds::{AntiDiagonal, AntiDiagonalBounds, Relationship};
-
-mod cloud_matrix;
-pub use cloud_matrix::CloudMatrixLinear;
+mod cloud;
+pub use cloud::*;
 
 mod dp_matrix;
-pub use dp_matrix::{DpMatrix, DpMatrixFlat, DpMatrixSparse};
+pub use dp_matrix::*;
 
 mod row_bounds;
-pub use row_bounds::RowBounds;
+pub use row_bounds::*;
 
 mod seed;
-pub use seed::Seed;
+pub use seed::*;
 
 mod trace;
-pub use trace::Trace;
+pub use trace::*;

@@ -1,3 +1,7 @@
+use std::cmp::{Ordering, PartialEq, PartialOrd};
+use std::fmt::Debug;
+use std::ops::{Add, Sub};
+
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
@@ -18,13 +22,13 @@ impl Nats {
     }
 }
 
-impl std::fmt::Debug for Nats {
+impl Debug for Nats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Nats({})", self.0)
     }
 }
 
-impl std::ops::Add for Nats {
+impl Add for Nats {
     type Output = Nats;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -32,15 +36,7 @@ impl std::ops::Add for Nats {
     }
 }
 
-impl std::ops::Sub for Nats {
-    type Output = Nats;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Nats(self.0 - rhs.0)
-    }
-}
-
-impl std::ops::Add<Bits> for Nats {
+impl Add<Bits> for Nats {
     type Output = Nats;
 
     fn add(self, rhs: Bits) -> Self::Output {
@@ -48,11 +44,31 @@ impl std::ops::Add<Bits> for Nats {
     }
 }
 
-impl std::ops::Sub<Bits> for Nats {
+impl Sub for Nats {
+    type Output = Nats;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Nats(self.0 - rhs.0)
+    }
+}
+
+impl Sub<Bits> for Nats {
     type Output = Nats;
 
     fn sub(self, rhs: Bits) -> Self::Output {
         self - rhs.to_nats()
+    }
+}
+
+impl PartialEq for Nats {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd for Nats {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -69,13 +85,13 @@ impl Bits {
     }
 }
 
-impl std::fmt::Debug for Bits {
+impl Debug for Bits {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Bits({})", self.0)
     }
 }
 
-impl std::ops::Add for Bits {
+impl Add for Bits {
     type Output = Bits;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -83,15 +99,7 @@ impl std::ops::Add for Bits {
     }
 }
 
-impl std::ops::Sub for Bits {
-    type Output = Bits;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Bits(self.0 - rhs.0)
-    }
-}
-
-impl std::ops::Add<Nats> for Bits {
+impl Add<Nats> for Bits {
     type Output = Bits;
 
     fn add(self, rhs: Nats) -> Self::Output {
@@ -99,11 +107,31 @@ impl std::ops::Add<Nats> for Bits {
     }
 }
 
-impl std::ops::Sub<Nats> for Bits {
+impl Sub for Bits {
+    type Output = Bits;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Bits(self.0 - rhs.0)
+    }
+}
+
+impl Sub<Nats> for Bits {
     type Output = Bits;
 
     fn sub(self, rhs: Nats) -> Self::Output {
         self - rhs.to_bits()
+    }
+}
+
+impl PartialEq for Bits {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialOrd for Bits {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -184,8 +212,9 @@ pub fn cloud_score(
 /// Compute the null one score adjustment: the sum of the background
 /// transitions across the length of the target sequence.
 pub fn null_one_score(target_length: usize) -> Nats {
-    let p1 = (target_length as f32) / (target_length as f32 + 1.0);
-    Nats(target_length as f32 * p1.ln() + (1.0 - p1).ln())
+    let p_null_loop = (target_length as f32) / (target_length as f32 + 1.0);
+    let p_null_exit = 1.0 - p_null_loop;
+    Nats(target_length as f32 * p_null_loop.ln() + p_null_exit.ln())
 }
 
 /// Compute the null two score adjustment: the composition bias.
@@ -240,7 +269,7 @@ pub fn null_two_score(
     //              these are the expected numbers
     //              of times each state is used
     //
-    for target_idx in row_bounds.target_start..=row_bounds.target_end {
+    for target_idx in row_bounds.seq_start..=row_bounds.seq_end {
         let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];
         let profile_end_in_current_row = row_bounds.right_row_bounds[target_idx];
 
@@ -252,9 +281,9 @@ pub fn null_two_score(
         // the posterior probability of being in a special
         // state at this target position is the sum of
         // the individual posteriors of each special state
-        let special_posterior = posterior_matrix.get_special(target_idx, Profile::SPECIAL_N_IDX)
-            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
-            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX);
+        let special_posterior = posterior_matrix.get_special(target_idx, Profile::N_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::J_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::C_IDX);
 
         let core_posterior = 1.0 - special_posterior;
         core_posteriors[target_idx] = core_posterior;
@@ -318,7 +347,7 @@ pub fn null_two_score(
     let expected_scores: Vec<_> = expected_prob_ratios.into_iter().map(|r| r.ln()).collect();
 
     let mut null_two_score = 0.0;
-    (row_bounds.target_start..=row_bounds.target_end)
+    (row_bounds.seq_start..=row_bounds.seq_end)
         .map(|idx| {
             (
                 core_posteriors[idx],
@@ -356,6 +385,24 @@ mod test {
         let c = a - b;
         assert_eq!(c.value(), 10.0);
 
+        let a = Nats(10.0);
+        let b = Nats(10.0);
+        assert_eq!(a, b);
+        assert_eq!(b, a);
+        assert!(a <= b);
+        assert!(a >= b);
+        assert!(b <= a);
+        assert!(b >= a);
+
+        let a = Nats(10.0);
+        let b = Nats(20.0);
+        assert_ne!(a, b);
+        assert_ne!(b, a);
+        assert!(a < b);
+        assert!(a <= b);
+        assert!(b > a);
+        assert!(b >= a);
+
         Ok(())
     }
 
@@ -370,6 +417,24 @@ mod test {
         let b = Bits(10.0);
         let c = a - b;
         assert_eq!(c.value(), 10.0);
+
+        let a = Bits(10.0);
+        let b = Bits(10.0);
+        assert_eq!(a, b);
+        assert_eq!(b, a);
+        assert!(a <= b);
+        assert!(a >= b);
+        assert!(b <= a);
+        assert!(b >= a);
+
+        let a = Bits(10.0);
+        let b = Bits(20.0);
+        assert_ne!(a, b);
+        assert_ne!(b, a);
+        assert!(a < b);
+        assert!(a <= b);
+        assert!(b > a);
+        assert!(b >= a);
 
         Ok(())
     }

@@ -206,25 +206,25 @@ In practice, these seeds may be produced from any source as long as they are for
 {
   "query1": {
     "target1": {
-      "target_start": 48, //  <-  these are the positions from which
-      "target_end": 287,  //  <   nail will begin the cloud search
-      "profile_start": 1, //  <   
-      "profile_end": 259, //  <
+      "seq_start": 48, //  <-  these are the positions from which
+      "seq_end": 287,  //  <   nail will begin the cloud search
+      "prf_start": 1, //  <   
+      "prf_end": 259, //  <
       "score": 168.0      //  <---  the score field is used to pick between
     },                              seeds that compete with each other
     "target2": {
-      "target_start": 72,
-      "target_end": 343,
-      "profile_start": 23,
-      "profile_end": 259,
+      "seq_start": 72,
+      "seq_end": 343,
+      "prf_start": 23,
+      "prf_end": 259,
       "score": 106.0
     },
   "query2": {
     "target3": {
-      "target_start": 56,
-      "target_end": 303,
-      "profile_start": 1,
-      "profile_end": 259,
+      "seq_start": 56,
+      "seq_end": 303,
+      "prf_start": 1,
+      "prf_end": 259,
       "score": 125.0
     },
   }
