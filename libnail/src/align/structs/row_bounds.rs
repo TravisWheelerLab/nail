@@ -1,4 +1,4 @@
-use crate::align::structs::anti_diagonal_bounds::Cloud;
+use crate::align::structs::cloud::Cloud;
 use crate::util::{MaxAssign, MinAssign};
 use anyhow::Result;
 use std::fmt::{Debug, Formatter};
