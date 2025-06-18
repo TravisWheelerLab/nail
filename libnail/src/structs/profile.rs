@@ -106,20 +106,7 @@ impl AminoAcid {
 }
 
 pub struct Emission(pub CoreState, pub AminoAcid);
-//
 pub struct CoreToCore(pub CoreState, pub CoreState);
-
-// TODO: use this instead of CoreToCore
-//#[repr(usize)]
-//pub enum CoreTransition {
-//    MatchToMatch(usize) = 1,
-//    MatchToInsert(usize) = 2,
-//    MatchToDelete(usize) = 3,
-//    InsertToInsert(usize) = 4,
-//    InsertToMatch(usize) = 5,
-//    DeleteToDelete(usize) = 6,
-//    DeleteToMatch(usize) = 7,
-//}
 
 impl Debug for CoreToCore {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
