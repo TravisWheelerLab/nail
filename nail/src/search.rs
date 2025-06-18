@@ -10,7 +10,7 @@ use crate::io::Fasta;
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
     seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline, SeedMap,
+    FullDpCloudSearchStage, MaxSeedStage, OutputStage, Pipeline, SeedMap, SeedStage,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -157,9 +157,14 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let seed_stage: Box<dyn SeedStage> = match args.dev_args.max_seed {
+        true => Box::new(MaxSeedStage::new(&queries, &targets)),
+        false => Box::new(DefaultSeedStage::new(seeds)),
+    };
+
     let mut pipeline = Pipeline {
         targets,
-        seed: Box::new(DefaultSeedStage::new(seeds)),
+        seed: seed_stage,
         cloud_search: match args.dev_args.full_dp {
             true => Box::<FullDpCloudSearchStage>::default(),
             false => Box::new(DefaultCloudSearchStage::new(&args)),
