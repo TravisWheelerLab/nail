@@ -113,20 +113,6 @@ impl Pipeline {
                         StageResult::Filtered { .. } => None,
                     };
 
-                    // if let Some(StageResult::Passed { stats: fs, .. }) = &align_result {
-                    //     if let StageResult::Passed { stats: cs, .. } = &cloud_result {
-                    //         if fs.score < cs.score.to_bits() {
-                    //             println!(
-                    //                 "full fwd: {:?} cloud approx: {:?}",
-                    //                 fs.score.to_nats(),
-                    //                 cs.score
-                    //             );
-                    //             println!("{} {}", profile.name, target_name);
-                    //             panic!();
-                    //         }
-                    //     }
-                    // };
-
                     Some(PipelineResult {
                         profile_name: profile.name.clone(),
                         target_name: target.name.clone(),

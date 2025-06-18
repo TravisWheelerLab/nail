@@ -11,7 +11,7 @@ exclude = [
 ]
 
 [features]
-default = ["debug"]
+default = []
 debug = ["libnail/debug"]
 jemalloc = ["jemallocator"]
 
