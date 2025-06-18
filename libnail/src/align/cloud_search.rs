@@ -5,9 +5,7 @@ use crate::structs::profile::{AminoAcid, BackgroundLoop, CoreToCore, Emission};
 use crate::structs::{Profile, Sequence};
 use crate::util::{log_add, MaxAssign};
 
-use super::structs::{
-    Ad, BackgroundState::*, Bound, Cell, CoreState::*, NewCloudMatrix, NewDpMatrix,
-};
+use super::structs::{Ad, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix};
 use super::Nats;
 
 #[derive(Clone)]
@@ -122,7 +120,7 @@ pub fn cloud_search_bwd<M>(
     cloud: &mut Cloud,
 ) -> CloudSearchResults
 where
-    M: NewCloudMatrix,
+    M: CloudMatrix,
 {
     let mut num_cells = 0usize;
     let mut max_score = -f32::INFINITY;
@@ -277,7 +275,7 @@ pub fn cloud_search_fwd<M>(
     cloud: &mut Cloud,
 ) -> CloudSearchResults
 where
-    M: NewCloudMatrix,
+    M: CloudMatrix,
 {
     let mut num_cells = 0usize;
     let mut max_score = -f32::INFINITY;

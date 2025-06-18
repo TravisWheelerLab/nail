@@ -353,7 +353,7 @@ pub trait NewDpMatrix: CoreCellIndexable + BackgroundCellIndexable {
     }
 }
 
-pub trait NewCloudMatrix: NewDpMatrix {
+pub trait CloudMatrix: NewDpMatrix {
     fn reset_ad(&mut self, bound: &Bound);
     fn reuse(&mut self, prf_len: usize, seq_len: usize);
     fn trim_ad(&mut self, bound: &mut Bound, trim_thresh: f32) {
@@ -1005,7 +1005,7 @@ impl NewDpMatrix for AdMatrixQuadratic {
     }
 }
 
-impl NewCloudMatrix for AdMatrixQuadratic {
+impl CloudMatrix for AdMatrixQuadratic {
     fn reuse(&mut self, prf_len: usize, seq_len: usize) {
         self.reuse(prf_len, seq_len);
     }
@@ -1091,7 +1091,7 @@ impl NewDpMatrix for AdMatrixLinear {
     }
 }
 
-impl NewCloudMatrix for AdMatrixLinear {
+impl CloudMatrix for AdMatrixLinear {
     fn reuse(&mut self, _: usize, seq_len: usize) {
         self.reuse(seq_len);
     }
