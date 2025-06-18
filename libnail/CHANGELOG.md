@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -->
 
 
+## [0.4.0] - 2025-6-18
+
+### Added
+### Changed
+- changed cloud search implementation to better match the Forward/Backward recurrence
+### Removed
+### Fixed
+
 ## [0.3.0] - 2024-12-23
 
 ### Added

@@ -1,52 +1,9 @@
-use std::fs::File;
-use std::io::BufWriter;
-
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::log_sum;
 use crate::structs::{Profile, Sequence};
 use crate::util::log_add;
 
-use super::{backward, Nats};
-
-pub fn forward_test(
-    profile: &mut Profile,
-    target: &Sequence,
-    fwd_matrix: &mut impl DpMatrix,
-    bwd_matrix: &mut impl DpMatrix,
-    name: &str,
-) {
-    profile.configure_for_target_length(target.length);
-
-    let target_start = 1;
-    let profile_start = 1;
-
-    let target_end = target.length;
-    let profile_end = profile.length;
-
-    let mut bounds = RowBounds::new(target.length);
-    bounds.fill_rectangle(target_start, profile_start, target_end, profile_end);
-
-    let _raw_forward_score = forward(profile, target, fwd_matrix, &bounds);
-    backward(profile, target, bwd_matrix, &bounds);
-
-    fwd_matrix
-        .dump(&mut BufWriter::new(
-            File::create(format!("{name}.fwd.mat")).unwrap(),
-        ))
-        .unwrap();
-
-    bwd_matrix
-        .dump(&mut BufWriter::new(
-            File::create(format!("{name}.bwd.mat")).unwrap(),
-        ))
-        .unwrap();
-
-    println!(
-        "  fwd: {}\n  bwd: {}\n",
-        fwd_matrix.get_match(target_end, profile_end),
-        bwd_matrix.get_special(Profile::N_IDX, target_start),
-    );
-}
+use super::Nats;
 
 pub fn forward(
     profile: &Profile,
