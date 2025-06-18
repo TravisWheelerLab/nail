@@ -36,14 +36,14 @@ jobs:
     - name: check versions
       id: versions
       run: |
-        BIN_VERSION=$(grep '^version' rb/Cargo.toml | head -n 1 | awk '{print $3}' | tr -d '"')
-        LIB_VERSION=$(grep '^version' rl/Cargo.toml | head -n 1 | awk '{print $3}' | tr -d '"')
+        BIN_VERSION=$(grep '^version' ${{ env.BIN }}/Cargo.toml | head -n 1 | awk '{print $3}' | tr -d '"')
+        LIB_VERSION=$(grep '^version' ${{ env.LIB }}/Cargo.toml | head -n 1 | awk '{print $3}' | tr -d '"')
 
         echo "BIN_VERSION=${BIN_VERSION}" >> $GITHUB_OUTPUT
         echo "LIB_VERSION=${LIB_VERSION}" >> $GITHUB_OUTPUT
 
-        PREV_BIN_VERSION=$(git show origin/main^:rb/Cargo.toml | grep '^version' | head -n 1 | awk '{print $3}' | tr -d '"')
-        PREV_LIB_VERSION=$(git show origin/main^:rl/Cargo.toml | grep '^version' | head -n 1 | awk '{print $3}' | tr -d '"')
+        PREV_BIN_VERSION=$(git show origin/main^:${{ env.BIN }}/Cargo.toml | grep '^version' | head -n 1 | awk '{print $3}' | tr -d '"')
+        PREV_LIB_VERSION=$(git show origin/main^:${{ env.LIB }}/Cargo.toml | grep '^version' | head -n 1 | awk '{print $3}' | tr -d '"')
 
         if [[ "${PREV_BIN_VERSION}" != "${BIN_VERSION}" ]]; then
           echo "BIN_VERSION_CHANGED=true" >> $GITHUB_OUTPUT
