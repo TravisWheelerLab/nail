@@ -4,11 +4,12 @@ use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::Fasta,
+    io::{Fasta, SequenceDatabase},
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths, MmseqsScoreModel,
     },
+    search::Queries,
 };
 
 fn merge_seed_maps<'a>(
@@ -127,6 +128,52 @@ impl DefaultSeedStage {
 }
 
 impl SeedStage for DefaultSeedStage {
+    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>> {
+        self.seeds.get(&profile.name)
+    }
+}
+
+#[derive(Clone)]
+pub struct MaxSeedStage {
+    seeds: SeedMap,
+}
+
+impl MaxSeedStage {
+    pub fn new(queries: &Queries, targets: &Fasta) -> Self {
+        let queries_and_lengths: Vec<(String, usize)> = match queries {
+            Queries::Sequence(fasta) => fasta.iter().map(|s| (s.name.clone(), s.length)).collect(),
+            Queries::Profile(vec) => vec.iter().map(|p| (p.name.clone(), p.length)).collect(),
+        };
+
+        let seeds: SeedMap = queries_and_lengths
+            .into_iter()
+            .map(|(q, l)| {
+                (
+                    q.clone(),
+                    targets
+                        .iter()
+                        .map(|t| {
+                            (
+                                t.name.clone(),
+                                Seed {
+                                    seq_start: 1,
+                                    seq_end: t.length,
+                                    prf_start: 1,
+                                    prf_end: l,
+                                    score: 0.0,
+                                },
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
+        Self { seeds }
+    }
+}
+
+impl SeedStage for MaxSeedStage {
     fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>> {
         self.seeds.get(&profile.name)
     }

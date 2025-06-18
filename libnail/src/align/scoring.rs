@@ -269,7 +269,7 @@ pub fn null_two_score(
     //              these are the expected numbers
     //              of times each state is used
     //
-    for target_idx in row_bounds.target_start..=row_bounds.target_end {
+    for target_idx in row_bounds.seq_start..=row_bounds.seq_end {
         let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];
         let profile_end_in_current_row = row_bounds.right_row_bounds[target_idx];
 
@@ -281,9 +281,9 @@ pub fn null_two_score(
         // the posterior probability of being in a special
         // state at this target position is the sum of
         // the individual posteriors of each special state
-        let special_posterior = posterior_matrix.get_special(target_idx, Profile::SPECIAL_N_IDX)
-            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_J_IDX)
-            + posterior_matrix.get_special(target_idx, Profile::SPECIAL_C_IDX);
+        let special_posterior = posterior_matrix.get_special(target_idx, Profile::N_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::J_IDX)
+            + posterior_matrix.get_special(target_idx, Profile::C_IDX);
 
         let core_posterior = 1.0 - special_posterior;
         core_posteriors[target_idx] = core_posterior;
@@ -347,7 +347,7 @@ pub fn null_two_score(
     let expected_scores: Vec<_> = expected_prob_ratios.into_iter().map(|r| r.ln()).collect();
 
     let mut null_two_score = 0.0;
-    (row_bounds.target_start..=row_bounds.target_end)
+    (row_bounds.seq_start..=row_bounds.seq_end)
         .map(|idx| {
             (
                 core_posteriors[idx],

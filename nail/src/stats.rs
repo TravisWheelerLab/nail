@@ -121,17 +121,17 @@ impl AllocationSize for Profile {
             + self.length.size()
             + self.target_length.size()
             + self.max_length.size()
-            + Bytes(self.transitions.capacity() * std::mem::size_of::<[f32; 8]>())
+            + Bytes(self.core_transitions.capacity() * std::mem::size_of::<[f32; 8]>())
             + Bytes(
-                self.match_scores.capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.match_scores
+                self.emission_scores[Self::MATCH_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
+                    + self.emission_scores[Self::MATCH_IDX]
                         .iter()
                         .map(|s| s.capacity() * std::mem::size_of::<f32>())
                         .sum::<usize>(),
             )
             + Bytes(
-                self.insert_scores.capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.insert_scores
+                self.emission_scores[Self::INSERT_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
+                    + self.emission_scores[Self::INSERT_IDX]
                         .iter()
                         .map(|s| s.capacity() * std::mem::size_of::<f32>())
                         .sum::<usize>(),
@@ -162,10 +162,10 @@ impl AllocationSize for DpMatrixSparse {
 
 impl AllocationSize for RowBounds {
     fn size(&self) -> Bytes {
-        self.target_length.size()
-            + self.profile_length.size()
-            + self.target_start.size()
-            + self.target_end.size()
+        self.seq_len.size()
+            + self.prf_len.size()
+            + self.seq_start.size()
+            + self.seq_end.size()
             + self.row_capacity.size()
             + Bytes(self.left_row_bounds.capacity() * std::mem::size_of::<usize>())
             + Bytes(self.right_row_bounds.capacity() * std::mem::size_of::<usize>())

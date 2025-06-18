@@ -11,6 +11,8 @@ use crate::alphabet::{
 use anyhow::{Context, Result};
 use thiserror::Error;
 
+use super::Profile;
+
 #[derive(Error, Debug)]
 #[error("unknown UTF8 sequence byte: {byte}")]
 pub struct UnknownUtf8SequenceByteError {
@@ -66,10 +68,15 @@ impl Sequence {
 
         digital_bytes[0] = AMINO_SENTINEL;
 
-        let utf8_bytes = digital_bytes
+        let mut utf8_bytes: Vec<u8> = digital_bytes
             .iter()
             .map(|b| *AMINO_INVERSE_MAP.get(b).expect(""))
             .collect();
+
+        digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
+
+        digital_bytes.shrink_to_fit();
+        utf8_bytes.shrink_to_fit();
 
         Self {
             name: "random-seq".to_string(),
@@ -126,13 +133,16 @@ impl Sequence {
                 }
             }
 
+            // we put a buffer on the end for backward edge cases
+            digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
+
             utf8_bytes.shrink_to_fit();
             digital_bytes.shrink_to_fit();
 
             seqs.push(Sequence {
                 name,
                 details,
-                length: digital_bytes.len() - 1,
+                length: digital_bytes.len() - 2,
                 digital_bytes,
                 utf8_bytes,
             });
@@ -243,8 +253,10 @@ mod tests {
 
         (0..1_000).for_each(|_| {
             let s = Sequence::random_amino(100, &mut rng);
-            s.digital_bytes[1..]
+            s.digital_bytes
                 .iter()
+                .skip(1)
+                .take(100)
                 .for_each(|&b| counts[b as usize] += 1);
         });
 

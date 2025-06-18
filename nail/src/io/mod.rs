@@ -9,7 +9,10 @@ use std::{
 
 use anyhow::bail;
 use indexmap::IndexMap;
-use libnail::{alphabet::UTF8_TO_DIGITAL_AMINO, structs::Sequence};
+use libnail::{
+    alphabet::UTF8_TO_DIGITAL_AMINO,
+    structs::{Profile, Sequence},
+};
 
 fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
     let header_newline_pos = match bytes.iter().position(|&b| b == b'\n') {
@@ -57,6 +60,8 @@ fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
             });
             Ok(())
         })?;
+
+    digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
 
     Ok(Sequence {
         name,

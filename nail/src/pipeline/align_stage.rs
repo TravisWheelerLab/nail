@@ -206,7 +206,7 @@ impl AlignStage for DefaultAlignStage {
             &self.posterior_matrix,
             &self.optimal_matrix,
             &mut trace,
-            bounds.target_end,
+            bounds.seq_end,
         );
         stats.traceback_time(now.elapsed());
 

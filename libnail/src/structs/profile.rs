@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context};
 use rand::SeedableRng;
 use rand_pcg::Pcg64;
 
-use crate::align::structs::{DpMatrixSparse, RowBounds, Trace};
+use crate::align::structs::{BackgroundState, CoreState, DpMatrixSparse, RowBounds, Trace};
 use crate::align::{forward, null_one_score};
 use crate::alphabet::{
     AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
@@ -17,8 +17,9 @@ use crate::structs::Hmm;
 use crate::util::{f32_vec_argmax, mean_relative_entropy, LogAbuse};
 
 use std::cmp::Ordering;
-use std::fmt;
 use std::fmt::Formatter;
+use std::fmt::{self, Debug};
+use std::ops::Index;
 
 use super::Sequence;
 
@@ -40,12 +41,12 @@ pub struct Profile {
     pub target_length: usize,
     /// Calculated upper bound on max sequence length
     pub max_length: usize,
-    /// Transition scores
-    pub transitions: Vec<[f32; 8]>,
-    /// Match scores
-    pub match_scores: Vec<Vec<f32>>,
-    /// Insert scores
-    pub insert_scores: Vec<Vec<f32>>,
+    /// Core model transition scores
+    pub core_transitions: Vec<[f32; 8]>,
+    /// Core model entry transition scores
+    pub entry_transitions: Vec<f32>,
+    /// Match and insert emission scores
+    pub emission_scores: [Vec<Vec<f32>>; 2],
     /// Transitions from special states (E, N, B, J, C)
     pub special_transitions: [[f32; 2]; 5],
     /// The expected number of times that the J state is used
@@ -58,11 +59,130 @@ pub struct Profile {
     pub forward_lambda: f32,
 }
 
-impl Profile {
-    // pub const LN_2: f32 = 0.69314718055994529;
-    pub const LN_2: f32 = std::f32::consts::LN_2;
-    pub const LN_2_R: f32 = 1.44269504088896341;
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum AminoAcid {
+    A,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    K,
+    L,
+    M,
+    N,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    V,
+    W,
+    Y,
+    DASH,
+    B,
+    J,
+    Z,
+    O,
+    U,
+    X,
+    STAR,
+    TILDE,
+}
 
+impl From<u8> for AminoAcid {
+    fn from(value: u8) -> Self {
+        AminoAcid::from_u8(value)
+    }
+}
+
+impl AminoAcid {
+    pub fn from_u8(byte: u8) -> AminoAcid {
+        unsafe { std::mem::transmute(byte) }
+    }
+}
+
+pub struct Emission(pub CoreState, pub AminoAcid);
+pub struct CoreToCore(pub CoreState, pub CoreState);
+
+impl Debug for CoreToCore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} -> {:?}", self.0, self.1)
+    }
+}
+pub struct BackgroundLoop(pub BackgroundState);
+pub struct CoreEntry(pub CoreState);
+
+/// The Cantor pairing function:
+///   π(a, b) = (a + b) * (a + b + 1) / 2 + b
+///
+/// This is used to map each pair of core states
+/// (i.e. a transition) to a unique integer.
+//
+// this happens to work out (almost) perfectly for mapping
+// pairs of states for valid core transitions:
+//   +----------+--------+--------------------------------+---------+
+//   | Symbolic |  Pair  |          Computation           | π(a, b) |
+//   +----------+--------+--------------------------------+---------+
+//   |  (M, M)  | (0, 0) | (0 + 0) * (0 + 0 + 1) / 2 + 0  |    0    |
+//   |  (I, M)  | (1, 0) | (1 + 0) * (1 + 0 + 1) / 2 + 0  |    1    |
+//   |  (M, I)  | (0, 1) | (0 + 1) * (0 + 1 + 1) / 2 + 1  |    2    |
+//   |  (D, M)  | (2, 0) | (2 + 0) * (2 + 0 + 1) / 2 + 0  |    3    |
+//   |  (I, I)  | (1, 1) | (1 + 1) * (1 + 1 + 1) / 2 + 1  |    4    |
+//   |  (M, D)  | (0, 2) | (0 + 2) * (0 + 2 + 1) / 2 + 2  |    5    |
+//   |  (D, D)  | (2, 2) | (2 + 2) * (2 + 2 + 1) / 2 + 2  |   12    |
+//   |  (D, I)  | (2, 1) | (2 + 1) * (2 + 1 + 1) / 2 + 1  |    7    |
+//   |  (I, D)  | (1, 2) | (1 + 2) * (1 + 2 + 1) / 2 + 2  |    8    |
+//   +----------+--------+--------------------------------+---------+
+fn cantor(a: usize, b: usize) -> usize {
+    // debug guard rails to catch D->I or I->D
+    debug_assert!(a < 3);
+    debug_assert!(b < 3);
+    (a + b) * (a + b + 1) / 2 + b
+}
+
+impl Index<CoreToCore> for Profile {
+    type Output = f32;
+
+    fn index(&self, index: CoreToCore) -> &Self::Output {
+        let profile_idx = index.0.profile_idx();
+        let transition_idx = cantor(index.0.state_idx(), index.1.state_idx()).min(6);
+        &self.core_transitions[profile_idx][transition_idx]
+    }
+}
+
+impl Index<BackgroundLoop> for Profile {
+    type Output = f32;
+
+    fn index(&self, index: BackgroundLoop) -> &Self::Output {
+        &self.special_transitions[index.0 as usize][Self::SPECIAL_LOOP_IDX]
+    }
+}
+
+impl Index<CoreEntry> for Profile {
+    type Output = f32;
+
+    fn index(&self, index: CoreEntry) -> &Self::Output {
+        let profile_idx = index.0.profile_idx();
+        &self.entry_transitions[profile_idx]
+    }
+}
+
+impl Index<Emission> for Profile {
+    type Output = f32;
+
+    fn index(&self, index: Emission) -> &Self::Output {
+        let state_idx = index.0.state_idx();
+        let profile_idx = index.0.profile_idx();
+        let residue_idx = index.1 as usize;
+        &self.emission_scores[state_idx][profile_idx][residue_idx]
+    }
+}
+
+impl Profile {
     pub const MAX_ALPHABET_SIZE: usize = 20;
     pub const MAX_DEGENERATE_ALPHABET_SIZE: usize = 29;
     pub const GAP_INDEX: usize = 20;
@@ -71,15 +191,18 @@ impl Profile {
     // missing data character: "~"
     pub const MISSING_DATA_IDX: usize = 28;
 
+    pub const MATCH_IDX: usize = 0;
+    pub const INSERT_IDX: usize = 1;
+
     // special state indices
     pub const NUM_SPECIAL_STATES: usize = 5;
-    pub const SPECIAL_E_IDX: usize = 0;
-    pub const SPECIAL_N_IDX: usize = 1;
-    pub const SPECIAL_J_IDX: usize = 2;
-    pub const SPECIAL_B_IDX: usize = 3;
-    pub const SPECIAL_C_IDX: usize = 4;
+    pub const N_IDX: usize = 0;
+    pub const B_IDX: usize = 1;
+    pub const E_IDX: usize = 2;
+    pub const C_IDX: usize = 3;
+    pub const J_IDX: usize = 4;
 
-    pub const SPECIAL_STATE_IDX_TO_NAME: [&'static str; 5] = ["E", "N", "J", "B", "C"];
+    pub const SPECIAL_STATE_IDX_TO_NAME: [&'static str; 5] = ["N", "B", "E", "C", "J"];
 
     // special transition indices
     pub const SPECIAL_LOOP_IDX: usize = 0;
@@ -87,19 +210,23 @@ impl Profile {
 
     /// The number of allowed state transitions under the model.
     pub const NUM_STATE_TRANSITIONS: usize = 8;
-    pub const MATCH_TO_MATCH_IDX: usize = 0;
-    pub const INSERT_TO_MATCH_IDX: usize = 1;
-    pub const DELETE_TO_MATCH_IDX: usize = 2;
-    pub const BEGIN_TO_MATCH_IDX: usize = 3;
-    pub const MATCH_TO_DELETE_IDX: usize = 4;
-    pub const DELETE_TO_DELETE_IDX: usize = 5;
-    pub const MATCH_TO_INSERT_IDX: usize = 6;
-    pub const INSERT_TO_INSERT_IDX: usize = 7;
+
+    pub const M_M_IDX: usize = 0;
+    pub const I_M_IDX: usize = 1;
+    pub const M_I_IDX: usize = 2;
+    pub const D_M_IDX: usize = 3;
+    pub const I_I_IDX: usize = 4;
+    pub const M_D_IDX: usize = 5;
+    pub const D_D_IDX: usize = 6;
+    pub const B_M_IDX: usize = 7;
 
     pub fn relative_entropy(&self) -> f32 {
-        let probs: Vec<Vec<f32>> = self
-            .match_scores
+        let probs: Vec<Vec<f32>> = self.emission_scores[Self::MATCH_IDX]
             .iter()
+            // skip profile index 0
+            .skip(1)
+            // skip profile index L + 1
+            .take(self.length)
             .map(|scores| {
                 scores
                     .iter()
@@ -110,7 +237,7 @@ impl Profile {
             })
             .collect();
 
-        mean_relative_entropy(&probs[1..], &AMINO_BACKGROUND_FREQUENCIES)
+        mean_relative_entropy(&probs, &AMINO_BACKGROUND_FREQUENCIES)
     }
 
     pub fn adjust_mean_relative_entropy(&mut self, target_mre: f32) -> anyhow::Result<f32> {
@@ -127,8 +254,7 @@ impl Profile {
             return Ok(start_mre);
         }
 
-        let start_probs_by_pos: Vec<Vec<f32>> = self
-            .match_scores
+        let start_probs_by_pos: Vec<Vec<f32>> = self.emission_scores[Self::MATCH_IDX]
             .iter()
             .map(|scores| {
                 scores
@@ -147,6 +273,7 @@ impl Profile {
         // of the distribution below the LOWER_PROB_LIMIT
         let mut max_weights_by_pos: Vec<f32> = vec![0.0; self.length + 1];
 
+        #[derive(Debug)]
         enum Mode {
             Raise,
             Lower,
@@ -163,6 +290,7 @@ impl Profile {
                 max_weights_by_pos
                     .iter_mut()
                     .enumerate()
+                    // skip profile index 0
                     .skip(1)
                     .try_for_each(|(pos, weight)| {
                         *weight = start_probs_by_pos[pos]
@@ -187,6 +315,7 @@ impl Profile {
                 // the lower bound is the min of the max weights
                 let lower_bound = max_weights_by_pos
                     .iter()
+                    // skip profile index 0
                     .skip(1)
                     .min_by(|a, b| a.total_cmp(b))
                     .ok_or(anyhow!("empty weights"))?;
@@ -203,6 +332,7 @@ impl Profile {
                         .zip(&start_probs_by_pos)
                         // skip model position 0
                         .skip(1)
+                        .take(self.length)
                         .for_each(|(new_probs, start_probs)| {
                             new_probs
                                 .iter_mut()
@@ -270,8 +400,11 @@ impl Profile {
                             / (1.0 + clamped_weight)
                     });
             });
-            current_mre =
-                mean_relative_entropy(&new_probs_by_pos[1..], &AMINO_BACKGROUND_FREQUENCIES);
+
+            current_mre = mean_relative_entropy(
+                &new_probs_by_pos[1..=self.length],
+                &AMINO_BACKGROUND_FREQUENCIES,
+            );
 
             let ordering = if (current_mre - target_mre).abs() < TARGET_TOLERANCE {
                 Ordering::Equal
@@ -291,11 +424,14 @@ impl Profile {
 
             weight = (lower_bound + upper_bound) / 2.0;
         }
-        self.match_scores
+
+        self.emission_scores[Self::MATCH_IDX]
             .iter_mut()
             .zip(new_probs_by_pos)
             // skip model position 0
             .skip(1)
+            // skip model position L + 1
+            .take(self.length)
             .for_each(|(scores, probs)| {
                 scores
                     .iter_mut()
@@ -424,20 +560,24 @@ impl Profile {
     }
 
     pub fn new(hmm: &Hmm) -> Self {
-        let mut profile = Profile {
+        let mut prf = Profile {
             name: hmm.header.name.clone(),
             accession: hmm.header.accession_number.clone(),
             length: hmm.header.model_length,
             target_length: 0,
             max_length: 0,
-            transitions: vec![[0.0; 8]; hmm.header.model_length + 1],
-            match_scores: vec![
-                vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
-                hmm.header.model_length + 1
-            ],
-            insert_scores: vec![
-                vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
-                hmm.header.model_length + 1
+            core_transitions: vec![[0.0; 8]; hmm.header.model_length + 1],
+            entry_transitions: vec![0.0; hmm.header.model_length + 1],
+            emission_scores: [
+                // +1 for left-pad & +1 for right-pad
+                vec![
+                    vec![-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
+                    hmm.header.model_length + 2
+                ],
+                vec![
+                    vec![-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
+                    hmm.header.model_length + 2
+                ],
             ],
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
@@ -449,7 +589,7 @@ impl Profile {
         };
 
         for state in 0..Profile::NUM_STATE_TRANSITIONS {
-            profile.transitions[0][state] = -f32::INFINITY;
+            prf.core_transitions[0][state] = -f32::INFINITY;
         }
 
         // porting p7_hmm_CalculateOccupancy() from p7_hmm.c
@@ -458,12 +598,12 @@ impl Profile {
         //       probably either:
         //         - a method on the Hmm struct, or
         //         - an associated function in the Hmm struct namespace
-        let mut occupancy = vec![0.0; profile.length + 1];
+        let mut occupancy = vec![0.0; prf.length + 1];
 
         occupancy[1] = hmm.model.transition_probabilities[0][HMM_MATCH_TO_INSERT]
             + hmm.model.transition_probabilities[0][HMM_MATCH_TO_MATCH];
 
-        for profile_idx in 2..=profile.length {
+        for profile_idx in 2..=prf.length {
             // the occupancy of a model position is the
             // sum of the following two probabilities:
             occupancy[profile_idx] = (
@@ -474,61 +614,62 @@ impl Profile {
                         + hmm.model.transition_probabilities[profile_idx - 1][HMM_MATCH_TO_INSERT])
             ) + (
                 // the complement of the occupancy of the previous position
-                1.0 - occupancy[profile_idx - 1]
+                (1.0 - occupancy[profile_idx - 1])
                     // multiplied by the transition to a match state
                     //   ** since there's no delete to insert transition **
                     * hmm.model.transition_probabilities[profile_idx - 1][HMM_DELETE_TO_MATCH]
             )
         }
 
-        let occupancy_sum: f32 = (1..=profile.length).fold(0.0, |acc, profile_idx| {
-            acc + occupancy[profile_idx] * (profile.length - profile_idx + 1) as f32
+        let occupancy_sum: f32 = (1..=prf.length).fold(0.0, |acc, profile_idx| {
+            // TODO: test removing the length normalization
+            acc + occupancy[profile_idx] * (prf.length - profile_idx + 1) as f32
         });
 
         // the model entry distribution is essentially the normalized occupancy
-        (1..=profile.length).for_each(|profile_idx| {
-            profile.transitions[profile_idx - 1][Profile::BEGIN_TO_MATCH_IDX] =
+        (1..=prf.length).for_each(|profile_idx| {
+            prf.core_transitions[profile_idx - 1][Profile::B_M_IDX] =
                 (occupancy[profile_idx] / occupancy_sum).ln();
+
+            prf.entry_transitions[profile_idx - 1] = (occupancy[profile_idx] / occupancy_sum).ln();
         });
 
         // these settings are for the non-multi-hit mode
         // N, C, and J transitions are set later by length config
-        profile.special_transitions[Profile::SPECIAL_E_IDX][Profile::SPECIAL_MOVE_IDX] = 0.0;
-        profile.special_transitions[Profile::SPECIAL_E_IDX][Profile::SPECIAL_LOOP_IDX] =
-            -f32::INFINITY;
-        profile.expected_j_uses = 0.0;
+        prf.special_transitions[Profile::E_IDX][Profile::SPECIAL_MOVE_IDX] = 0.0;
+        prf.special_transitions[Profile::E_IDX][Profile::SPECIAL_LOOP_IDX] = -f32::INFINITY;
+        prf.expected_j_uses = 0.0;
 
         // transition scores
-        for i in 1..=profile.length {
-            profile.transitions[i][Profile::MATCH_TO_MATCH_IDX] =
+        for i in 1..=prf.length {
+            prf.core_transitions[i][Profile::M_M_IDX] =
                 hmm.model.transition_probabilities[i][HMM_MATCH_TO_MATCH].ln_or_inf();
-            profile.transitions[i][Profile::MATCH_TO_INSERT_IDX] =
+            prf.core_transitions[i][Profile::M_I_IDX] =
                 hmm.model.transition_probabilities[i][HMM_MATCH_TO_INSERT].ln_or_inf();
-            profile.transitions[i][Profile::MATCH_TO_DELETE_IDX] =
+            prf.core_transitions[i][Profile::M_D_IDX] =
                 hmm.model.transition_probabilities[i][HMM_MATCH_TO_DELETE].ln_or_inf();
-            profile.transitions[i][Profile::INSERT_TO_MATCH_IDX] =
+            prf.core_transitions[i][Profile::I_M_IDX] =
                 hmm.model.transition_probabilities[i][HMM_INSERT_TO_MATCH].ln_or_inf();
-            profile.transitions[i][Profile::INSERT_TO_INSERT_IDX] =
+            prf.core_transitions[i][Profile::I_I_IDX] =
                 hmm.model.transition_probabilities[i][HMM_INSERT_TO_INSERT].ln_or_inf();
-            profile.transitions[i][Profile::DELETE_TO_MATCH_IDX] =
+            prf.core_transitions[i][Profile::D_M_IDX] =
                 hmm.model.transition_probabilities[i][HMM_DELETE_TO_MATCH].ln_or_inf();
-            profile.transitions[i][Profile::DELETE_TO_DELETE_IDX] =
+            prf.core_transitions[i][Profile::D_D_IDX] =
                 hmm.model.transition_probabilities[i][HMM_DELETE_TO_DELETE].ln_or_inf();
         }
 
         // match scores
-        for model_position_idx in 1..=profile.length {
+        for prf_idx in 1..=prf.length {
             // the consensus residue is the match emission with the highest probability
             // TODO: this should not be the case for single sequence model
             // the argmax of this positions match probability vector will be the digital
             // index of the residue that has the highest match emission probability
             let match_probabilities_argmax: usize =
-                f32_vec_argmax(&hmm.model.match_probabilities[model_position_idx]);
+                f32_vec_argmax(&hmm.model.match_probabilities[prf_idx]);
             let match_probabilities_max: f32 =
-                hmm.model.match_probabilities[model_position_idx][match_probabilities_argmax];
+                hmm.model.match_probabilities[prf_idx][match_probabilities_argmax];
 
-            profile
-                .consensus_sequence_bytes_utf8
+            prf.consensus_sequence_bytes_utf8
                 .push(if match_probabilities_max > 0.5 {
                     // if the match emission probability for the residue is greater
                     // than 0.50 (amino), we want to display it as a capital letter
@@ -538,18 +679,20 @@ impl Profile {
                     AMINO_INVERSE_MAP_LOWER[&(match_probabilities_argmax as u8)]
                 });
 
-            for alphabet_idx in 0..Profile::MAX_ALPHABET_SIZE {
+            (0..Profile::MAX_ALPHABET_SIZE).for_each(|alphabet_idx| {
                 // score is match ln(emission / background)
                 // TODO: probably should make these casts unnecessary
-                profile.match_scores[model_position_idx][alphabet_idx] =
-                    (hmm.model.match_probabilities[model_position_idx][alphabet_idx] as f64
+                prf.emission_scores[Profile::MATCH_IDX][prf_idx][alphabet_idx] =
+                    (hmm.model.match_probabilities[prf_idx][alphabet_idx] as f64
                         / AMINO_BACKGROUND_FREQUENCIES[alphabet_idx] as f64)
                         .ln() as f32;
-            }
+            });
             // for the rest of the alphabet, we don't have scores from the HMM file
-            profile.match_scores[model_position_idx][Profile::GAP_INDEX] = -f32::INFINITY;
-            profile.match_scores[model_position_idx][Profile::NON_RESIDUE_IDX] = -f32::INFINITY;
-            profile.match_scores[model_position_idx][Profile::MISSING_DATA_IDX] = -f32::INFINITY;
+            prf.emission_scores[Profile::MATCH_IDX][prf_idx][Profile::GAP_INDEX] = -f32::INFINITY;
+            prf.emission_scores[Profile::MATCH_IDX][prf_idx][Profile::NON_RESIDUE_IDX] =
+                -f32::INFINITY;
+            prf.emission_scores[Profile::MATCH_IDX][prf_idx][Profile::MISSING_DATA_IDX] =
+                -f32::INFINITY;
 
             // set the the rest of the degenerate characters
             for alphabet_idx in
@@ -557,49 +700,52 @@ impl Profile {
             {
                 let mut result: f32 = 0.0;
                 let mut denominator: f32 = 0.0;
-                for i in 0..Profile::MAX_ALPHABET_SIZE {
-                    result += profile.match_scores[model_position_idx][i]
+                (0..Profile::MAX_ALPHABET_SIZE).for_each(|i| {
+                    result += prf.emission_scores[Profile::MATCH_IDX][prf_idx][i]
                         * AMINO_BACKGROUND_FREQUENCIES[i];
                     denominator += AMINO_BACKGROUND_FREQUENCIES[i];
-                }
-                profile.match_scores[model_position_idx][alphabet_idx] = result / denominator;
+                });
+                prf.emission_scores[Profile::MATCH_IDX][prf_idx][alphabet_idx] =
+                    result / denominator;
             }
         }
 
         // insert scores
         for alphabet_idx in 0..Profile::MAX_DEGENERATE_ALPHABET_SIZE {
-            for model_position_idx in 1..profile.length {
+            for model_position_idx in 1..prf.length {
                 // setting insert scores to 0 corresponds to insertion
                 // emissions being equal to background probabilities
                 //    ** because ln(P/P) = ln(1) = 0
-                profile.insert_scores[model_position_idx][alphabet_idx] = 0.0;
+                prf.emission_scores[Profile::INSERT_IDX][model_position_idx][alphabet_idx] = 0.0;
             }
             // insert at position M should be impossible,
-            profile.insert_scores[profile.length][alphabet_idx] = -f32::INFINITY;
+            prf.emission_scores[Profile::INSERT_IDX][prf.length][alphabet_idx] = -f32::INFINITY;
         }
 
-        for model_position_idx in 0..profile.length {
-            profile.insert_scores[model_position_idx][Profile::GAP_INDEX] = -f32::INFINITY;
-            profile.insert_scores[model_position_idx][Profile::NON_RESIDUE_IDX] = -f32::INFINITY;
-            profile.insert_scores[model_position_idx][Profile::MISSING_DATA_IDX] = -f32::INFINITY;
+        for prf_idx in 0..prf.length {
+            prf.emission_scores[Profile::INSERT_IDX][prf_idx][Profile::GAP_INDEX] = -f32::INFINITY;
+            prf.emission_scores[Profile::INSERT_IDX][prf_idx][Profile::NON_RESIDUE_IDX] =
+                -f32::INFINITY;
+            prf.emission_scores[Profile::INSERT_IDX][prf_idx][Profile::MISSING_DATA_IDX] =
+                -f32::INFINITY;
         }
 
-        profile
+        prf
     }
 
     #[inline(always)]
     pub fn match_score(&self, alphabet_idx: usize, profile_idx: usize) -> f32 {
-        self.match_scores[profile_idx][alphabet_idx]
+        self.emission_scores[Self::MATCH_IDX][profile_idx][alphabet_idx]
     }
 
     #[inline(always)]
     pub fn insert_score(&self, alphabet_idx: usize, profile_idx: usize) -> f32 {
-        self.insert_scores[profile_idx][alphabet_idx]
+        self.emission_scores[Self::INSERT_IDX][profile_idx][alphabet_idx]
     }
 
     #[inline(always)]
     pub fn transition_score(&self, transition_idx: usize, profile_idx: usize) -> f32 {
-        self.transitions[profile_idx][transition_idx]
+        self.core_transitions[profile_idx][transition_idx]
     }
 
     /// This is essentially a Kronecker delta function that returns 1.0 when the transition
@@ -608,7 +754,7 @@ impl Profile {
     /// Semantically, this means we are disallowing "impossible state paths" during posterior traceback.
     #[inline(always)]
     pub fn transition_score_delta(&self, transition_idx: usize, profile_idx: usize) -> f32 {
-        if self.transitions[profile_idx][transition_idx] == -f32::INFINITY {
+        if self.core_transitions[profile_idx][transition_idx] == -f32::INFINITY {
             f32::MIN_POSITIVE
         } else {
             1.0
@@ -644,59 +790,59 @@ impl Profile {
             Trace::S_STATE | Trace::T_STATE => 0.0,
             Trace::N_STATE => match state_to {
                 Trace::B_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_MOVE_IDX)
+                    self.special_transition_score(Profile::N_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
                 Trace::N_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_N_IDX, Profile::SPECIAL_LOOP_IDX)
+                    self.special_transition_score(Profile::N_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
             Trace::B_STATE => match state_to {
-                Trace::M_STATE => self.transition_score(Profile::BEGIN_TO_MATCH_IDX, idx_to - 1),
+                Trace::M_STATE => self.transition_score(Profile::B_M_IDX, idx_to - 1),
                 _ => panic!(),
             },
             Trace::M_STATE => match state_to {
-                Trace::M_STATE => self.transition_score(Profile::MATCH_TO_MATCH_IDX, idx_from),
-                Trace::I_STATE => self.transition_score(Profile::MATCH_TO_INSERT_IDX, idx_from),
-                Trace::D_STATE => self.transition_score(Profile::MATCH_TO_DELETE_IDX, idx_from),
+                Trace::M_STATE => self.transition_score(Profile::M_M_IDX, idx_from),
+                Trace::I_STATE => self.transition_score(Profile::M_I_IDX, idx_from),
+                Trace::D_STATE => self.transition_score(Profile::M_D_IDX, idx_from),
                 Trace::E_STATE => 0.0,
                 _ => panic!(),
             },
             Trace::D_STATE => match state_to {
-                Trace::M_STATE => self.transition_score(Profile::DELETE_TO_MATCH_IDX, idx_from),
-                Trace::D_STATE => self.transition_score(Profile::DELETE_TO_DELETE_IDX, idx_from),
+                Trace::M_STATE => self.transition_score(Profile::D_M_IDX, idx_from),
+                Trace::D_STATE => self.transition_score(Profile::D_D_IDX, idx_from),
                 Trace::E_STATE => 0.0,
                 _ => panic!(),
             },
             Trace::I_STATE => match state_to {
-                Trace::M_STATE => self.transition_score(Profile::INSERT_TO_MATCH_IDX, idx_from),
-                Trace::I_STATE => self.transition_score(Profile::INSERT_TO_INSERT_IDX, idx_from),
+                Trace::M_STATE => self.transition_score(Profile::I_M_IDX, idx_from),
+                Trace::I_STATE => self.transition_score(Profile::I_I_IDX, idx_from),
                 _ => panic!(),
             },
             Trace::E_STATE => match state_to {
                 Trace::C_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_E_IDX, Profile::SPECIAL_MOVE_IDX)
+                    self.special_transition_score(Profile::E_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
                 Trace::J_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_E_IDX, Profile::SPECIAL_LOOP_IDX)
+                    self.special_transition_score(Profile::E_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
             Trace::J_STATE => match state_to {
                 Trace::B_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_J_IDX, Profile::SPECIAL_MOVE_IDX)
+                    self.special_transition_score(Profile::J_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
                 Trace::J_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_J_IDX, Profile::SPECIAL_LOOP_IDX)
+                    self.special_transition_score(Profile::J_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
             Trace::C_STATE => match state_to {
                 Trace::T_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_MOVE_IDX)
+                    self.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX)
                 }
                 Trace::C_STATE => {
-                    self.special_transition_score(Profile::SPECIAL_C_IDX, Profile::SPECIAL_LOOP_IDX)
+                    self.special_transition_score(Profile::C_IDX, Profile::SPECIAL_LOOP_IDX)
                 }
                 _ => panic!(),
             },
@@ -718,13 +864,22 @@ impl Profile {
         let loop_score = loop_probability.ln();
         let move_score = move_probability.ln();
 
-        self.special_transitions[Profile::SPECIAL_N_IDX][Profile::SPECIAL_LOOP_IDX] = loop_score;
-        self.special_transitions[Profile::SPECIAL_J_IDX][Profile::SPECIAL_LOOP_IDX] = loop_score;
-        self.special_transitions[Profile::SPECIAL_C_IDX][Profile::SPECIAL_LOOP_IDX] = loop_score;
+        self.special_transitions[Profile::N_IDX][Profile::SPECIAL_LOOP_IDX] = loop_score;
+        self.special_transitions[Profile::J_IDX][Profile::SPECIAL_LOOP_IDX] = loop_score;
+        self.special_transitions[Profile::C_IDX][Profile::SPECIAL_LOOP_IDX] = loop_score;
 
-        self.special_transitions[Profile::SPECIAL_N_IDX][Profile::SPECIAL_MOVE_IDX] = move_score;
-        self.special_transitions[Profile::SPECIAL_J_IDX][Profile::SPECIAL_MOVE_IDX] = move_score;
-        self.special_transitions[Profile::SPECIAL_C_IDX][Profile::SPECIAL_MOVE_IDX] = move_score;
+        self.special_transitions[Profile::N_IDX][Profile::SPECIAL_MOVE_IDX] = move_score;
+        self.special_transitions[Profile::J_IDX][Profile::SPECIAL_MOVE_IDX] = move_score;
+        self.special_transitions[Profile::C_IDX][Profile::SPECIAL_MOVE_IDX] = move_score;
+
+        // TODO: maybe temporary until I decide on whether
+        //       or not to do a uniform entry distribution
+        self.entry_transitions
+            .iter_mut()
+            .zip(self.core_transitions.iter())
+            // skip position 0
+            .skip(1)
+            .for_each(|(a, b)| *a = b[Self::B_M_IDX] + move_score);
     }
 }
 
@@ -754,17 +909,17 @@ impl fmt::Debug for Profile {
             writeln!(f)?;
 
             for j in 0..Profile::MAX_DEGENERATE_ALPHABET_SIZE {
-                write!(f, "{:8.4} ", self.match_scores[i][j])?;
+                write!(f, "{:8.4} ", self.emission_scores[Self::MATCH_IDX][i][j])?;
             }
             writeln!(f)?;
 
             for j in 0..Profile::MAX_DEGENERATE_ALPHABET_SIZE {
-                write!(f, "{:8.4} ", self.insert_scores[i][j])?;
+                write!(f, "{:8.4} ", self.emission_scores[Self::INSERT_IDX][i][j])?;
             }
             writeln!(f)?;
 
             for t in 0..8 {
-                write!(f, "{:8.4} ", self.transitions[i][t])?;
+                write!(f, "{:8.4} ", self.core_transitions[i][t])?;
             }
             writeln!(f)?;
             writeln!(f)?;

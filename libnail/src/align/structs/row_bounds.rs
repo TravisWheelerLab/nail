@@ -1,14 +1,15 @@
-use crate::align::structs::anti_diagonal_bounds::AntiDiagonalBounds;
+use crate::align::structs::cloud::Cloud;
+use crate::util::{MaxAssign, MinAssign};
 use anyhow::Result;
 use std::fmt::{Debug, Formatter};
 use std::io::Write;
 
 #[derive(Clone)]
 pub struct RowBounds {
-    pub target_length: usize,
-    pub profile_length: usize,
-    pub target_start: usize,
-    pub target_end: usize,
+    pub seq_len: usize,
+    pub prf_len: usize,
+    pub seq_start: usize,
+    pub seq_end: usize,
     pub row_capacity: usize,
     pub left_row_bounds: Vec<usize>,
     pub right_row_bounds: Vec<usize>,
@@ -18,10 +19,10 @@ pub struct RowBounds {
 impl Default for RowBounds {
     fn default() -> Self {
         Self {
-            target_length: 0,
-            profile_length: 0,
-            target_start: 0,
-            target_end: 0,
+            seq_len: 0,
+            prf_len: 0,
+            seq_start: 0,
+            seq_end: 0,
             row_capacity: 1,
             left_row_bounds: vec![usize::MAX],
             right_row_bounds: vec![0],
@@ -38,7 +39,7 @@ impl RowBounds {
     }
 
     pub fn reuse(&mut self, target_end: usize) {
-        for row_idx in self.target_start..=self.target_end {
+        for row_idx in self.seq_start..=self.seq_end {
             self.left_row_bounds[row_idx] = usize::MAX;
             self.right_row_bounds[row_idx] = 0;
         }
@@ -51,34 +52,23 @@ impl RowBounds {
         self.num_cells = 0;
     }
 
-    pub fn fill_from_anti_diagonal_bounds(&mut self, anti_diagonal_bounds: &AntiDiagonalBounds) {
-        self.target_length = anti_diagonal_bounds.target_length;
-        self.profile_length = anti_diagonal_bounds.profile_length;
+    pub fn fill_from_cloud(&mut self, cloud: &Cloud) {
+        self.seq_len = cloud.seq_len;
+        self.prf_len = cloud.prf_len;
 
-        let first_bound = anti_diagonal_bounds.first();
-        let last_bound = anti_diagonal_bounds.last();
+        self.seq_start = cloud.first().0.seq_idx;
+        self.seq_end = cloud.last().1.seq_idx;
 
-        self.target_start = first_bound.right_target_idx;
-        self.target_end = last_bound.left_target_idx;
-
-        for bound in anti_diagonal_bounds.bounds() {
-            self.left_row_bounds[bound.left_target_idx] =
-                self.left_row_bounds[bound.left_target_idx].min(bound.left_profile_idx);
-
-            self.left_row_bounds[bound.right_target_idx] =
-                self.left_row_bounds[bound.right_target_idx].min(bound.right_profile_idx);
-
-            self.right_row_bounds[bound.left_target_idx] =
-                self.right_row_bounds[bound.left_target_idx].max(bound.left_profile_idx);
-
-            self.right_row_bounds[bound.right_target_idx] =
-                self.right_row_bounds[bound.right_target_idx].max(bound.right_profile_idx);
-
+        for bound in cloud.iter() {
+            self.left_row_bounds[bound.1.seq_idx].min_assign(bound.1.prf_idx);
+            self.left_row_bounds[bound.0.seq_idx].min_assign(bound.0.prf_idx);
+            self.right_row_bounds[bound.1.seq_idx].max_assign(bound.1.prf_idx);
+            self.right_row_bounds[bound.0.seq_idx].max_assign(bound.0.prf_idx);
             self.num_cells += bound.len()
         }
 
         // if the cloud bounds were set up properly, we should have no 0's
-        (self.target_start..=self.target_end).for_each(|row_idx| {
+        (self.seq_start..=self.seq_end).for_each(|row_idx| {
             debug_assert_ne!(self.left_row_bounds[row_idx], usize::MAX);
             debug_assert_ne!(self.right_row_bounds[row_idx], 0);
         });
@@ -93,10 +83,10 @@ impl RowBounds {
     ) {
         self.reuse(target_end);
 
-        self.target_start = target_start;
-        self.target_end = target_end;
+        self.seq_start = target_start;
+        self.seq_end = target_end;
 
-        for row_idx in self.target_start..=self.target_end {
+        for row_idx in self.seq_start..=self.seq_end {
             self.left_row_bounds[row_idx] = profile_start;
             self.right_row_bounds[row_idx] = profile_end;
         }
@@ -104,11 +94,11 @@ impl RowBounds {
 
     pub fn valid(&self) -> bool {
         let mut prev_row_range = (
-            self.left_row_bounds[self.target_start],
-            self.right_row_bounds[self.target_start],
+            self.left_row_bounds[self.seq_start],
+            self.right_row_bounds[self.seq_start],
         );
 
-        for row_idx in self.target_start..=self.target_end {
+        for row_idx in self.seq_start..=self.seq_end {
             let row_range = (
                 self.left_row_bounds[row_idx],
                 self.right_row_bounds[row_idx],
@@ -130,14 +120,14 @@ impl RowBounds {
 
     pub fn count_cells(&self) -> usize {
         let mut cells = 0;
-        for target_idx in self.target_start..=self.target_end {
+        for target_idx in self.seq_start..=self.seq_end {
             cells += self.right_row_bounds[target_idx] - self.left_row_bounds[target_idx] + 1;
         }
         cells
     }
 
     pub fn dump(&self, out: &mut impl Write) -> Result<()> {
-        for row_idx in self.target_start..=self.target_end {
+        for row_idx in self.seq_start..=self.seq_end {
             writeln!(
                 out,
                 "{}: {}-{}",
@@ -150,8 +140,8 @@ impl RowBounds {
 
 impl Debug for RowBounds {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "rows: {}-{}", self.target_start, self.target_end)?;
-        for row_idx in self.target_start..=self.target_end {
+        writeln!(f, "rows: {}-{}", self.seq_start, self.seq_end)?;
+        for row_idx in self.seq_start..=self.seq_end {
             writeln!(
                 f,
                 "{}: {}-{}",
