@@ -1,0 +1,249 @@
+name: tag
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REPO: "traviswheelerlab/nail"
+  BIN: "nail"
+  LIB: "libnail"
+
+permissions:
+  contents: write
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      BIN_VERSION: ${{ steps.versions.outputs.BIN_VERSION }}
+      LIB_VERSION: ${{ steps.versions.outputs.LIB_VERSION }}
+      BIN_VERSION_CHANGED: ${{ steps.versions.outputs.BIN_VERSION_CHANGED }}
+      LIB_VERSION_CHANGED: ${{ steps.versions.outputs.LIB_VERSION_CHANGED }}
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v4
+      with: 
+        # fetch enough history to access the previous commit
+        fetch-depth: 2
+
+    - name: set up git
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: check versions
+      id: versions
+      run: |
+        BIN_VERSION=$(grep '^version' rb/Cargo.toml | head -n 1 | awk '{print $3}' | tr -d '"')
+        LIB_VERSION=$(grep '^version' rl/Cargo.toml | head -n 1 | awk '{print $3}' | tr -d '"')
+
+        echo "BIN_VERSION=${BIN_VERSION}" >> $GITHUB_OUTPUT
+        echo "LIB_VERSION=${LIB_VERSION}" >> $GITHUB_OUTPUT
+
+        PREV_BIN_VERSION=$(git show origin/main^:rb/Cargo.toml | grep '^version' | head -n 1 | awk '{print $3}' | tr -d '"')
+        PREV_LIB_VERSION=$(git show origin/main^:rl/Cargo.toml | grep '^version' | head -n 1 | awk '{print $3}' | tr -d '"')
+
+        if [[ "${PREV_BIN_VERSION}" != "${BIN_VERSION}" ]]; then
+          echo "BIN_VERSION_CHANGED=true" >> $GITHUB_OUTPUT
+        else
+          echo "BIN_VERSION_CHANGED=false" >> $GITHUB_OUTPUT
+        fi
+
+        if [[ "${PREV_LIB_VERSION}" != "${LIB_VERSION}" ]]; then
+          echo "LIB_VERSION_CHANGED=true" >> $GITHUB_OUTPUT
+        else
+          echo "LIB_VERSION_CHANGED=false" >> $GITHUB_OUTPUT
+        fi
+
+  tag-bin:
+    needs: check-versions
+    if: needs.check-versions.outputs.BIN_VERSION_CHANGED == 'true'
+    runs-on: ubuntu-latest
+
+    env:
+      BIN_VERSION: ${{ needs.check-versions.outputs.BIN_VERSION }}
+      LIB_VERSION: ${{ needs.check-versions.outputs.LIB_VERSION }}
+      
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v4
+
+    - name: set up git
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: tag bin
+      run: |
+        git tag -a "${BIN}-v${BIN_VERSION}" -m "${BIN} v${BIN_VERSION} | ${LIB} v${LIB_VERSION}"
+        git push origin "${BIN}-v${BIN_VERSION}"
+
+  tag-lib: 
+    needs: check-versions
+    if: needs.check-versions.outputs.LIB_VERSION_CHANGED == 'true'
+    runs-on: ubuntu-latest
+
+    env:
+      BIN_VERSION: ${{ needs.check-versions.outputs.BIN_VERSION }}
+      LIB_VERSION: ${{ needs.check-versions.outputs.LIB_VERSION }}
+
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v4
+
+    - name: set up git
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: tag lib
+      run: |
+        git tag -a "${LIB}-v${LIB_VERSION}" -m "${BIN} v${BIN_VERSION} | ${LIB} v${LIB_VERSION}"
+        git push origin "${LIB}-v${LIB_VERSION}"
+
+  build:
+    needs: tag-bin
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-13]
+        arch: [x86_64, aarch64]
+        exclude:
+          - os: windows-latest
+            # cross-compiling for ARM on Windows 
+            # is not supported by Rust
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.os == 'ubuntu-latest' && (
+                  matrix.arch == 'x86_64' && 'x86_64-unknown-linux-gnu' ||
+                  matrix.arch == 'aarch64' && 'aarch64-unknown-linux-gnu'
+                ) || matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' ||
+                matrix.os == 'macos-13' && (
+                  matrix.arch == 'x86_64' && 'x86_64-apple-darwin' ||
+                  matrix.arch == 'aarch64' && 'aarch64-apple-darwin'
+                ) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: install rust target
+        run: rustup target add ${{ env.TARGET }}
+
+      - name: install aarch64 toolchain (Linux ARM only)
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'aarch64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          # tell cargo to actually use the ARM linker
+          mkdir -p .cargo
+          echo '[target.aarch64-unknown-linux-gnu]' >> .cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> .cargo/config.toml 
+
+      - name: build binary
+        run: cargo build --release --target ${{ env.TARGET }}
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN }}-${{ env.TARGET }}
+          path: target/${{ env.TARGET }}/release/${{ env.BIN }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+  build-macos-universal:
+    runs-on: macos-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BIN }}-x86_64-apple-darwin
+          path: bin/x86_64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BIN }}-aarch64-apple-darwin
+          path: bin/aarch64
+
+      - name: create universal binary
+        run: |
+          lipo -create -output ${{ env.BIN }} \
+            bin/x86_64/${{ env.BIN }} \
+            bin/aarch64/${{ env.BIN }}
+      
+      - name: upload universal binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN }}-macos-universal
+          path: ${{ env.BIN }}
+
+  release:
+    needs: [check-versions, build, build-macos-universal]
+    runs-on: ubuntu-latest
+    env:
+      BIN_VERSION: ${{ needs.check-versions.outputs.BIN_VERSION }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ env.BIN }}*
+          path: ./artifacts
+    
+      - name: make binaries executable
+        run: |
+          for b in ./artifacts/*/${{ env.BIN}}; do 
+            echo "making $b executable"
+            [ -f "$b" ] && chmod +x "$b"
+          done
+
+      - name: zip artifacts
+        run: |
+          echo "(pre-zip) listing files in ./artifacts:"
+          ls -l ./artifacts/*
+          cd artifacts
+
+          for d in *; do
+            if [[ "$d" == *windows* ]]; then
+              zip -r "$d.zip" "$d" && rm -rf "$d"
+            else
+              tar czf "$d.tar.gz" "$d" && rm -rf "$d"
+            fi
+          done
+
+          echo "(post-zip) listing files in ./artifacts:"
+          ls -l *
+
+      - name: upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/${{ env.BIN }}*
+          tag_name: ${{ env.BIN }}-v${{ needs.check-versions.outputs.BIN_VERSION }}
+          name: ${{ env.BIN }} ${{ needs.check-versions.outputs.BIN_VERSION }}
+          prerelease: false
+          draft: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-asset-table:
+    name: create asset table
+    runs-on: ubuntu-latest
+    needs: [release, check-versions]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'  # Specify the version of Python to use
+      
+      - name: install python
+        run: python -m pip install --upgrade pip && pip install requests
+
+      - name: update release table
+        working-directory: ${{ github.workspace }}/${{ env.PROJECT_PATH }} # set working directory
+        run: |
+          python .github/workflows/update_release_table.py ${{ env.REPO }} ${{ env.BIN }}-v${{ needs.check-versions.outputs.BIN_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
