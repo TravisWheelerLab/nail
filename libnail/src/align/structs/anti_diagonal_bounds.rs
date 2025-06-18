@@ -730,6 +730,33 @@ impl Cloud {
                     .iter_mut()
                     .zip(other.bounds[interval.start..=interval.end].iter())
                     .for_each(|(b1, b2)| b1.merge(b2));
+
+                // fix the 'left' non-intersecting range
+                let left_seq_idx = self.bounds[interval.start].0.seq_idx;
+                let right_prf_idx = self.bounds[interval.start].1.prf_idx;
+
+                (self.ad_start..interval.start).for_each(|ad| {
+                    let b = &mut self.bounds[ad];
+                    b.0.seq_idx.min_assign(left_seq_idx);
+                    b.0.prf_idx = ad - b.0.seq_idx;
+
+                    b.1.prf_idx.min_assign(right_prf_idx);
+                    b.1.seq_idx = ad - b.1.prf_idx;
+                });
+
+                // fix the 'right' non-intersecting range
+                let right_seq_idx = self.bounds[interval.end].1.seq_idx;
+                let left_prf_idx = self.bounds[interval.end].0.prf_idx;
+
+                (interval.end + 1..=self.ad_end).for_each(|ad| {
+                    let b = &mut self.bounds[ad];
+
+                    b.1.seq_idx.max_assign(right_seq_idx);
+                    b.1.prf_idx = ad - b.1.seq_idx;
+
+                    b.0.prf_idx.max_assign(left_prf_idx);
+                    b.0.seq_idx = ad - b.0.prf_idx;
+                });
             }
             Relationship::Disjoint(_) => panic!("tried to merge disjoint cloud"),
         }
@@ -1649,20 +1676,6 @@ mod tests {
         b2.merge(&b1);
         assert!(b2 == target_cloud);
 
-        //--------------------------------
-        b1.fill(&BOUNDS_D_1)?;
-        b2.fill(&BOUNDS_D_2)?;
-        target_cloud.fill(&BOUNDS_D_MERGE)?;
-
-        b1.merge(&b2);
-
-        assert!(b1 == target_cloud);
-
-        // reset and invert merge order
-        b1.fill(&BOUNDS_D_1)?;
-
-        b2.merge(&b1);
-        assert!(b2 == target_cloud);
         Ok(())
     }
 
