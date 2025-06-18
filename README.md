@@ -32,19 +32,14 @@ To run the `nail search` pipeline, `mmseqs search` must be available in your sys
 
 ## Installation
 
-To install nail, you'll need the Rust development tooling, which means you'll need to install the Rust compiler and Cargo.
-The easiest way to do that is to use [rustup](https://rustup.rs/).
-
-*Note: this may seem like a slight barrier to entry, but it's as simple as running a single shell command.
-That being said, we plan to begin releasing pre-compiled binaries for several platforms in the next release*
-
-Once Cargo is installed, you can install nail with:
-
-    cargo install nail
+You can find precompiled binaries for various platforms on the [latest release page](https://github.com/TravisWheelerLab/nail/releases/tag/nail-v0.4.0).
 
 ### Building from source
 
-If you'd like to build nail from source, you can clone this repository and build the project with Cargo:
+To install nail from source, you'll need the Rust development tooling, which means you'll need to install the Rust compiler and Cargo.
+The easiest way to do that is to use [rustup](https://rustup.rs/).
+
+Once you've done that, you can clone this repository and build the project with Cargo:
 
     git clone https://github.com/TravisWheelerLab/nail
     cd nail/
