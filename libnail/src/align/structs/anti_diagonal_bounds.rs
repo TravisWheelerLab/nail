@@ -580,6 +580,7 @@ impl Cloud {
                     },
                 );
             });
+        self.ad_start -= distance;
 
         let last = *self.last();
         let distance = last.1.seq_idx - last.0.seq_idx;
@@ -587,7 +588,7 @@ impl Cloud {
         (1..=distance)
             .map(|offset| (offset, ad_end + offset))
             .for_each(|(offset, idx)| {
-                self[Ad(idx)] = Bound(
+                self.bounds[idx] = Bound(
                     Cell {
                         prf_idx: last.0.prf_idx,
                         seq_idx: last.0.seq_idx + offset,
@@ -598,6 +599,8 @@ impl Cloud {
                     },
                 );
             });
+
+        self.ad_end += distance;
     }
 
     pub fn advance_forward(&mut self) {
