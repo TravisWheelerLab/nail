@@ -27,6 +27,7 @@ fn main() -> anyhow::Result<()> {
             set_threads(args.num_threads)?;
             search(args)?;
         }
+        NailSubCommands::Dev => {}
     }
 
     Ok(())

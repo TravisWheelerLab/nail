@@ -6,6 +6,8 @@ use clap::{Args, Parser, Subcommand};
 pub enum NailSubCommands {
     #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
+    #[command(hide = true)]
+    Dev,
 }
 
 #[derive(Parser)]
