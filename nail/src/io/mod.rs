@@ -1,4 +1,4 @@
-mod rayon;
+mod impl_rayon;
 
 use std::{
     fs::File,
@@ -13,6 +13,7 @@ use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
     structs::{Profile, Sequence},
 };
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
     let header_newline_pos = match bytes.iter().position(|&b| b == b'\n') {
@@ -118,7 +119,7 @@ impl<'a> DoubleEndedIterator for SequenceDatabaseIter<'a> {
 impl<'a> ExactSizeIterator for SequenceDatabaseIter<'a> {}
 
 pub struct LexicalFastaIndex {
-    offsets: IndexMap<String, FastaOffset>,
+    pub offsets: IndexMap<String, FastaOffset>,
 }
 
 #[derive(Clone)]
@@ -141,7 +142,63 @@ impl FastaOffset {
 }
 
 impl LexicalFastaIndex {
-    fn new<R: Read>(mut data: R) -> Self {
+    fn from_path<P: AsRef<Path>>(path: P, n: usize) -> anyhow::Result<Self> {
+        let mut file = File::open(path.as_ref())?;
+        let sz = file.metadata().unwrap().len();
+        let chunk_sz = sz / n as u64;
+
+        let mut block_starts: Vec<u64> = (0..n).map(|i| i as u64).map(|i| i * chunk_sz).collect();
+        // 2^16 gives us a ~65KiB buffer
+        let mut buffer = [0; 2 << 16];
+
+        block_starts.iter_mut().for_each(|start| {
+            file.seek(std::io::SeekFrom::Start(*start))
+                .expect("failed to seek");
+
+            let mut offset = 0;
+            'outer: loop {
+                match file.read(&mut buffer) {
+                    Ok(bytes_read) => {
+                        for b in buffer[0..bytes_read].iter() {
+                            if *b == b'>' {
+                                *start += offset;
+                                break 'outer;
+                            }
+                            offset += 1;
+                        }
+                    }
+                    _ => panic!("failed to read from buffer"),
+                }
+            }
+        });
+
+        let mut block_ends: Vec<u64> = block_starts.iter().skip(1).map(|b| b - 1).collect();
+        block_ends.push(sz - 1);
+
+        let mut files: Vec<_> = block_starts
+            .into_iter()
+            .zip(block_ends)
+            .map(|(start, end)| {
+                let mut f = File::open(path.as_ref())?;
+                f.seek(std::io::SeekFrom::Start(start))?;
+                Ok((f.take(end - start + 1), start))
+            })
+            .collect::<anyhow::Result<_>>()?;
+
+        let mut indexes: Vec<_> = files
+            .par_iter_mut()
+            .map(|(file, start)| Self::new(file, Some(*start)))
+            .collect();
+
+        let mut index = indexes.remove(0);
+        indexes.into_iter().for_each(|i| index.extend(i));
+
+        Ok(index)
+    }
+
+    fn new<R: Read>(mut data: R, start: Option<u64>) -> Self {
+        let start = start.unwrap_or(0) as usize;
+
         let mut offsets = IndexMap::new();
         enum ParseState {
             Name,
@@ -161,11 +218,12 @@ impl LexicalFastaIndex {
         }
 
         let mut state = ParseState::Name;
-        let mut buffer = [0; 8192];
+        // 2^20 gives us a ~1MiB buffer
+        let mut buffer = vec![0; 2 << 20];
         let mut name = String::new();
-        let mut total_bytes_read = 1;
+        let mut total_bytes_read = 1 + start;
 
-        let mut offset = FastaOffset::new(0);
+        let mut offset = FastaOffset::new(start);
 
         while let Ok(bytes_read) = data.read(&mut buffer) {
             // when we read 0 bytes, its the EOF
@@ -231,6 +289,10 @@ impl LexicalFastaIndex {
     fn offset_by_name(&self, name: &str) -> Option<FastaOffset> {
         self.offsets.get(name).cloned()
     }
+
+    fn extend(&mut self, other: Self) {
+        self.offsets.extend(other.offsets);
+    }
 }
 
 pub struct Fasta {
@@ -260,9 +322,21 @@ impl Clone for Fasta {
 }
 
 impl Fasta {
+    pub fn from_path_par<P: AsRef<Path>>(path: P, n: usize) -> anyhow::Result<Self> {
+        let index = Arc::new(LexicalFastaIndex::from_path(path.as_ref(), n)?);
+        let file = File::open(path.as_ref())?;
+
+        Ok(Self {
+            file,
+            index,
+            buffer: Vec::new(),
+            path: PathBuf::from(path.as_ref()),
+        })
+    }
+
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let mut file = File::open(path.as_ref())?;
-        let index = Arc::new(LexicalFastaIndex::new(&mut file));
+        let index = Arc::new(LexicalFastaIndex::new(&mut file, None));
 
         Ok(Self {
             file,

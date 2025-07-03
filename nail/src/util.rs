@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -86,6 +86,20 @@ impl CommandExt for Command {
                 Err(CommandExitStatusError.into())
             }
         }
+    }
+}
+
+#[allow(dead_code)]
+pub trait FileExt {
+    fn byte(&mut self, n: u64) -> u8;
+}
+
+impl FileExt for File {
+    fn byte(&mut self, n: u64) -> u8 {
+        self.seek(SeekFrom::Start(n)).expect("failed to seek");
+        let mut byte = [0u8; 1];
+        self.read_exact(&mut byte).expect("failed to read");
+        byte[0]
     }
 }
 

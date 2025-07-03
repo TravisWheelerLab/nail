@@ -19,7 +19,7 @@ use anyhow::anyhow;
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
-    io::Fasta,
+    io::{Fasta, SequenceDatabase},
     pipeline::{
         OutputStageStats, PipelineResult,
         StageResult::{Filtered, Passed},
@@ -301,22 +301,20 @@ impl Stats {
     pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let mut stats = Self::default();
 
-        // TODO: doing this here is significantly wasteful
-        let target_lengths: Vec<usize> = targets.par_iter().map(|s| s.length).collect();
-
-        let query_lengths: Vec<usize> = match queries {
-            Queries::Sequence(fasta) => fasta.par_iter().map(|s| s.length).collect(),
-            Queries::Profile(vec) => vec.par_iter().map(|s| s.length).collect(),
-        };
-
-        stats.set_computed_value(
-            ComputedValue::Cells,
-            target_lengths
+        let now = std::time::Instant::now();
+        let cell_sum: u64 = match queries {
+            Queries::Sequence(queries) => queries
                 .par_iter()
-                .flat_map(|a| query_lengths.par_iter().map(move |b| a * b))
-                .sum::<usize>() as u64,
-        );
+                .flat_map_iter(|q| targets.iter().map(move |t| (q.length * t.length) as u64))
+                .sum(),
+            Queries::Profile(queries) => queries
+                .par_iter()
+                .flat_map_iter(|q| targets.iter().map(|t| (q.length * t.length) as u64))
+                .sum(),
+        };
+        println!("{:?}", now.elapsed());
 
+        stats.set_computed_value(ComputedValue::Cells, cell_sum);
         stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
         stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
         stats.set_computed_value(
