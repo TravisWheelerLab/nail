@@ -125,8 +125,9 @@ pub struct LexicalFastaIndex {
 #[derive(Clone)]
 pub struct FastaOffset {
     start: usize,
-    name_len: usize,
-    details_len: usize,
+    name_len_bytes: usize,
+    details_len_bytes: usize,
+    seq_len_bytes: usize,
     seq_len: usize,
 }
 
@@ -134,8 +135,9 @@ impl FastaOffset {
     pub fn new(start: usize) -> Self {
         Self {
             start,
-            name_len: 0,
-            details_len: 0,
+            name_len_bytes: 0,
+            details_len_bytes: 0,
+            seq_len_bytes: 0,
             seq_len: 0,
         }
     }
@@ -222,14 +224,17 @@ impl LexicalFastaIndex {
         let mut buffer = vec![0; 2 << 20];
         let mut name = String::new();
         let mut total_bytes_read = 1 + start;
+        let mut seq_line_cnt = 0;
 
         let mut offset = FastaOffset::new(start);
 
         while let Ok(bytes_read) = data.read(&mut buffer) {
             // when we read 0 bytes, its the EOF
             if bytes_read == 0 {
-                offset.seq_len =
-                    total_bytes_read - (offset.start + offset.name_len + offset.details_len);
+                offset.seq_len_bytes = total_bytes_read
+                    - (offset.start + offset.name_len_bytes + offset.details_len_bytes);
+                offset.seq_len = offset.seq_len_bytes - seq_line_cnt - 1;
+
                 name.shrink_to_fit();
                 offsets.insert(name.clone(), offset);
                 break;
@@ -240,26 +245,33 @@ impl LexicalFastaIndex {
                 match state {
                     ParseState::Name => match byte {
                         b' ' => {
-                            offset.name_len = current_offset - offset.start;
+                            offset.name_len_bytes = current_offset - offset.start;
                             state = ParseState::Details
                         }
                         b'\n' => {
-                            offset.name_len = current_offset - offset.start;
-                            offset.details_len = 0;
+                            offset.name_len_bytes = current_offset - offset.start;
+                            offset.details_len_bytes = 0;
                             state = ParseState::Seq
                         }
                         _ => name.push(byte as char),
                     },
                     ParseState::Details => {
                         if byte == b'\n' {
-                            offset.details_len = current_offset - (offset.start + offset.name_len);
+                            offset.details_len_bytes =
+                                current_offset - (offset.start + offset.name_len_bytes);
                             state = ParseState::Seq
                         }
                     }
                     ParseState::Seq => {
+                        if byte == b'\n' {
+                            seq_line_cnt += 1;
+                        }
+
                         if byte == b'>' {
-                            offset.seq_len = current_offset
-                                - (offset.start + offset.name_len + offset.details_len);
+                            offset.seq_len_bytes = current_offset
+                                - (offset.start + offset.name_len_bytes + offset.details_len_bytes);
+                            offset.seq_len = offset.seq_len_bytes - seq_line_cnt - 1;
+
                             state = ParseState::Process
                         }
                     }
@@ -269,6 +281,7 @@ impl LexicalFastaIndex {
                         // -1 since we found the '>' on the previous byte
                         offset = FastaOffset::new(current_offset - 1);
                         name = String::new();
+                        seq_line_cnt = 0;
                         name.push(byte as char);
                         state = ParseState::Name
                     }
@@ -353,8 +366,10 @@ impl Fasta {
     pub fn get(&mut self, name: &str) -> Option<Sequence> {
         let offset = self.index.offset_by_name(name)?;
 
-        self.buffer
-            .resize(offset.details_len + offset.name_len + offset.seq_len, 0u8);
+        self.buffer.resize(
+            offset.details_len_bytes + offset.name_len_bytes + offset.seq_len_bytes,
+            0u8,
+        );
 
         self.file
             .seek(std::io::SeekFrom::Start(offset.start as u64))
@@ -373,6 +388,10 @@ impl Fasta {
 
     pub fn names_iter(&self) -> impl Iterator<Item = &str> {
         self.index.offsets.keys().map(|k| k.as_str())
+    }
+
+    pub fn lengths_iter(&self) -> impl Iterator<Item = usize> + use<'_> {
+        self.index.offsets.values().map(|v| v.seq_len)
     }
 }
 

@@ -301,7 +301,6 @@ impl Stats {
     pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let mut stats = Self::default();
 
-        let now = std::time::Instant::now();
         let cell_sum: u64 = match queries {
             Queries::Sequence(queries) => queries
                 .par_iter()
@@ -312,7 +311,6 @@ impl Stats {
                 .flat_map_iter(|q| targets.iter().map(|t| (q.length * t.length) as u64))
                 .sum(),
         };
-        println!("{:?}", now.elapsed());
 
         stats.set_computed_value(ComputedValue::Cells, cell_sum);
         stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
