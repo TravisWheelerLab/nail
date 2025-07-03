@@ -119,7 +119,7 @@ impl<'a> DoubleEndedIterator for SequenceDatabaseIter<'a> {
 impl<'a> ExactSizeIterator for SequenceDatabaseIter<'a> {}
 
 pub struct LexicalFastaIndex {
-    pub offsets: IndexMap<String, FastaOffset>,
+    offsets: IndexMap<String, FastaOffset>,
 }
 
 #[derive(Clone)]
