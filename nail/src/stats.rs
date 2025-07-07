@@ -4,7 +4,6 @@ use libnail::{
     },
     structs::{hmm::Alphabet, Profile, Sequence},
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fmt::Debug,
     io::Write,
@@ -19,7 +18,7 @@ use anyhow::anyhow;
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
-    io::{Fasta, SequenceDatabase},
+    io::Fasta,
     pipeline::{
         OutputStageStats, PipelineResult,
         StageResult::{Filtered, Passed},
@@ -301,18 +300,6 @@ impl Stats {
     pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let mut stats = Self::default();
 
-        let cell_sum: u64 = match queries {
-            Queries::Sequence(queries) => queries
-                .par_iter()
-                .flat_map_iter(|q| targets.iter().map(move |t| (q.length * t.length) as u64))
-                .sum(),
-            Queries::Profile(queries) => queries
-                .par_iter()
-                .flat_map_iter(|q| targets.iter().map(|t| (q.length * t.length) as u64))
-                .sum(),
-        };
-
-        stats.set_computed_value(ComputedValue::Cells, cell_sum);
         stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
         stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
         stats.set_computed_value(
@@ -496,10 +483,14 @@ impl Stats {
             .unwrap_or(0);
 
         ComputedValue::iter().try_for_each(|c| {
-            let label = format!("{c:?}");
-            let label_width = label.len();
-            let count = Self::format_num(self.computed_value(c));
-            writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
+            if self.computed_value(c) > 0 {
+                let label = format!("{c:?}");
+                let label_width = label.len();
+                let count = Self::format_num(self.computed_value(c));
+                writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
+            } else {
+                Ok(())
+            }
         })?;
 
         let values: Vec<_> = CountedValue::iter().collect();
