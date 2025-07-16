@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::Write,
+    io::{BufRead, BufReader, Read},
+};
 
 use libnail::{align::structs::Seed, structs::Profile};
 
@@ -11,6 +15,8 @@ use crate::{
     },
     search::Queries,
 };
+
+use anyhow::anyhow;
 
 fn merge_seed_maps<'a>(
     mut seed_map_a: SeedMap,
@@ -115,6 +121,56 @@ pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
 }
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
+
+pub fn write_seed_map(map: &SeedMap, out: &mut impl Write) -> anyhow::Result<()> {
+    map.iter().try_for_each(|(prf_name, seeds)| {
+        write!(out, "{}|", prf_name)?;
+        seeds
+            .iter()
+            .try_for_each(|(seq_name, seed)| write!(out, "{}:{},", seq_name, seed))?;
+        writeln!(out)
+    })?;
+
+    Ok(())
+}
+
+pub fn read_seed_map(buf: &mut impl Read) -> anyhow::Result<SeedMap> {
+    let mut seeds: SeedMap = HashMap::new();
+    let mut reader = BufReader::new(buf);
+    let mut line = String::new();
+
+    while reader.read_line(&mut line).unwrap() > 0 {
+        let mut split = line.splitn(2, '|');
+        let prf_name = split.next().ok_or(anyhow!("empty query name"))?.to_string();
+        let mut prf_seeds = HashMap::new();
+
+        split
+            .next()
+            .unwrap_or("")
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .inspect(|s| println!("{s}"))
+            .try_for_each::<_, anyhow::Result<()>>(|s| {
+                let tokens: Vec<&str> = s.splitn(6, ':').collect();
+                let seq_name = tokens[0].to_string();
+                let seed = Seed {
+                    seq_start: tokens[1].parse::<usize>()?,
+                    seq_end: tokens[2].parse::<usize>()?,
+                    prf_start: tokens[3].parse::<usize>()?,
+                    prf_end: tokens[4].parse::<usize>()?,
+                    score: tokens[5].parse::<f32>()?,
+                };
+                prf_seeds.insert(seq_name, seed);
+                Ok(())
+            })?;
+
+        seeds.insert(prf_name, prf_seeds);
+
+        line.clear();
+    }
+
+    Ok(seeds)
+}
 
 #[derive(Default, Clone)]
 pub struct DefaultSeedStage {

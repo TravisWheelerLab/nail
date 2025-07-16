@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added `LexicalFastaIndex::from_path`
 - added `FileExt` trait for `File` API extensions
 - added `Fasta.lengths_iter()`
+- added `write_seed_map()`
+- added `read_seed_map()`
 
 ### Changed
 - changed `FastaOffset` length fields to include `_bytes` suffix
