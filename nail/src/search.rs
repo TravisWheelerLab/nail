@@ -98,7 +98,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let now = Instant::now();
     println!("indexing target database...");
-    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
+    let targets = Fasta::from_path_par(&args.target_path, args.num_threads)
+        .context("failed to read target fasta")?;
     println!(
         "\x1b[Aindexing target database... done ({:.2}s)",
         now.elapsed().as_secs_f64()

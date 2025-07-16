@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [Unreleased]
+
+### Added
+- added `nail dev` command to CLI
+- added `Fasta::from_path_par`
+- added `LexicalFastaIndex::from_path`
+- added `FileExt` trait for `File` API extensions
+- added `Fasta.lengths_iter()`
+
+### Changed
+- changed `FastaOffset` length fields to include `_bytes` suffix
+- mod `io::rayon` renamed to `io::impl_rayon`
+- `LexicalFastaIndex::new()` now also takes `start: Option<u64>` to supply a relative starting offset
+
 ## [0.4.0] - 2025-6-18
 
 ### Added

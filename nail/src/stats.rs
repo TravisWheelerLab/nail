@@ -4,7 +4,6 @@ use libnail::{
     },
     structs::{hmm::Alphabet, Profile, Sequence},
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fmt::Debug,
     io::Write,
@@ -301,22 +300,6 @@ impl Stats {
     pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let mut stats = Self::default();
 
-        // TODO: doing this here is significantly wasteful
-        let target_lengths: Vec<usize> = targets.par_iter().map(|s| s.length).collect();
-
-        let query_lengths: Vec<usize> = match queries {
-            Queries::Sequence(fasta) => fasta.par_iter().map(|s| s.length).collect(),
-            Queries::Profile(vec) => vec.par_iter().map(|s| s.length).collect(),
-        };
-
-        stats.set_computed_value(
-            ComputedValue::Cells,
-            target_lengths
-                .par_iter()
-                .flat_map(|a| query_lengths.par_iter().map(move |b| a * b))
-                .sum::<usize>() as u64,
-        );
-
         stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
         stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
         stats.set_computed_value(
@@ -500,10 +483,14 @@ impl Stats {
             .unwrap_or(0);
 
         ComputedValue::iter().try_for_each(|c| {
-            let label = format!("{c:?}");
-            let label_width = label.len();
-            let count = Self::format_num(self.computed_value(c));
-            writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
+            if self.computed_value(c) > 0 {
+                let label = format!("{c:?}");
+                let label_width = label.len();
+                let count = Self::format_num(self.computed_value(c));
+                writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
+            } else {
+                Ok(())
+            }
         })?;
 
         let values: Vec<_> = CountedValue::iter().collect();
