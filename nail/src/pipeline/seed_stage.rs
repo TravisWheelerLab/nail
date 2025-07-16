@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
 };
 
 use libnail::{align::structs::Seed, structs::Profile};
@@ -121,14 +121,15 @@ pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
 
-pub fn write_seed_map(map: &SeedMap, out: &mut impl Write) -> anyhow::Result<()> {
+pub fn write_seed_map(map: &SeedMap, buf: &mut impl Write) -> anyhow::Result<()> {
+    let mut writer = BufWriter::new(buf);
     map.iter().try_for_each(|(prf_name, seeds)| {
-        writeln!(out, "{}", prf_name)?;
+        writeln!(writer, "{}", prf_name)?;
         seeds.iter().try_for_each(|(seq_name, seed)| {
-            writeln!(out, ">{}", seq_name)?;
-            writeln!(out, "{}", seed)
+            writeln!(writer, ">{}", seq_name)?;
+            writeln!(writer, "{}", seed)
         })?;
-        writeln!(out, "//")
+        writeln!(writer, "//")
     })?;
 
     Ok(())
