@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt::Write,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader, Read, Write},
 };
 
 use libnail::{align::structs::Seed, structs::Profile};
@@ -124,11 +123,12 @@ pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
 
 pub fn write_seed_map(map: &SeedMap, out: &mut impl Write) -> anyhow::Result<()> {
     map.iter().try_for_each(|(prf_name, seeds)| {
-        write!(out, "{}|", prf_name)?;
-        seeds
-            .iter()
-            .try_for_each(|(seq_name, seed)| write!(out, "{}:{},", seq_name, seed))?;
-        writeln!(out)
+        writeln!(out, "{}", prf_name)?;
+        seeds.iter().try_for_each(|(seq_name, seed)| {
+            writeln!(out, ">{}", seq_name)?;
+            writeln!(out, "{}", seed)
+        })?;
+        writeln!(out, "//")
     })?;
 
     Ok(())
@@ -139,32 +139,52 @@ pub fn read_seed_map(buf: &mut impl Read) -> anyhow::Result<SeedMap> {
     let mut reader = BufReader::new(buf);
     let mut line = String::new();
 
+    enum ParseState {
+        PrfName,
+        SeqName,
+        Seed,
+        End,
+    }
+
+    let mut state = ParseState::PrfName;
+    let mut prf_name = "".to_string();
+    let mut seq_name = "".to_string();
+    let mut prf_seeds = HashMap::new();
     while reader.read_line(&mut line).unwrap() > 0 {
-        let mut split = line.splitn(2, '|');
-        let prf_name = split.next().ok_or(anyhow!("empty query name"))?.to_string();
-        let mut prf_seeds = HashMap::new();
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            continue;
+        } else if trimmed == "//" {
+            state = ParseState::End;
+        }
 
-        split
-            .next()
-            .unwrap_or("")
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .inspect(|s| println!("{s}"))
-            .try_for_each::<_, anyhow::Result<()>>(|s| {
-                let tokens: Vec<&str> = s.splitn(6, ':').collect();
-                let seq_name = tokens[0].to_string();
+        match state {
+            ParseState::PrfName => {
+                prf_name = trimmed.to_string();
+                state = ParseState::SeqName;
+            }
+            ParseState::SeqName => {
+                seq_name = trimmed[1..].to_string();
+                state = ParseState::Seed;
+            }
+            ParseState::Seed => {
+                let tokens: Vec<&str> = trimmed.splitn(5, ':').collect();
                 let seed = Seed {
-                    seq_start: tokens[1].parse::<usize>()?,
-                    seq_end: tokens[2].parse::<usize>()?,
-                    prf_start: tokens[3].parse::<usize>()?,
-                    prf_end: tokens[4].parse::<usize>()?,
-                    score: tokens[5].parse::<f32>()?,
+                    seq_start: tokens[0].parse::<usize>()?,
+                    seq_end: tokens[1].parse::<usize>()?,
+                    prf_start: tokens[2].parse::<usize>()?,
+                    prf_end: tokens[3].parse::<usize>()?,
+                    score: tokens[4].parse::<f32>()?,
                 };
-                prf_seeds.insert(seq_name, seed);
-                Ok(())
-            })?;
-
-        seeds.insert(prf_name, prf_seeds);
+                prf_seeds.insert(seq_name.clone(), seed);
+                state = ParseState::SeqName;
+            }
+            ParseState::End => {
+                seeds.insert(prf_name.clone(), prf_seeds);
+                prf_seeds = HashMap::new();
+                state = ParseState::PrfName;
+            }
+        }
 
         line.clear();
     }

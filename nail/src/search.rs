@@ -8,9 +8,10 @@ use std::time::Instant;
 use crate::args::SearchArgs;
 use crate::io::Fasta;
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, MaxSeedStage, OutputStage, Pipeline, SeedMap, SeedStage,
+    read_seed_map, run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence,
+    seed_profile_to_sequence, seed_sequence_to_sequence, write_seed_map, DefaultAlignStage,
+    DefaultCloudSearchStage, DefaultSeedStage, FullDpCloudSearchStage, MaxSeedStage, OutputStage,
+    Pipeline, SeedMap, SeedStage,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -113,19 +114,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     }
 
     let seeds = match args.io_args.seeds_input_path {
-        Some(ref path) => {
-            let mut seeds: SeedMap = HashMap::new();
-
-            let reader = BufReader::new(std::fs::File::open(path)?);
-            let stream = serde_json::Deserializer::from_reader(reader);
-
-            for entry in stream.into_iter::<SeedMap>() {
-                let entry = entry?;
-                seeds.extend(entry);
-            }
-
-            seeds
-        }
+        Some(ref path) => read_seed_map(&mut std::fs::File::open(path)?)?,
         None => {
             let now = Instant::now();
             println!("running mmseqs...");
@@ -149,9 +138,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     if let Some(ref path) = args.io_args.seeds_output_path {
         // TODO: don't open with allow_overwrite = true
         //       after I've updated the open() API
-        let writer = BufWriter::new(path.open(true)?);
-        let mut serializer = serde_json::Serializer::new(writer);
-        seeds.serialize(&mut serializer)?;
+        let mut buf = BufWriter::new(path.open(true)?);
+        write_seed_map(&seeds, &mut buf)?;
     }
 
     if args.pipeline_args.only_seed {
