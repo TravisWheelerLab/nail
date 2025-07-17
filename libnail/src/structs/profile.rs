@@ -46,7 +46,7 @@ pub struct Profile {
     /// Core model entry transition scores
     pub entry_transitions: Vec<f32>,
     /// Match and insert emission scores
-    pub emission_scores: [Vec<Vec<f32>>; 2],
+    pub emission_scores: [Vec<[f32; Profile::MAX_DEGENERATE_ALPHABET_SIZE]>; 2],
     /// Transitions from special states (E, N, B, J, C)
     pub special_transitions: [[f32; 2]; 5],
     /// The expected number of times that the J state is used
@@ -571,11 +571,11 @@ impl Profile {
             emission_scores: [
                 // +1 for left-pad & +1 for right-pad
                 vec![
-                    vec![-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
+                    [-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
                     hmm.header.model_length + 2
                 ],
                 vec![
-                    vec![-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
+                    [-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
                     hmm.header.model_length + 2
                 ],
             ],
@@ -729,18 +729,6 @@ impl Profile {
             prf.emission_scores[Profile::INSERT_IDX][prf_idx][Profile::MISSING_DATA_IDX] =
                 -f32::INFINITY;
         }
-
-        prf.name.shrink_to_fit();
-        prf.accession.shrink_to_fit();
-        prf.core_transitions.shrink_to_fit();
-        prf.entry_transitions.shrink_to_fit();
-        prf.emission_scores[0]
-            .iter_mut()
-            .for_each(|v| v.shrink_to_fit());
-        prf.emission_scores[1]
-            .iter_mut()
-            .for_each(|v| v.shrink_to_fit());
-        prf.consensus_sequence_bytes_utf8.shrink_to_fit();
 
         prf
     }

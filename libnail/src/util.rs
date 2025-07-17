@@ -6,6 +6,10 @@ use std::{
 
 use lazy_static::lazy_static;
 
+pub struct FlatVec2d<T> {
+    data: Vec<T>,
+}
+
 pub trait MaxAssign {
     fn max_assign(&mut self, other: Self);
 }

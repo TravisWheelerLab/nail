@@ -109,6 +109,12 @@ where
     }
 }
 
+impl<const N: usize> AllocationSize for [f32; N] {
+    fn size(&self) -> Bytes {
+        Bytes(N * std::mem::size_of::<f32>())
+    }
+}
+
 impl AllocationSize for usize {
     fn size(&self) -> Bytes {
         Bytes(std::mem::size_of::<usize>())
