@@ -1,8 +1,6 @@
 use std::fmt::Display;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Seed {
     pub seq_start: usize,
     pub seq_end: usize,
