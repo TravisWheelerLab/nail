@@ -352,7 +352,7 @@ impl Hmm {
         transition_probabilities[seq.length][HMM_DELETE_TO_MATCH] = 1.0;
         transition_probabilities[seq.length][HMM_DELETE_TO_DELETE] = 0.0;
 
-        let insert_probabilities = vec![AMINO_BACKGROUND_FREQUENCIES.to_vec(); seq.length + 1];
+        let mut insert_probabilities = vec![AMINO_BACKGROUND_FREQUENCIES.to_vec(); seq.length + 1];
 
         // OCCUPANCY
 

@@ -730,6 +730,18 @@ impl Profile {
                 -f32::INFINITY;
         }
 
+        prf.name.shrink_to_fit();
+        prf.accession.shrink_to_fit();
+        prf.core_transitions.shrink_to_fit();
+        prf.entry_transitions.shrink_to_fit();
+        prf.emission_scores[0]
+            .iter_mut()
+            .for_each(|v| v.shrink_to_fit());
+        prf.emission_scores[1]
+            .iter_mut()
+            .for_each(|v| v.shrink_to_fit());
+        prf.consensus_sequence_bytes_utf8.shrink_to_fit();
+
         prf
     }
 
