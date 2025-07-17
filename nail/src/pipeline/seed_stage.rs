@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{BufRead, BufReader, BufWriter, Read, Write},
+};
 
 use libnail::{align::structs::Seed, structs::Profile};
 
@@ -115,6 +118,78 @@ pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
 }
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
+
+pub fn write_seed_map(map: &SeedMap, buf: &mut impl Write) -> anyhow::Result<()> {
+    let mut writer = BufWriter::new(buf);
+    map.iter().try_for_each(|(prf_name, seeds)| {
+        writeln!(writer, "{}", prf_name)?;
+        seeds.iter().try_for_each(|(seq_name, seed)| {
+            writeln!(writer, ">{}", seq_name)?;
+            writeln!(writer, "{}", seed)
+        })?;
+        writeln!(writer, "//")
+    })?;
+
+    Ok(())
+}
+
+pub fn read_seed_map(buf: &mut impl Read) -> anyhow::Result<SeedMap> {
+    let mut seeds: SeedMap = HashMap::new();
+    let mut reader = BufReader::new(buf);
+    let mut line = String::new();
+
+    enum ParseState {
+        PrfName,
+        SeqName,
+        Seed,
+        End,
+    }
+
+    let mut state = ParseState::PrfName;
+    let mut prf_name = "".to_string();
+    let mut seq_name = "".to_string();
+    let mut prf_seeds = HashMap::new();
+    while reader.read_line(&mut line).unwrap() > 0 {
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            continue;
+        } else if trimmed == "//" {
+            state = ParseState::End;
+        }
+
+        match state {
+            ParseState::PrfName => {
+                prf_name = trimmed.to_string();
+                state = ParseState::SeqName;
+            }
+            ParseState::SeqName => {
+                seq_name = trimmed[1..].to_string();
+                state = ParseState::Seed;
+            }
+            ParseState::Seed => {
+                let tokens: Vec<&str> = trimmed.splitn(5, ':').collect();
+                let seed = Seed {
+                    seq_start: tokens[0].parse::<usize>()?,
+                    seq_end: tokens[1].parse::<usize>()?,
+                    prf_start: tokens[2].parse::<usize>()?,
+                    prf_end: tokens[3].parse::<usize>()?,
+                    score: tokens[4].parse::<f32>()?,
+                };
+                prf_seeds.insert(seq_name.clone(), seed);
+                state = ParseState::SeqName;
+            }
+            ParseState::End => {
+                seeds.insert(prf_name.clone(), prf_seeds);
+                prf_seeds = HashMap::new();
+                state = ParseState::PrfName;
+            }
+        }
+
+        line.clear();
+    }
+
+    Ok(seeds)
+}
 
 #[derive(Default, Clone)]
 pub struct DefaultSeedStage {

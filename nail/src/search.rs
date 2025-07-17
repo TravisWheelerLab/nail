@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{stdout, BufReader, BufWriter};
+use std::io::stdout;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
@@ -8,9 +7,10 @@ use std::time::Instant;
 use crate::args::SearchArgs;
 use crate::io::Fasta;
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, MaxSeedStage, OutputStage, Pipeline, SeedMap, SeedStage,
+    read_seed_map, run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence,
+    seed_profile_to_sequence, seed_sequence_to_sequence, write_seed_map, DefaultAlignStage,
+    DefaultCloudSearchStage, DefaultSeedStage, FullDpCloudSearchStage, MaxSeedStage, OutputStage,
+    Pipeline, SeedStage,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -18,7 +18,6 @@ use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 use libnail::structs::{Hmm, Profile};
 
 use anyhow::Context;
-use serde::Serialize;
 
 pub enum Queries {
     Sequence(Fasta),
@@ -114,15 +113,13 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let seeds = match args.io_args.seeds_input_path {
         Some(ref path) => {
-            let mut seeds: SeedMap = HashMap::new();
-
-            let reader = BufReader::new(std::fs::File::open(path)?);
-            let stream = serde_json::Deserializer::from_reader(reader);
-
-            for entry in stream.into_iter::<SeedMap>() {
-                let entry = entry?;
-                seeds.extend(entry);
-            }
+            let now = Instant::now();
+            println!("reading seeds...");
+            let seeds = read_seed_map(&mut std::fs::File::open(path)?)?;
+            println!(
+                "\x1b[Areading seeds...            done ({:.2}s)",
+                now.elapsed().as_secs_f64()
+            );
 
             seeds
         }
@@ -142,6 +139,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                 "\x1b[Arunning mmseqs...           done ({:.2}s)",
                 now.elapsed().as_secs_f64()
             );
+
             seeds
         }
     };
@@ -149,9 +147,13 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     if let Some(ref path) = args.io_args.seeds_output_path {
         // TODO: don't open with allow_overwrite = true
         //       after I've updated the open() API
-        let writer = BufWriter::new(path.open(true)?);
-        let mut serializer = serde_json::Serializer::new(writer);
-        seeds.serialize(&mut serializer)?;
+        let now = Instant::now();
+        println!("writing seeds...");
+        write_seed_map(&seeds, &mut path.open(true)?)?;
+        println!(
+            "\x1b[Awriting seeds...            done ({:.2}s)",
+            now.elapsed().as_secs_f64()
+        );
     }
 
     if args.pipeline_args.only_seed {
