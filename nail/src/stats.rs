@@ -5,6 +5,7 @@ use libnail::{
     structs::{hmm::Alphabet, Profile, Sequence},
 };
 use std::{
+    any::TypeId,
     fmt::Debug,
     io::Write,
     sync::{
@@ -57,8 +58,55 @@ impl std::iter::Sum for Bytes {
     }
 }
 
+enum AllocationKind {
+    Primitive,
+    Other,
+}
+
+fn allocation_kind<T: 'static>() -> AllocationKind {
+    if TypeId::of::<T>() == TypeId::of::<u8>()
+        || TypeId::of::<T>() == TypeId::of::<u16>()
+        || TypeId::of::<T>() == TypeId::of::<u32>()
+        || TypeId::of::<T>() == TypeId::of::<u64>()
+        || TypeId::of::<T>() == TypeId::of::<u128>()
+        || TypeId::of::<T>() == TypeId::of::<usize>()
+        || TypeId::of::<T>() == TypeId::of::<i8>()
+        || TypeId::of::<T>() == TypeId::of::<i16>()
+        || TypeId::of::<T>() == TypeId::of::<i32>()
+        || TypeId::of::<T>() == TypeId::of::<i64>()
+        || TypeId::of::<T>() == TypeId::of::<i128>()
+        || TypeId::of::<T>() == TypeId::of::<isize>()
+        || TypeId::of::<T>() == TypeId::of::<f32>()
+        || TypeId::of::<T>() == TypeId::of::<f64>()
+        || TypeId::of::<T>() == TypeId::of::<bool>()
+        || TypeId::of::<T>() == TypeId::of::<char>()
+    {
+        AllocationKind::Primitive
+    } else {
+        AllocationKind::Other
+    }
+}
+
 pub trait AllocationSize {
     fn size(&self) -> Bytes;
+}
+
+impl<T> AllocationSize for Vec<T>
+where
+    T: AllocationSize + 'static,
+{
+    fn size(&self) -> Bytes {
+        let self_sz = Bytes(std::mem::size_of::<Vec<T>>());
+
+        match allocation_kind::<T>() {
+            AllocationKind::Primitive => {
+                self_sz + Bytes(self.capacity() * std::mem::size_of::<T>())
+            }
+            AllocationKind::Other => {
+                todo!("called size() on Vec<T> where T is non-primitive")
+            }
+        }
+    }
 }
 
 impl AllocationSize for usize {
@@ -115,34 +163,24 @@ impl AllocationSize for Sequence {
 
 impl AllocationSize for Profile {
     fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<Profile>()) +
         self.name.size()
             + self.accession.size()
             + self.length.size()
             + self.target_length.size()
             + self.max_length.size()
             + Bytes(self.core_transitions.capacity() * std::mem::size_of::<[f32; 8]>())
-            + Bytes(
-                self.emission_scores[Self::MATCH_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.emission_scores[Self::MATCH_IDX]
-                        .iter()
-                        .map(|s| s.capacity() * std::mem::size_of::<f32>())
-                        .sum::<usize>(),
-            )
-            + Bytes(
-                self.emission_scores[Self::INSERT_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.emission_scores[Self::INSERT_IDX]
-                        .iter()
-                        .map(|s| s.capacity() * std::mem::size_of::<f32>())
-                        .sum::<usize>(),
-            )
-        // self.special_transitions
-        + Bytes(std::mem::size_of::<[[f32;2]; 5]>())
-        + self.expected_j_uses.size()
-        + Bytes(self.consensus_sequence_bytes_utf8.capacity() * std::mem::size_of::<u8>())
-        // self.alphabet
-        + Bytes(std::mem::size_of::<Alphabet>())
-        + self.forward_tau.size()
-        + self.forward_lambda.size()
+            + self.emission_scores[0].size()
+            + self.emission_scores[1].size()
+            + self.entry_transitions.size()
+            // self.special_transitions
+            + Bytes(std::mem::size_of::<[[f32;2]; 5]>())
+            + self.expected_j_uses.size()
+            + Bytes(self.consensus_sequence_bytes_utf8.capacity() * std::mem::size_of::<u8>())
+            // self.alphabet
+            + Bytes(std::mem::size_of::<Alphabet>())
+            + self.forward_tau.size()
+            + self.forward_lambda.size()
     }
 }
 

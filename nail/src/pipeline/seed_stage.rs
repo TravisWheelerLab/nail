@@ -15,8 +15,6 @@ use crate::{
     search::Queries,
 };
 
-use anyhow::anyhow;
-
 fn merge_seed_maps<'a>(
     mut seed_map_a: SeedMap,
     mut seed_map_b: SeedMap,
