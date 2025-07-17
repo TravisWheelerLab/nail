@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{stdout, BufReader, BufWriter};
+use std::io::stdout;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
@@ -11,7 +10,7 @@ use crate::pipeline::{
     read_seed_map, run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence,
     seed_profile_to_sequence, seed_sequence_to_sequence, write_seed_map, DefaultAlignStage,
     DefaultCloudSearchStage, DefaultSeedStage, FullDpCloudSearchStage, MaxSeedStage, OutputStage,
-    Pipeline, SeedMap, SeedStage,
+    Pipeline, SeedStage,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -19,7 +18,6 @@ use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 use libnail::structs::{Hmm, Profile};
 
 use anyhow::Context;
-use serde::Serialize;
 
 pub enum Queries {
     Sequence(Fasta),
@@ -114,7 +112,17 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     }
 
     let seeds = match args.io_args.seeds_input_path {
-        Some(ref path) => read_seed_map(&mut std::fs::File::open(path)?)?,
+        Some(ref path) => {
+            let now = Instant::now();
+            println!("reading seeds...");
+            let seeds = read_seed_map(&mut std::fs::File::open(path)?)?;
+            println!(
+                "\x1b[Areading seeds...            done ({:.2}s)",
+                now.elapsed().as_secs_f64()
+            );
+
+            seeds
+        }
         None => {
             let now = Instant::now();
             println!("running mmseqs...");
@@ -131,6 +139,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                 "\x1b[Arunning mmseqs...           done ({:.2}s)",
                 now.elapsed().as_secs_f64()
             );
+
             seeds
         }
     };
@@ -138,8 +147,13 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     if let Some(ref path) = args.io_args.seeds_output_path {
         // TODO: don't open with allow_overwrite = true
         //       after I've updated the open() API
-        let mut buf = BufWriter::new(path.open(true)?);
-        write_seed_map(&seeds, &mut buf)?;
+        let now = Instant::now();
+        println!("writing seeds...");
+        write_seed_map(&seeds, &mut path.open(true)?)?;
+        println!(
+            "\x1b[Awriting seeds...            done ({:.2}s)",
+            now.elapsed().as_secs_f64()
+        );
     }
 
     if args.pipeline_args.only_seed {
