@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context};
+use datasize::DataSize;
 use rand::SeedableRng;
 use rand_pcg::Pcg64;
 
@@ -29,7 +30,7 @@ impl AsRef<Profile> for Profile {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, DataSize)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,

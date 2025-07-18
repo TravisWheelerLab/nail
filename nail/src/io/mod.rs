@@ -7,13 +7,281 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail, Context};
 use indexmap::IndexMap;
 use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
     structs::{Profile, Sequence},
 };
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use strum_macros::{AsRefStr, EnumString};
+
+fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> {
+    enum ParseState {
+        Header,
+        Model,
+    }
+
+    enum ModelState {
+        Comp,
+        Mat,
+        Ins,
+        Trans,
+    }
+
+    #[derive(EnumString, AsRefStr)]
+    #[strum(serialize_all = "UPPERCASE")]
+    enum P7HeaderFlag {
+        #[strum(serialize = "HMMER3/f")]
+        Format,
+        Name,
+        #[strum(serialize = "ACC")]
+        Accession,
+        #[strum(serialize = "DESC")]
+        Description,
+        #[strum(serialize = "LENG")]
+        Length,
+        #[strum(serialize = "MAXL")]
+        MaxLength,
+        #[strum(serialize = "ALPH")]
+        Alphabet,
+        #[strum(serialize = "RF")]
+        Reference,
+        #[strum(serialize = "MM")]
+        Mask,
+        #[strum(serialize = "CONS")]
+        ConsensusResidue,
+        #[strum(serialize = "CS")]
+        ConsensusStructure,
+        Map,
+        Date,
+        #[strum(serialize = "COM")]
+        Command,
+        Nseq,
+        Effn,
+        #[strum(serialize = "CSKSUM")]
+        Ck,
+        #[strum(serialize = "GA")]
+        GatheringThreshold,
+        #[strum(serialize = "TC")]
+        TrustedCutoffs,
+        #[strum(serialize = "NC")]
+        NoiseCutoffs,
+        Stats,
+        Hmm,
+    }
+
+    fn unlog(x: f32) -> f32 {
+        (-x).exp()
+    }
+
+    fn parse_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> anyhow::Result<()> {
+        let mut tokens = floats.split_whitespace();
+
+        out.iter_mut()
+            .take(N)
+            .try_for_each(|item| -> anyhow::Result<()> {
+                *item = tokens
+                    .next()
+                    .ok_or_else(|| anyhow!("expected {N} floats, got fewer"))?
+                    .parse()
+                    .map(unlog)?;
+                Ok(())
+            })?;
+
+        match tokens.next() {
+            Some(_) => Err(anyhow!("expected {N} floats, got more")),
+            None => Ok(()),
+        }
+    }
+
+    let mut emission_buf = [0.0; Profile::MAX_ALPHABET_SIZE];
+    let mut trans_buf = [0.0; Profile::NUM_STATE_TRANSITIONS - 1];
+    let mut state = ParseState::Header;
+    let mut model_state = ModelState::Comp;
+
+    #[derive(Default)]
+    pub struct ProfileBuilder {
+        name: Option<String>,
+        accession: Option<String>,
+        composition: Option<[f32; Profile::MAX_ALPHABET_SIZE]>,
+        mat_emissions: Vec<Option<[f32; Profile::MAX_ALPHABET_SIZE]>>,
+        ins_emissions: Vec<Option<[f32; Profile::MAX_ALPHABET_SIZE]>>,
+        transitions: Vec<Option<[f32; 7]>>,
+        fwd_tau: Option<f32>,
+        fwd_lambda: Option<f32>,
+    }
+
+    impl ProfileBuilder {
+        pub fn name(&mut self, name: String) -> &mut Self {
+            self.name = Some(name);
+            self
+        }
+
+        pub fn accession(&mut self, accession: String) -> &mut Self {
+            self.accession = Some(accession);
+            self
+        }
+
+        pub fn length(&mut self, length: usize) -> &mut Self {
+            self.mat_emissions.resize(length + 1, None);
+            self.ins_emissions.resize(length + 1, None);
+            self.transitions.resize(length + 1, None);
+            self
+        }
+
+        pub fn mat_emission(&mut self, pos: usize, probs: [f32; 20]) -> &mut Self {
+            self.mat_emissions[pos] = Some(probs);
+            self
+        }
+
+        pub fn ins_emission(&mut self, pos: usize, probs: [f32; 20]) -> &mut Self {
+            self.ins_emissions[pos] = Some(probs);
+            self
+        }
+
+        pub fn transition(&mut self, pos: usize, probs: [f32; 7]) -> &mut Self {
+            self.transitions[pos] = Some(probs);
+            self
+        }
+
+        pub fn composition(&mut self, comp: [f32; 20]) -> &mut Self {
+            self.composition = Some(comp);
+            self
+        }
+
+        pub fn fwd_tau(&mut self, fwd_tau: f32) -> &mut Self {
+            self.fwd_tau = Some(fwd_tau);
+            self
+        }
+
+        pub fn fwd_lambda(&mut self, fwd_lambda: f32) -> &mut Self {
+            self.fwd_lambda = Some(fwd_lambda);
+            self
+        }
+
+        pub fn build(self) -> Profile {
+            todo!()
+        }
+    }
+
+    let mut pf = ProfileBuilder::default();
+    let mut pos = 0;
+    for line in bytes
+        .split(|b| *b == b'\n')
+        .filter(|b| !b.is_empty())
+        .map(std::str::from_utf8)
+    {
+        let mut tokens = line?.splitn(2, char::is_whitespace);
+
+        match state {
+            ParseState::Header => {
+                let flag = tokens.next().unwrap_or("").parse::<P7HeaderFlag>()?;
+                let value = tokens
+                    .next()
+                    .ok_or(anyhow!("missing value for HMM flag: {}", flag.as_ref()))?;
+
+                match flag {
+                    P7HeaderFlag::Name => {
+                        pf.name(value.to_string());
+                    }
+                    P7HeaderFlag::Accession => {
+                        pf.accession(value.to_string());
+                    }
+                    P7HeaderFlag::Length => {
+                        pf.length(
+                            value.parse().with_context(|| {
+                                format!("failed to parse HMM length: {}", value)
+                            })?,
+                        );
+                    }
+                    P7HeaderFlag::Alphabet => {
+                        if value != "amino" {
+                            bail!("non-amino HMM alphabet found: {}", value);
+                        };
+                    }
+                    P7HeaderFlag::Stats => {
+                        let stats: Vec<&str> = value.splitn(4, char::is_whitespace).collect();
+                        if stats[1] == "FORWARD" {
+                            pf.fwd_tau(stats[2].parse().with_context(|| {
+                                format!("failed to parse HMM Forward tau: {}", value)
+                            })?);
+                            pf.fwd_lambda(stats[3].parse().with_context(|| {
+                                format!("failed to parse HMM Forward lambda: {}", value)
+                            })?);
+                        }
+                    }
+                    P7HeaderFlag::Hmm => {
+                        // let re = Regex::new(
+                        //     r"^\s*A\s+C\s+D\s+E\s+F\s+G\s+H\s+I\s+K\s+L\s+M\s+N\s+P\s+Q\s+R\s+S\s+T\s+V\s+W\s+Y\s*$",
+                        // );
+
+                        state = ParseState::Model
+                    }
+                    _ => {
+                        // ignore most flags for now
+                    }
+                }
+            }
+            ParseState::Model => {
+                let (flag, values) = match tokens.next() {
+                    Some(p) => (p, tokens.next().unwrap_or_default()),
+                    None => continue,
+                };
+
+                match model_state {
+                    ModelState::Comp => {
+                        if flag == "COMPO" {
+                            parse_floats_into::<{ Profile::MAX_ALPHABET_SIZE }>(
+                                values,
+                                &mut emission_buf,
+                            )?;
+
+                            pf.composition(emission_buf);
+                            model_state = ModelState::Ins;
+                        }
+                    }
+                    ModelState::Mat => {
+                        let new_pos = flag.parse::<usize>()?;
+                        if new_pos != pos + 1 {
+                            bail!("non-linear HMM positions: {pos}->{new_pos}");
+                        } else {
+                            pos = new_pos
+                        }
+
+                        parse_floats_into::<{ Profile::MAX_ALPHABET_SIZE }>(
+                            values,
+                            &mut emission_buf,
+                        )?;
+
+                        pf.mat_emission(pos, emission_buf);
+                        model_state = ModelState::Ins;
+                    }
+                    ModelState::Ins => {
+                        parse_floats_into::<{ Profile::MAX_ALPHABET_SIZE }>(
+                            values,
+                            &mut emission_buf,
+                        )?;
+
+                        pf.ins_emission(pos, emission_buf);
+                        model_state = ModelState::Trans;
+                    }
+                    ModelState::Trans => {
+                        parse_floats_into::<{ Profile::NUM_STATE_TRANSITIONS - 1 }>(
+                            values,
+                            &mut trans_buf,
+                        )?;
+
+                        pf.transition(pos, trans_buf);
+                        model_state = ModelState::Mat;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(pf.build())
+}
 
 fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
     let header_newline_pos = match bytes.iter().position(|&b| b == b'\n') {
@@ -268,6 +536,7 @@ impl LexicalFastaIndex {
                         }
 
                         if byte == b'>' {
+                            println!("{seq_line_cnt}");
                             offset.seq_len_bytes = current_offset
                                 - (offset.start + offset.name_len_bytes + offset.details_len_bytes);
                             offset.seq_len = offset.seq_len_bytes - seq_line_cnt - 1;

@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Read};
 use crate::alphabet::{AMINO_ALPHABET, AMINO_BACKGROUND_FREQUENCIES};
 use crate::structs::Profile;
 use anyhow::{bail, Context, Result};
+use datasize::DataSize;
 use lazy_static::lazy_static;
 use regex::Regex;
 use thiserror::Error;
@@ -237,7 +238,7 @@ struct TokenIndexError;
 struct FloatRegexError;
 
 /// The alphabet of the sequences represented in a P7HMM.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, DataSize)]
 pub enum Alphabet {
     Amino,
     Dna,

@@ -15,6 +15,7 @@ use crate::pipeline::{
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
+use datasize::DataSize;
 use libnail::structs::{Hmm, Profile};
 
 use anyhow::Context;
@@ -94,6 +95,15 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         "\x1b[Areading query database...   done ({:.2}s)",
         now.elapsed().as_secs_f64()
     );
+
+    match queries {
+        Queries::Sequence(fasta) => todo!(),
+        Queries::Profile(vec) => {
+            println!("{}", crate::stats::AllocationSize::size(&vec).0);
+            println!("{}", vec.estimate_heap_size());
+        }
+    }
+    loop {}
 
     let now = Instant::now();
     println!("indexing target database...");
