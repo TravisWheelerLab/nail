@@ -30,16 +30,18 @@ impl Queries {
     }
 }
 
-fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
+fn read_queries(path: impl AsRef<Path>, num_threads: usize) -> anyhow::Result<Queries> {
     let query_format = guess_query_format_from_query_file(&path)?;
 
     match query_format {
         FileFormat::Fasta => {
-            let queries = Fasta::from_path(&path).context("failed to read query fasta")?;
+            let queries =
+                Fasta::from_path_par(&path, num_threads).context("failed to read query fasta")?;
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries = P7Hmm::from_path(&path).context("failed to openy query hmm")?;
+            let queries =
+                P7Hmm::from_path_par(&path, num_threads).context("failed to openy query hmm")?;
             Ok(Queries::Profile(queries))
         }
         _ => {
@@ -80,7 +82,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let now = Instant::now();
     println!("reading query database...");
-    let queries = read_queries(&args.query_path)?;
+    let queries = read_queries(&args.query_path, args.num_threads)?;
     println!(
         "\x1b[Areading query database...   done ({:.2}s)",
         now.elapsed().as_secs_f64()
