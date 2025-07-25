@@ -213,7 +213,7 @@ impl AllocationSize for Profile {
             + self.entry_transitions.size()
             + self.special_transitions.size()
             + self.expected_j_uses.size()
-            + self.consensus_sequence_bytes_utf8.size()
+            + self.consensus_seq_bytes_utf8.size()
             + self.fwd_tau.size()
             + self.fwd_lambda.size()
             + self.alphabet.size()

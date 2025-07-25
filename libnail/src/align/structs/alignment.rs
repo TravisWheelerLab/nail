@@ -241,7 +241,7 @@ impl<'a> AlignmentBuilder<'a> {
                     })
                     .for_each(|step| {
                         posteriors.push(map_posterior_probability_to_bin_byte(step.posterior));
-                        let profile_byte = profile.consensus_sequence_bytes_utf8[step.profile_idx];
+                        let profile_byte = profile.consensus_seq_bytes_utf8[step.profile_idx];
                         let target_byte = target.utf8_bytes[step.target_idx];
 
                         match step.state {

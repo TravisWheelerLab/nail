@@ -202,8 +202,89 @@ impl AminoUtilsUtf8 for &str {
 
 pub trait AminoUtilsDigital {
     fn to_utf8_byte_amino(&self) -> u8;
-    fn to_utf8_bytes_amino(&self) -> Vec<u8>;
-    fn to_string_amino(&self) -> String;
+    fn to_lower_utf8_byte_amino(&self) -> u8;
+}
+
+impl AminoUtilsDigital for u8 {
+    fn to_utf8_byte_amino(&self) -> u8 {
+        match self {
+            0u8 => 65,  // A
+            1u8 => 67,  // C
+            2u8 => 68,  // D
+            3u8 => 69,  // E
+            4u8 => 70,  // F
+            5u8 => 71,  // G
+            6u8 => 72,  // H
+            7u8 => 73,  // I
+            8u8 => 75,  // K
+            9u8 => 76,  // L
+            10u8 => 77, // M
+            11u8 => 78, // N
+            12u8 => 80, // P
+            13u8 => 81, // Q
+            14u8 => 82, // R
+            15u8 => 83, // S
+            16u8 => 84, // T
+            17u8 => 86, // V
+            18u8 => 87, // W
+            19u8 => 89, // Y
+            // end base alphabet
+            20u8 => 79, // O
+            21u8 => 85, // U
+            22u8 => 88, // X
+            23u8 => 66, // B
+            24u8 => 90, // Z
+            25u8 => 74, // J
+            45u8 => 45, // -
+            46u8 => 46, // .
+            _ => 32,    // space
+        }
+    }
+
+    fn to_lower_utf8_byte_amino(&self) -> u8 {
+        match self {
+            0u8 => 97,   // a
+            1u8 => 99,   // c
+            2u8 => 100,  // d
+            3u8 => 101,  // e
+            4u8 => 102,  // f
+            5u8 => 103,  // g
+            6u8 => 104,  // h
+            7u8 => 105,  // i
+            8u8 => 107,  // k
+            9u8 => 108,  // l
+            10u8 => 109, // m
+            11u8 => 110, // n
+            12u8 => 112, // p
+            13u8 => 113, // q
+            14u8 => 114, // r
+            15u8 => 115, // s
+            16u8 => 116, // t
+            17u8 => 118, // v
+            18u8 => 119, // w
+            19u8 => 121, // y
+            // end base alphabet
+            111u8 => 79, // o
+            117u8 => 85, // u
+            120u8 => 88, // x
+            98u8 => 66,  // b
+            122u8 => 90, // z
+            106u8 => 74, // j
+            45u8 => 45,  // -
+            46u8 => 46,  // .
+            _ => 32,     // space
+        }
+    }
+}
+
+impl AminoUtilsDigital for usize {
+    fn to_utf8_byte_amino(&self) -> u8 {
+        (*self as u8).to_utf8_byte_amino()
+    }
+
+    fn to_lower_utf8_byte_amino(&self) -> u8 {
+        (*self as u8).to_lower_utf8_byte_amino()
+    }
 }
 
 /// maps from \<usize\> -> \<UTF8 value for usize\>

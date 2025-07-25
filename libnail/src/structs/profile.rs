@@ -96,7 +96,7 @@ pub struct Profile {
     /// The expected number of times that the J state is used
     pub expected_j_uses: f32,
     /// The profile's consensus sequence
-    pub consensus_sequence_bytes_utf8: Vec<u8>,
+    pub consensus_seq_bytes_utf8: Vec<u8>,
     /// The sequence alphabet
     pub alphabet: Alphabet,
     pub fwd_tau: f32,
@@ -549,7 +549,7 @@ impl Profile {
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
             // buffered with a space so that indexing starts at 1
-            consensus_sequence_bytes_utf8: vec![UTF8_SPACE],
+            consensus_seq_bytes_utf8: vec![UTF8_SPACE],
             alphabet: Alphabet::Amino,
             fwd_tau: hmm.stats.forward_tau,
             fwd_lambda: hmm.stats.forward_lambda,
@@ -636,7 +636,7 @@ impl Profile {
             let match_probabilities_max: f32 =
                 hmm.model.match_probabilities[prf_idx][match_probabilities_argmax];
 
-            prf.consensus_sequence_bytes_utf8
+            prf.consensus_seq_bytes_utf8
                 .push(if match_probabilities_max > 0.5 {
                     // if the match emission probability for the residue is greater
                     // than 0.50 (amino), we want to display it as a capital letter

@@ -8,9 +8,9 @@ use std::{
 use crate::io::util::{ByteBufferExt, ReadSeekExt, ReadState, SeekableTake};
 
 use libnail::{
-    alphabet::{Alphabet, AMINO_BACKGROUND_FREQUENCIES, UTF8_SPACE},
+    alphabet::{Alphabet, AminoUtilsDigital, AMINO_BACKGROUND_FREQUENCIES, UTF8_SPACE},
     structs::Profile,
-    util::LogAbuse,
+    util::{LogAbuse, VecMath},
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -293,7 +293,7 @@ impl ProfileBuilder {
             ],
             special_transitions: [[0.0; 2]; 5],
             expected_j_uses: 0.0,
-            consensus_sequence_bytes_utf8: vec![UTF8_SPACE; length + 1],
+            consensus_seq_bytes_utf8: vec![UTF8_SPACE; length + 1],
             alphabet: Alphabet::Amino,
             fwd_tau,
             fwd_lambda,
@@ -400,6 +400,29 @@ impl ProfileBuilder {
                 })
             });
 
+        prf.consensus_seq_bytes_utf8
+            .iter_mut()
+            .zip(mat_emissions.iter())
+            .skip(1)
+            .for_each(|(c, probs)| {
+                // choose the residue with the highest
+                // match emission probability
+                //
+                // TODO: this should not be the case
+                //       for single sequence models
+                //       (it should just be the seq)
+                //
+                // note: unwrap() because we check to
+                //       make sure these exist earlier
+                let residue = probs.argmax().unwrap();
+
+                if probs[residue] > 0.5 {
+                    *c = residue.to_utf8_byte_amino()
+                } else {
+                    *c = residue.to_lower_utf8_byte_amino()
+                }
+            });
+
         // match scores
         prf.emission_scores[Profile::MATCH_IDX]
             .iter_mut()
@@ -446,8 +469,6 @@ impl ProfileBuilder {
             // emissions being equal to background probabilities
             //    ** because ln(P/P) = ln(1) = 0
             .for_each(|scores| scores.iter_mut().for_each(|s| *s = 0.0));
-
-        // todo!("consensus seq");
 
         Ok(prf)
     }

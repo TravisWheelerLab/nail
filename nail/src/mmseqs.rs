@@ -185,7 +185,7 @@ pub fn write_mmseqs_profile_database(
             }
 
             let consensus_byte_digital = *UTF8_TO_DIGITAL_AMINO
-                .get(&profile.consensus_sequence_bytes_utf8[profile_idx])
+                .get(&profile.consensus_seq_bytes_utf8[profile_idx])
                 .unwrap();
 
             // query sequence byte?

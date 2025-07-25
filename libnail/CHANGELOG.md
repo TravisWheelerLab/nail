@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - renamed `Profile.forward_tau` and `Profile.forward_lambda` to `fwd_tau` and `fwd_lambda`
+- renamed `Profile.consensus_sequence_bytes_utf8` to `consensus_seq_bytes_utf8`
 - moved `Alphabet` and`AminoAcid` to mod `alphabet`
 - split self mutating functions from trait `VecMath` into new trait `VecMathMut`
 
