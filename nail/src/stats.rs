@@ -175,15 +175,6 @@ where
     }
 }
 
-impl AllocationSize for Queries {
-    fn size(&self) -> Bytes {
-        match self {
-            Queries::Sequence(fasta) => todo!(),
-            Queries::Profile(vec) => vec.size(),
-        }
-    }
-}
-
 impl AllocationSize for Sequence {
     fn size(&self) -> Bytes {
         self.name.size()

@@ -1,5 +1,6 @@
 use crate::align::structs::{DpMatrix, RowBounds};
 use crate::max_f32;
+use crate::structs::profile::Transition;
 use crate::structs::Profile;
 
 pub fn optimal_accuracy(
@@ -43,16 +44,16 @@ pub fn optimal_accuracy(
                 target_idx,
                 profile_idx,
                 max_f32!(
-                    profile.transition_score_delta(Profile::M_M_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Transition::MM as usize, profile_idx - 1)
                         * (optimal_matrix.get_match(target_idx - 1, profile_idx - 1)
                             + posterior_matrix.get_match(target_idx, profile_idx)),
-                    profile.transition_score_delta(Profile::I_M_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Transition::IM as usize, profile_idx - 1)
                         * (optimal_matrix.get_insert(target_idx - 1, profile_idx - 1)
                             + posterior_matrix.get_match(target_idx, profile_idx)),
-                    profile.transition_score_delta(Profile::D_M_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Transition::DM as usize, profile_idx - 1)
                         * (optimal_matrix.get_delete(target_idx - 1, profile_idx - 1)
                             + posterior_matrix.get_match(target_idx, profile_idx)),
-                    profile.transition_score_delta(Profile::B_M_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Transition::BM as usize, profile_idx - 1)
                         * (optimal_matrix.get_special(target_idx - 1, Profile::B_IDX)
                             + posterior_matrix.get_match(target_idx, profile_idx))
                 ),
@@ -71,10 +72,10 @@ pub fn optimal_accuracy(
                 target_idx,
                 profile_idx,
                 max_f32!(
-                    profile.transition_score_delta(Profile::M_I_IDX, profile_idx)
+                    profile.transition_score_delta(Transition::MI as usize, profile_idx)
                         * (optimal_matrix.get_match(target_idx - 1, profile_idx)
                             + posterior_matrix.get_insert(target_idx, profile_idx)),
-                    profile.transition_score_delta(Profile::I_I_IDX, profile_idx)
+                    profile.transition_score_delta(Transition::II as usize, profile_idx)
                         * (optimal_matrix.get_insert(target_idx - 1, profile_idx)
                             + posterior_matrix.get_insert(target_idx, profile_idx))
                 ),
@@ -84,9 +85,9 @@ pub fn optimal_accuracy(
                 target_idx,
                 profile_idx,
                 max_f32!(
-                    profile.transition_score_delta(Profile::M_D_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Transition::MD as usize, profile_idx - 1)
                         * optimal_matrix.get_match(target_idx, profile_idx - 1),
-                    profile.transition_score_delta(Profile::D_D_IDX, profile_idx - 1)
+                    profile.transition_score_delta(Transition::DD as usize, profile_idx - 1)
                         * optimal_matrix.get_delete(target_idx, profile_idx - 1)
                 ),
             );
@@ -96,18 +97,26 @@ pub fn optimal_accuracy(
             target_idx,
             profile_end_in_current_row,
             max_f32!(
-                profile.transition_score_delta(Profile::M_M_IDX, profile_end_in_current_row - 1)
-                    * (optimal_matrix.get_match(target_idx - 1, profile_end_in_current_row - 1)
-                        + posterior_matrix.get_match(target_idx, profile_end_in_current_row)),
-                profile.transition_score_delta(Profile::I_M_IDX, profile_end_in_current_row - 1)
-                    * (optimal_matrix.get_insert(target_idx - 1, profile_end_in_current_row - 1)
-                        + posterior_matrix.get_match(target_idx, profile_end_in_current_row)),
-                profile.transition_score_delta(Profile::D_M_IDX, profile_end_in_current_row - 1)
-                    * (optimal_matrix.get_delete(target_idx - 1, profile_end_in_current_row - 1)
-                        + posterior_matrix.get_match(target_idx, profile_end_in_current_row)),
-                profile.transition_score_delta(Profile::B_M_IDX, profile_end_in_current_row - 1)
-                    * (optimal_matrix.get_special(target_idx - 1, Profile::B_IDX)
-                        + posterior_matrix.get_match(target_idx, profile_end_in_current_row))
+                profile.transition_score_delta(
+                    Transition::MM as usize,
+                    profile_end_in_current_row - 1
+                ) * (optimal_matrix.get_match(target_idx - 1, profile_end_in_current_row - 1)
+                    + posterior_matrix.get_match(target_idx, profile_end_in_current_row)),
+                profile.transition_score_delta(
+                    Transition::IM as usize,
+                    profile_end_in_current_row - 1
+                ) * (optimal_matrix.get_insert(target_idx - 1, profile_end_in_current_row - 1)
+                    + posterior_matrix.get_match(target_idx, profile_end_in_current_row)),
+                profile.transition_score_delta(
+                    Transition::DM as usize,
+                    profile_end_in_current_row - 1
+                ) * (optimal_matrix.get_delete(target_idx - 1, profile_end_in_current_row - 1)
+                    + posterior_matrix.get_match(target_idx, profile_end_in_current_row)),
+                profile.transition_score_delta(
+                    Transition::BM as usize,
+                    profile_end_in_current_row - 1
+                ) * (optimal_matrix.get_special(target_idx - 1, Profile::B_IDX)
+                    + posterior_matrix.get_match(target_idx, profile_end_in_current_row))
             ),
         );
 
@@ -115,10 +124,14 @@ pub fn optimal_accuracy(
             target_idx,
             profile_end_in_current_row,
             max_f32!(
-                profile.transition_score_delta(Profile::M_D_IDX, profile_end_in_current_row - 1)
-                    * optimal_matrix.get_match(target_idx, profile_end_in_current_row - 1),
-                profile.transition_score_delta(Profile::D_D_IDX, profile_end_in_current_row - 1)
-                    * optimal_matrix.get_delete(target_idx, profile_end_in_current_row - 1)
+                profile.transition_score_delta(
+                    Transition::MD as usize,
+                    profile_end_in_current_row - 1
+                ) * optimal_matrix.get_match(target_idx, profile_end_in_current_row - 1),
+                profile.transition_score_delta(
+                    Transition::DD as usize,
+                    profile_end_in_current_row - 1
+                ) * optimal_matrix.get_delete(target_idx, profile_end_in_current_row - 1)
             ),
         );
 

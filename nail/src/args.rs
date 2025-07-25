@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum NailSubCommands {
     #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
@@ -202,7 +203,7 @@ pub struct DevArgs {
 #[derive(Args, Debug, Clone, Default)]
 pub struct MmseqsArgs {
     /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
-    #[arg(long = "mmseqs-k", default_value_t = 0usize, value_name = "N")]
+    #[arg(long = "mmseqs-k", default_value_t = 6usize, value_name = "N")]
     pub k: usize,
 
     /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists

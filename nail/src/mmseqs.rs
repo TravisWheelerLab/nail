@@ -18,7 +18,7 @@ use libnail::{
 
 use crate::{
     args::SearchArgs,
-    io::{Fasta, SequenceDatabase},
+    io::{Fasta, P7Hmm, ProfileDatabase, SequenceDatabase},
     pipeline::SeedMap,
     util::{CommandExt, PathBufExt},
 };
@@ -144,8 +144,9 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: &[impl AsRef<Profile>],
+    profiles: &P7Hmm,
     path: impl AsRef<Path>,
+    mre_target: Option<f32>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
     let db_name = db_path.file_name().unwrap().to_str().unwrap();
@@ -170,10 +171,13 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (profile_count, profile) in profiles.iter().map(|p| p.as_ref()).enumerate() {
-        for profile_idx in 1..=profile.length {
+    for (prf_cnt, mut prf) in profiles.iter().enumerate() {
+        if let Some(mre) = mre_target {
+            prf.adjust_mean_relative_entropy(mre);
+        }
+        for prf_idx in 1..=prf.length {
             for byte in (0..20)
-                .map(|residue| Nats(profile.match_score(residue, profile_idx)))
+                .map(|residue| Nats(prf.match_score(residue, prf_idx)))
                 .map(|nats| nats.to_bits())
                 .map(|bits| bits.value())
                 // multiply the bits by 8.0 just because
@@ -185,7 +189,7 @@ pub fn write_mmseqs_profile_database(
             }
 
             let consensus_byte_digital = *UTF8_TO_DIGITAL_AMINO
-                .get(&profile.consensus_seq_bytes_utf8[profile_idx])
+                .get(&prf.consensus_seq_bytes_utf8[prf_idx])
                 .unwrap();
 
             // query sequence byte?
@@ -204,25 +208,21 @@ pub fn write_mmseqs_profile_database(
             db.write_all(&[0u8])?;
         }
 
-        let db_byte_length = profile.length * 25;
+        let db_byte_length = prf.length * 25;
 
-        writeln!(
-            db_index,
-            "{}\t{}\t{}",
-            profile_count, db_offset, db_byte_length,
-        )?;
+        writeln!(db_index, "{}\t{}\t{}", prf_cnt, db_offset, db_byte_length,)?;
 
         // for some reason, the header has newlines and 0-byte separators?
-        writeln!(db_header, "{}", profile.name)?;
+        writeln!(db_header, "{}", prf.name)?;
         db_header.write_all(&[0u8])?;
 
         // +1 for the 0 byte, +1 for the newline
-        let header_byte_length = profile.name.len() + 2;
+        let header_byte_length = prf.name.len() + 2;
 
         writeln!(
             db_header_index,
             "{}\t{}\t{}",
-            profile_count, header_offset, header_byte_length
+            prf_cnt, header_offset, header_byte_length
         )?;
 
         db_offset += db_byte_length;

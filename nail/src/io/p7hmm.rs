@@ -7,10 +7,9 @@ use std::{
 
 use crate::io::util::{ByteBufferExt, ReadSeekExt, ReadState, SeekableTake};
 
-use libnail::{
-    alphabet::{Alphabet, AminoUtilsDigital, AMINO_BACKGROUND_FREQUENCIES, UTF8_SPACE},
-    structs::Profile,
-    util::{LogAbuse, VecMath},
+use libnail::structs::{
+    profile::{ProfileBuilder, Transition},
+    Profile,
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -37,7 +36,7 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
     let mut state = ParseState::Header;
     let mut model_state = ModelState::Comp;
 
-    let mut pf = ProfileBuilder::default();
+    let mut prf = ProfileBuilder::default();
     let mut pos = 0;
     for line in bytes.split(|b| *b == b'\n').filter(|b| !b.is_empty()) {
         match state {
@@ -47,13 +46,13 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
 
                 match flag {
                     P7HeaderFlag::Name => {
-                        pf.name(value.to_string());
+                        prf.name(value.to_string());
                     }
                     P7HeaderFlag::Accession => {
-                        pf.accession(value.to_string());
+                        prf.accession(value.to_string());
                     }
                     P7HeaderFlag::Length => {
-                        pf.length(value.parse().with_context(|| {
+                        prf.length(value.parse().with_context(|| {
                             format!("failed to parse HMM length: \"{}\"", value)
                         })?);
                     }
@@ -66,10 +65,10 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
                         let stats: Vec<&str> = value.split_whitespace().collect();
 
                         if stats[1] == "FORWARD" {
-                            pf.fwd_tau(stats[2].parse().with_context(|| {
+                            prf.fwd_tau(stats[2].parse().with_context(|| {
                                 format!("failed to parse HMM Forward tau: \"{}\"", stats[2])
                             })?);
-                            pf.fwd_lambda(stats[3].parse().with_context(|| {
+                            prf.fwd_lambda(stats[3].parse().with_context(|| {
                                 format!("failed to parse HMM Forward lambda: \"{}\"", stats[3])
                             })?);
                         }
@@ -116,7 +115,7 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
                             &mut emission_buf,
                         )?;
 
-                        pf.mat_emission(pos, emission_buf);
+                        prf.mat_emission(pos, emission_buf);
                         model_state = ModelState::Ins;
                     }
                     ModelState::Ins => {
@@ -131,7 +130,13 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
                             &mut trans_buf,
                         )?;
 
-                        pf.transition(pos, trans_buf);
+                        // map p7HMM transition order to Profile order
+                        P7HmmTransition::iter().for_each(|t| {
+                            trans_buf.swap(Transition::from(t) as usize, t as usize);
+                        });
+
+                        prf.transition(pos, trans_buf);
+
                         model_state = ModelState::Mat;
                     }
                 }
@@ -139,7 +144,7 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
         }
     }
 
-    pf.build()
+    prf.build()
 }
 
 #[derive(PartialEq, EnumString, AsRefStr)]
@@ -186,6 +191,33 @@ enum P7HeaderFlag {
     Hmm,
 }
 
+#[repr(usize)]
+#[derive(Clone, Copy, Debug, EnumIter)]
+enum P7HmmTransition {
+    MM = 0,
+    MI = 1,
+    MD = 2,
+    IM = 3,
+    II = 4,
+    DM = 5,
+    DD = 6,
+}
+
+impl From<P7HmmTransition> for Transition {
+    fn from(p: P7HmmTransition) -> Self {
+        use P7HmmTransition::*;
+        match p {
+            MM => Transition::MM,
+            IM => Transition::IM,
+            MI => Transition::MI,
+            DM => Transition::DM,
+            II => Transition::II,
+            MD => Transition::MD,
+            DD => Transition::DD,
+        }
+    }
+}
+
 fn negexp(x: f32) -> f32 {
     (-x).exp()
 }
@@ -204,274 +236,6 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
 
             Ok(())
         })
-}
-
-#[derive(Default)]
-pub struct ProfileBuilder {
-    name: Option<String>,
-    accession: Option<String>,
-    length: Option<usize>,
-    mat_emissions: Vec<Option<[f32; Profile::MAX_ALPHABET_SIZE]>>,
-    transitions: Vec<Option<[f32; 7]>>,
-    fwd_tau: Option<f32>,
-    fwd_lambda: Option<f32>,
-}
-
-impl ProfileBuilder {
-    pub fn name(&mut self, name: String) -> &mut Self {
-        self.name = Some(name);
-        self
-    }
-
-    pub fn accession(&mut self, accession: String) -> &mut Self {
-        self.accession = Some(accession);
-        self
-    }
-
-    pub fn length(&mut self, length: usize) -> &mut Self {
-        self.length = Some(length);
-        self.mat_emissions.resize(length + 1, None);
-        self.transitions.resize(length + 1, None);
-        self
-    }
-
-    pub fn mat_emission(&mut self, pos: usize, probs: [f32; 20]) -> &mut Self {
-        self.mat_emissions[pos] = Some(probs);
-        self
-    }
-
-    pub fn transition(&mut self, pos: usize, probs: [f32; 7]) -> &mut Self {
-        self.transitions[pos] = Some(probs);
-        self
-    }
-
-    pub fn fwd_tau(&mut self, fwd_tau: f32) -> &mut Self {
-        self.fwd_tau = Some(fwd_tau);
-        self
-    }
-
-    pub fn fwd_lambda(&mut self, fwd_lambda: f32) -> &mut Self {
-        self.fwd_lambda = Some(fwd_lambda);
-        self
-    }
-
-    pub fn build(mut self) -> anyhow::Result<Profile> {
-        let name = self.name.ok_or(anyhow!("missing: name"))?;
-        let length = self.length.ok_or(anyhow!("missing: length"))?;
-        let accession = self.accession.ok_or(anyhow!("missing: accesssion"))?;
-        let fwd_tau = self.fwd_tau.ok_or(anyhow!("missing: tau"))?;
-        let fwd_lambda = self.fwd_lambda.ok_or(anyhow!("missing: tau"))?;
-
-        self.mat_emissions[0] = Some([-f32::INFINITY; 20]);
-
-        let mat_emissions = self
-            .mat_emissions
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| v.ok_or(anyhow!("missing: match emissions {}", i)))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let transitions = self
-            .transitions
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| v.ok_or(anyhow!("missing: transitions {}", i + 1)))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let mut prf = Profile {
-            name,
-            accession,
-            length,
-            target_length: 0,
-            max_length: 0,
-            core_transitions: vec![[0.0; Profile::NUM_STATE_TRANSITIONS]; length + 1],
-            entry_transitions: vec![0.0; length + 1],
-            emission_scores: [
-                // +1 for left-pad & +1 for right-pad
-                vec![[-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE]; length + 2],
-                vec![[-f32::INFINITY; Profile::MAX_DEGENERATE_ALPHABET_SIZE]; length + 2],
-            ],
-            special_transitions: [[0.0; 2]; 5],
-            expected_j_uses: 0.0,
-            consensus_seq_bytes_utf8: vec![UTF8_SPACE; length + 1],
-            alphabet: Alphabet::Amino,
-            fwd_tau,
-            fwd_lambda,
-        };
-
-        for state in 0..Profile::NUM_STATE_TRANSITIONS {
-            prf.core_transitions[0][state] = -f32::INFINITY;
-        }
-
-        // porting p7_hmm_CalculateOccupancy() from p7_hmm.c
-        //
-        // TODO: make this a function somewhere
-        //       probably either:
-        //         - a method on the Hmm struct, or
-        //         - an associated function in the Hmm struct namespace
-        let mut occupancy = vec![0.0; prf.length + 1];
-
-        occupancy[1] = transitions[0][Profile::P7_M_I_IDX] + transitions[0][Profile::P7_M_M_IDX];
-
-        for profile_idx in 2..=prf.length {
-            // the occupancy of a model position is the
-            // sum of the following two probabilities:
-            occupancy[profile_idx] = (
-                // the occupancy probability of the previous position
-                occupancy[profile_idx - 1]
-                    // multiplied by the sum of the transitions to "occupying" states
-                    * (transitions[profile_idx - 1][Profile::P7_M_M_IDX]
-                        + transitions[profile_idx - 1][Profile::P7_M_I_IDX])
-            ) + (
-                // the complement of the occupancy of the previous position
-                (1.0 - occupancy[profile_idx - 1])
-                    // multiplied by the transition to a match state
-                    //   ** since there's no delete to insert transition **
-                    * transitions[profile_idx - 1][Profile::P7_D_M_IDX]
-            )
-        }
-
-        let occupancy_sum: f32 = (1..=prf.length).fold(0.0, |acc, profile_idx| {
-            // TODO: test removing the length normalization
-            acc + occupancy[profile_idx] * (prf.length - profile_idx + 1) as f32
-        });
-
-        // the model entry distribution is essentially the normalized occupancy
-        (1..=prf.length).for_each(|profile_idx| {
-            prf.core_transitions[profile_idx - 1][Profile::B_M_IDX] =
-                (occupancy[profile_idx] / occupancy_sum).ln();
-
-            prf.entry_transitions[profile_idx - 1] = (occupancy[profile_idx] / occupancy_sum).ln();
-        });
-
-        // these settings are for the non-multi-hit mode
-        // N, C, and J transitions are set later by length config
-        prf.special_transitions[Profile::E_IDX][Profile::SPECIAL_MOVE_IDX] = 0.0;
-        prf.special_transitions[Profile::E_IDX][Profile::SPECIAL_LOOP_IDX] = -f32::INFINITY;
-        prf.expected_j_uses = 0.0;
-
-        #[repr(usize)]
-        enum Transition {
-            MM = 0,
-            IM = 1,
-            MI = 2,
-            DM = 3,
-            II = 4,
-            MD = 5,
-            DD = 6,
-            _BM = 7,
-        }
-
-        #[repr(usize)]
-        #[derive(Clone, Copy, Debug, EnumIter)]
-        enum P7HmmTransition {
-            MM = 0,
-            MI = 1,
-            MD = 2,
-            IM = 3,
-            II = 4,
-            DM = 5,
-            DD = 6,
-        }
-
-        impl From<P7HmmTransition> for Transition {
-            fn from(p: P7HmmTransition) -> Self {
-                use P7HmmTransition::*;
-                match p {
-                    MM => Transition::MM,
-                    IM => Transition::IM,
-                    MI => Transition::MI,
-                    DM => Transition::DM,
-                    II => Transition::II,
-                    MD => Transition::MD,
-                    DD => Transition::DD,
-                }
-            }
-        }
-
-        // transition scores
-        prf.core_transitions
-            .iter_mut()
-            .zip(transitions)
-            .skip(1)
-            .for_each(|(scores, probs)| {
-                P7HmmTransition::iter().for_each(|t| {
-                    scores[Transition::from(t) as usize] = probs[t as usize].ln_or_inf()
-                })
-            });
-
-        prf.consensus_seq_bytes_utf8
-            .iter_mut()
-            .zip(mat_emissions.iter())
-            .skip(1)
-            .for_each(|(c, probs)| {
-                // choose the residue with the highest
-                // match emission probability
-                //
-                // TODO: this should not be the case
-                //       for single sequence models
-                //       (it should just be the seq)
-                //
-                // note: unwrap() because we check to
-                //       make sure these exist earlier
-                let residue = probs.argmax().unwrap();
-
-                if probs[residue] > 0.5 {
-                    *c = residue.to_utf8_byte_amino()
-                } else {
-                    *c = residue.to_lower_utf8_byte_amino()
-                }
-            });
-
-        // match scores
-        prf.emission_scores[Profile::MATCH_IDX]
-            .iter_mut()
-            .zip(mat_emissions)
-            .skip(1)
-            .for_each(|(scores, probs)| {
-                scores
-                    .iter_mut()
-                    .zip(probs.iter())
-                    .enumerate()
-                    .take(Profile::MAX_ALPHABET_SIZE)
-                    .for_each(|(i, (s, p))| {
-                        // score is the (natural) log probability ratio:
-                        //    ln(emission / background)
-                        *s = (*p as f64 / AMINO_BACKGROUND_FREQUENCIES[i] as f64).ln() as f32
-                    });
-
-                // compute the ambiguity character
-                // scores using the expected score
-                let ambig = prf.alphabet.ambiguity_map();
-                prf.alphabet
-                    .ambiguous_iter()
-                    .map(|a| (a as usize, &ambig[a]))
-                    .filter(|(_, canon)| !canon.is_empty())
-                    .for_each(|(a, canon)| {
-                        let (res, denom) = canon.iter().map(|&c| c as usize).fold(
-                            (0.0, 0.0),
-                            |(res, denom), c| {
-                                let weight = AMINO_BACKGROUND_FREQUENCIES[c];
-                                (res + scores[c] * weight, denom + weight)
-                            },
-                        );
-                        scores[a] = res / denom;
-                    });
-            });
-
-        // insert scores
-        prf.emission_scores[Profile::INSERT_IDX]
-            .iter_mut()
-            .skip(1)
-            // insert at position M should be impossible,
-            .take(prf.length - 1)
-            // setting insert scores to 0 corresponds to insertion
-            // emissions being equal to background probabilities
-            //    ** because ln(P/P) = ln(1) = 0
-            .for_each(|scores| scores.iter_mut().for_each(|s| *s = 0.0));
-
-        Ok(prf)
-    }
 }
 
 dyn_clone::clone_trait_object!(ProfileDatabase);

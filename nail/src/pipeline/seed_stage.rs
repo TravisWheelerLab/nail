@@ -7,7 +7,7 @@ use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::{Fasta, SequenceDatabase},
+    io::{Fasta, P7Hmm, ProfileDatabase, SequenceDatabase},
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths, MmseqsScoreModel,
@@ -45,41 +45,28 @@ fn merge_seed_maps<'a>(
 }
 
 pub fn seed_profile_to_sequence(
-    queries: &[Profile],
-    targets: &Fasta,
+    profiles: &P7Hmm,
+    seqs: &Fasta,
     args: &SearchArgs,
 ) -> anyhow::Result<SeedMap> {
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
-    write_mmseqs_sequence_database(targets, &paths.target_db)?;
-    write_mmseqs_profile_database(queries, &paths.query_db)?;
+    write_mmseqs_sequence_database(seqs, &paths.target_db)?;
+    write_mmseqs_profile_database(profiles, &paths.query_db, None)?;
 
     run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
-
     let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
     if !args.pipeline_args.double_seed {
         return Ok(seed_map_a);
     }
 
-    let queries_b: Vec<_> = queries
-        .iter()
-        .filter(|p| p.relative_entropy() < 1.0)
-        .map(|p| {
-            let mut p2 = p.clone();
-            p2.adjust_mean_relative_entropy(1.0).unwrap();
-            p2
-        })
-        .collect();
-
-    write_mmseqs_profile_database(&queries_b, &paths.query_db)?;
+    write_mmseqs_profile_database(&profiles, &paths.query_db, Some(1.0))?;
 
     run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
-
     let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
-    let names = queries.iter().map(|q| q.name.as_str());
-    let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, names);
+    let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, profiles.names_iter());
 
     Ok(seed_map_merged)
 }
@@ -217,7 +204,7 @@ impl MaxSeedStage {
     pub fn new(queries: &Queries, targets: &Fasta) -> Self {
         let queries_and_lengths: Vec<(String, usize)> = match queries {
             Queries::Sequence(fasta) => fasta.iter().map(|s| (s.name.clone(), s.length)).collect(),
-            Queries::Profile(vec) => vec.iter().map(|p| (p.name.clone(), p.length)).collect(),
+            Queries::Profile(p7hmm) => p7hmm.iter().map(|p| (p.name.clone(), p.length)).collect(),
         };
 
         let seeds: SeedMap = queries_and_lengths

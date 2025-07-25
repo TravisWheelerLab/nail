@@ -1,11 +1,10 @@
-use std::fs::File;
 use std::io::stdout;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::Fasta;
+use crate::io::{Fasta, P7Hmm};
 use crate::pipeline::{
     read_seed_map, run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence,
     seed_profile_to_sequence, seed_sequence_to_sequence, write_seed_map, DefaultAlignStage,
@@ -15,14 +14,11 @@ use crate::pipeline::{
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
-use datasize::DataSize;
-use libnail::structs::{Hmm, Profile};
-
 use anyhow::Context;
 
 pub enum Queries {
     Sequence(Fasta),
-    Profile(Vec<Profile>),
+    Profile(P7Hmm),
 }
 
 impl Queries {
@@ -43,13 +39,7 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let hmm_file = File::open(&path)?;
-            let queries: Vec<Profile> = Hmm::from_p7hmm(hmm_file)
-                .context("failed to read query hmm")?
-                .iter()
-                .map(Profile::new)
-                .collect();
-
+            let queries = P7Hmm::from_path(&path).context("failed to openy query hmm")?;
             Ok(Queries::Profile(queries))
         }
         _ => {
@@ -95,15 +85,6 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         "\x1b[Areading query database...   done ({:.2}s)",
         now.elapsed().as_secs_f64()
     );
-
-    match queries {
-        Queries::Sequence(fasta) => todo!(),
-        Queries::Profile(vec) => {
-            println!("{}", crate::stats::AllocationSize::size(&vec).0);
-            println!("{}", vec.estimate_heap_size());
-        }
-    }
-    loop {}
 
     let now = Instant::now();
     println!("indexing target database...");
@@ -195,8 +176,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         Queries::Sequence(queries) => {
             run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
         }
-        Queries::Profile(mut queries) => {
-            run_pipeline_profile_to_sequence(&mut queries, &mut pipeline);
+        Queries::Profile(queries) => {
+            run_pipeline_profile_to_sequence(&queries, &mut pipeline);
         }
     }
 

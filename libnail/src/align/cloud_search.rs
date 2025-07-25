@@ -3,7 +3,7 @@ use crate::{
     alphabet::AminoAcid,
     log_sum, max_f32,
     structs::{
-        profile::{BackgroundLoop, CoreToCore, Emission},
+        profile::{BackgroundLoop, CoreToCore, Emission, Transition},
         Profile, Sequence,
     },
     util::{log_add, MaxAssign},
@@ -112,7 +112,7 @@ pub fn compute_backward_cells<M>(
     mx[(B, seq_idx)] = log_sum!(
         mx[(B, seq_idx)],
         mx[m_src_cell]
-            + prf.transition_score(Profile::B_M_IDX, prf_idx)
+            + prf.transition_score(Transition::BM as usize, prf_idx)
             + prf[Emission(m_src, residue)]
     );
 }
@@ -236,7 +236,7 @@ pub fn compute_forward_cells<M>(
         mx[m_src_cell] + prf[CoreToCore(m_src, m_dest)],
         mx[i_src_cell] + prf[CoreToCore(i_src, m_dest)],
         mx[d_src_cell] + prf[CoreToCore(d_src, m_dest)],
-        mx[(B, seq_idx - 1)] + prf.transition_score(Profile::B_M_IDX, prf_idx - 1)
+        mx[(B, seq_idx - 1)] + prf.transition_score(Transition::BM as usize, prf_idx - 1)
     ) + prf[Emission(m_dest, residue)];
 
     // insert state

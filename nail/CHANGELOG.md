@@ -17,10 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- added mod `io::p7hmm` and `P7Hmm` struct for streaming p7HMMs
+- added mod `io::p7hmm`, struct `P7Hmm`, and supporting iterator structs & rayon impls for streaming `Profiles` from disk
 
 ### Changed
 - moved `Fasta` struct & related to mod `io::fasta`
+- changed default `mmseqs-k` parameter to k=6
 
 ### Added
 - added `nail dev` command to CLI

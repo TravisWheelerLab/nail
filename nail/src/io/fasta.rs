@@ -269,7 +269,6 @@ impl LexicalFastaIndex {
                         }
 
                         if byte == b'>' {
-                            println!("{seq_line_cnt}");
                             offset.seq_len_bytes = current_offset
                                 - (offset.start + offset.name_len_bytes + offset.details_len_bytes);
                             offset.seq_len = offset.seq_len_bytes - seq_line_cnt - 1;
