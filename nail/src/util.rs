@@ -7,6 +7,15 @@ use std::process::Command;
 use anyhow::Context;
 use thiserror::Error;
 
+pub trait Check: Sized {
+    fn check(self, f: impl FnOnce(&Self)) -> Self {
+        f(&self);
+        self
+    }
+}
+
+impl<T> Check for T {}
+
 #[derive(Default, Debug, Clone)]
 pub enum FileFormat {
     Fasta,

@@ -1,108 +1,36 @@
-use anyhow::{anyhow, Context};
-use datasize::DataSize;
-use rand::SeedableRng;
-use rand_pcg::Pcg64;
-
-use crate::align::structs::{BackgroundState, CoreState, DpMatrixSparse, RowBounds, Trace};
-use crate::align::{forward, null_one_score};
-use crate::alphabet::{
-    AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP,
-    AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
-};
-use crate::structs::hmm::constants::{
-    HMM_DELETE_TO_DELETE, HMM_DELETE_TO_MATCH, HMM_INSERT_TO_INSERT, HMM_INSERT_TO_MATCH,
-    HMM_MATCH_TO_DELETE, HMM_MATCH_TO_INSERT, HMM_MATCH_TO_MATCH,
-};
-use crate::structs::hmm::Alphabet;
-use crate::structs::Hmm;
-use crate::util::{f32_vec_argmax, mean_relative_entropy, LogAbuse};
-
 use std::cmp::Ordering;
 use std::fmt::Formatter;
 use std::fmt::{self, Debug};
 use std::ops::Index;
 
 use super::Sequence;
+use crate::{
+    align::{
+        forward, null_one_score,
+        structs::{BackgroundState, CoreState, DpMatrixSparse, RowBounds, Trace},
+    },
+    alphabet::{
+        Alphabet, AminoAcid, AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES,
+        AMINO_INVERSE_MAP, AMINO_INVERSE_MAP_LOWER, UTF8_SPACE,
+    },
+    structs::{
+        hmm::constants::{
+            HMM_DELETE_TO_DELETE, HMM_DELETE_TO_MATCH, HMM_INSERT_TO_INSERT, HMM_INSERT_TO_MATCH,
+            HMM_MATCH_TO_DELETE, HMM_MATCH_TO_INSERT, HMM_MATCH_TO_MATCH,
+        },
+        Hmm,
+    },
+    util::{f32_vec_argmax, mean_relative_entropy, LogAbuse},
+};
+
+use anyhow::{anyhow, Context};
+use datasize::DataSize;
+use rand::SeedableRng;
+use rand_pcg::Pcg64;
 
 impl AsRef<Profile> for Profile {
     fn as_ref(&self) -> &Profile {
         self
-    }
-}
-
-#[derive(Clone, Default, DataSize)]
-pub struct Profile {
-    /// The name of the profile
-    pub name: String,
-    /// The accession number of the profile
-    pub accession: String,
-    /// Model length (number of nodes)
-    pub length: usize,
-    /// Current target sequence length
-    pub target_length: usize,
-    /// Calculated upper bound on max sequence length
-    pub max_length: usize,
-    /// Core model transition scores
-    pub core_transitions: Vec<[f32; 8]>,
-    /// Core model entry transition scores
-    pub entry_transitions: Vec<f32>,
-    /// Match and insert emission scores
-    pub emission_scores: [Vec<[f32; Profile::MAX_DEGENERATE_ALPHABET_SIZE]>; 2],
-    /// Transitions from special states (E, N, B, J, C)
-    pub special_transitions: [[f32; 2]; 5],
-    /// The expected number of times that the J state is used
-    pub expected_j_uses: f32,
-    /// The profile's consensus sequence
-    pub consensus_sequence_bytes_utf8: Vec<u8>,
-    /// The sequence alphabet
-    pub alphabet: Alphabet,
-    pub forward_tau: f32,
-    pub forward_lambda: f32,
-}
-
-#[repr(u8)]
-#[derive(Clone, Copy)]
-pub enum AminoAcid {
-    A,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-    I,
-    K,
-    L,
-    M,
-    N,
-    P,
-    Q,
-    R,
-    S,
-    T,
-    V,
-    W,
-    Y,
-    DASH,
-    B,
-    J,
-    Z,
-    O,
-    U,
-    X,
-    STAR,
-    TILDE,
-}
-
-impl From<u8> for AminoAcid {
-    fn from(value: u8) -> Self {
-        AminoAcid::from_u8(value)
-    }
-}
-
-impl AminoAcid {
-    pub fn from_u8(byte: u8) -> AminoAcid {
-        unsafe { std::mem::transmute(byte) }
     }
 }
 
@@ -143,6 +71,36 @@ fn cantor(a: usize, b: usize) -> usize {
     debug_assert!(a < 3);
     debug_assert!(b < 3);
     (a + b) * (a + b + 1) / 2 + b
+}
+
+#[derive(Clone, Default, DataSize)]
+pub struct Profile {
+    /// The name of the profile
+    pub name: String,
+    /// The accession number of the profile
+    pub accession: String,
+    /// Model length (number of nodes)
+    pub length: usize,
+    /// Current target sequence length
+    pub target_length: usize,
+    /// Calculated upper bound on max sequence length
+    pub max_length: usize,
+    /// Core model transition scores
+    pub core_transitions: Vec<[f32; 8]>,
+    /// Core model entry transition scores
+    pub entry_transitions: Vec<f32>,
+    /// Match and insert emission scores
+    pub emission_scores: [Vec<[f32; Profile::MAX_DEGENERATE_ALPHABET_SIZE]>; 2],
+    /// Transitions from special states (E, N, B, J, C)
+    pub special_transitions: [[f32; 2]; 5],
+    /// The expected number of times that the J state is used
+    pub expected_j_uses: f32,
+    /// The profile's consensus sequence
+    pub consensus_sequence_bytes_utf8: Vec<u8>,
+    /// The sequence alphabet
+    pub alphabet: Alphabet,
+    pub fwd_tau: f32,
+    pub fwd_lambda: f32,
 }
 
 impl Index<CoreToCore> for Profile {
@@ -211,6 +169,14 @@ impl Profile {
 
     /// The number of allowed state transitions under the model.
     pub const NUM_STATE_TRANSITIONS: usize = 8;
+
+    pub const P7_M_M_IDX: usize = 0;
+    pub const P7_M_I_IDX: usize = 1;
+    pub const P7_M_D_IDX: usize = 2;
+    pub const P7_I_M_IDX: usize = 3;
+    pub const P7_I_I_IDX: usize = 4;
+    pub const P7_D_M_IDX: usize = 5;
+    pub const P7_D_D_IDX: usize = 6;
 
     pub const M_M_IDX: usize = 0;
     pub const I_M_IDX: usize = 1;
@@ -556,8 +522,8 @@ impl Profile {
         //   mass is predicted to be equal to tailp. Then back up from that x
         //   by log(tailp)/lambda to set the origin of the exponential tail to 1.0
         //   instead of tailp.
-        self.forward_tau = gumbel_inverse_cdf(1.0 - tail_probability, gumbel_mu, gumbel_lambda)
-            + (tail_probability.ln() / self.forward_lambda);
+        self.fwd_tau = gumbel_inverse_cdf(1.0 - tail_probability, gumbel_mu, gumbel_lambda)
+            + (tail_probability.ln() / self.fwd_lambda);
     }
 
     pub fn new(hmm: &Hmm) -> Self {
@@ -585,8 +551,8 @@ impl Profile {
             // buffered with a space so that indexing starts at 1
             consensus_sequence_bytes_utf8: vec![UTF8_SPACE],
             alphabet: Alphabet::Amino,
-            forward_tau: hmm.stats.forward_tau,
-            forward_lambda: hmm.stats.forward_lambda,
+            fwd_tau: hmm.stats.forward_tau,
+            fwd_lambda: hmm.stats.forward_lambda,
         };
 
         for state in 0..Profile::NUM_STATE_TRANSITIONS {
@@ -955,12 +921,12 @@ mod tests {
         profile.calibrate_tau(200, 100, 0.04);
 
         let correct_tau = -4.193134f32;
-        let diff = (correct_tau - profile.forward_tau).abs();
+        let diff = (correct_tau - profile.fwd_tau).abs();
 
         // ***
         // run "cargo test -- --nocapture" to print the diff
         // ***
-        println!("\x1b[31m{} | {}\x1b[0m", correct_tau, profile.forward_tau);
+        println!("\x1b[31m{} | {}\x1b[0m", correct_tau, profile.fwd_tau);
         println!("\x1b[31mdifference: {}\x1b[0m", diff);
         assert!(diff <= 0.01);
 

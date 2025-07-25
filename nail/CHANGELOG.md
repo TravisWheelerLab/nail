@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- added mod `io::p7hmm` and `P7Hmm` struct for streaming p7HMMs
+
+### Changed
+- moved `Fasta` struct & related to mod `io::fasta`
+
+### Added
 - added `nail dev` command to CLI
 - added `Fasta::from_path_par`
 - added `LexicalFastaIndex::from_path`

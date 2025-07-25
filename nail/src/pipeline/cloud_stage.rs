@@ -168,7 +168,7 @@ impl CloudSearchStage for DefaultCloudSearchStage {
 
         let cloud_score = raw_cloud_score - null_one;
 
-        let cloud_p_value = p_value(cloud_score, prf.forward_lambda, prf.forward_tau);
+        let cloud_p_value = p_value(cloud_score, prf.fwd_lambda, prf.fwd_tau);
 
         stats.score(cloud_score);
         stats.p_value(cloud_p_value);

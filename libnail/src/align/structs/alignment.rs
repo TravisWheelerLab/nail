@@ -169,8 +169,8 @@ impl<'a> AlignmentBuilder<'a> {
 
                 let (forward_p_value, p_value) = match self.profile {
                     Some(profile) => (
-                        p_value(forward_score, profile.forward_lambda, profile.forward_tau),
-                        p_value(bit_score, profile.forward_lambda, profile.forward_tau),
+                        p_value(forward_score, profile.fwd_lambda, profile.fwd_tau),
+                        p_value(bit_score, profile.fwd_lambda, profile.fwd_tau),
                     ),
                     _ => bail!("Profile missing during Alignment construction"),
                 };

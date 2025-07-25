@@ -2,7 +2,8 @@ use libnail::{
     align::structs::{
         Alignment, Boundaries, CellStats, DisplayStrings, DpMatrixSparse, RowBounds, Scores,
     },
-    structs::{hmm::Alphabet, Profile, Sequence},
+    alphabet::Alphabet,
+    structs::{Profile, Sequence},
 };
 use std::{
     any::TypeId,
@@ -213,8 +214,8 @@ impl AllocationSize for Profile {
             + self.special_transitions.size()
             + self.expected_j_uses.size()
             + self.consensus_sequence_bytes_utf8.size()
-            + self.forward_tau.size()
-            + self.forward_lambda.size()
+            + self.fwd_tau.size()
+            + self.fwd_lambda.size()
             + self.alphabet.size()
     }
 }

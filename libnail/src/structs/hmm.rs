@@ -1,6 +1,6 @@
 use std::io::{BufRead, BufReader, Read};
 
-use crate::alphabet::{AMINO_ALPHABET, AMINO_BACKGROUND_FREQUENCIES};
+use crate::alphabet::{Alphabet, AMINO_ALPHABET, AMINO_BACKGROUND_FREQUENCIES};
 use crate::structs::Profile;
 use anyhow::{bail, Context, Result};
 use datasize::DataSize;
@@ -209,7 +209,7 @@ const BLOSUM_62_CONDITIONAL_PROB: [[f32; 29]; 29] = [
 
 // this static regex is used to find float strings
 lazy_static! {
-    static ref FLOAT_RE: Regex = Regex::new(r"-*\d\.*\d*").unwrap();
+    static ref FLOAT_RE: Regex = Regex::new(r"-*\d*\.*\d*").unwrap();
 }
 
 enum ParserState {
@@ -236,16 +236,6 @@ struct TokenIndexError;
 #[derive(Error, Debug)]
 #[error("unable to find a float-like substring")]
 struct FloatRegexError;
-
-/// The alphabet of the sequences represented in a P7HMM.
-#[derive(Default, Clone, DataSize)]
-pub enum Alphabet {
-    Amino,
-    Dna,
-    Rna,
-    #[default]
-    AlphabetNotSet,
-}
 
 /// Represents the header of the P7HMM.
 #[derive(Default)]
@@ -752,7 +742,7 @@ fn get_token_as_f32(tokens: &Vec<&str>, idx: usize) -> Result<f32> {
 
     // * means infinity in the spec
     if tokens[idx] == "*" {
-        return Ok(0.0);
+        return Ok(f32::INFINITY);
     }
 
     let float_str = match FLOAT_RE.find(tokens[idx]) {

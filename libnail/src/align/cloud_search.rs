@@ -1,12 +1,18 @@
-use crate::align::structs::{Cloud, Seed};
-use crate::log_sum;
-use crate::max_f32;
-use crate::structs::profile::{AminoAcid, BackgroundLoop, CoreToCore, Emission};
-use crate::structs::{Profile, Sequence};
-use crate::util::{log_add, MaxAssign};
+use crate::{
+    align::structs::{Cloud, Seed},
+    alphabet::AminoAcid,
+    log_sum, max_f32,
+    structs::{
+        profile::{BackgroundLoop, CoreToCore, Emission},
+        Profile, Sequence,
+    },
+    util::{log_add, MaxAssign},
+};
 
-use super::structs::{Ad, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix};
-use super::Nats;
+use super::{
+    structs::{Ad, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix},
+    Nats,
+};
 
 #[derive(Clone)]
 pub struct CloudSearchParams {

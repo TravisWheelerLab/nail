@@ -1,3 +1,6 @@
+use std::ops::Index;
+
+use datasize::DataSize;
 use phf::phf_map;
 
 pub const UTF8_SPACE: u8 = 32;
@@ -7,6 +10,201 @@ pub const UTF8_DASH: u8 = 45;
 pub const UTF8_DOT: u8 = 46;
 pub const UTF8_PIPE: u8 = 124;
 pub const AMINO_SENTINEL: u8 = 255;
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum AminoAcid {
+    A,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    K,
+    L,
+    M,
+    N,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    V,
+    W,
+    Y,
+    DASH,
+    B,
+    J,
+    Z,
+    O,
+    U,
+    X,
+    STAR,
+    TILDE,
+}
+
+impl From<u8> for AminoAcid {
+    fn from(value: u8) -> Self {
+        AminoAcid::from_u8(value)
+    }
+}
+
+impl AminoAcid {
+    pub fn from_u8(byte: u8) -> AminoAcid {
+        unsafe { std::mem::transmute(byte) }
+    }
+}
+
+pub struct AmbiguityMap {
+    alphabet: Alphabet,
+    map: Vec<Vec<u8>>,
+}
+
+impl Index<u8> for AmbiguityMap {
+    type Output = [u8];
+
+    fn index(&self, index: u8) -> &Self::Output {
+        let idx = index as usize;
+        let sz = self.alphabet.canonical_size();
+
+        if idx < sz {
+            panic!();
+        }
+        // -1 since '-' is in between canonical
+        // and ambiguous (by HMMER convention)
+        let mapped_idx = idx - sz - 1;
+        self.map[mapped_idx].as_slice()
+    }
+}
+
+#[derive(Default, Clone, DataSize, PartialEq)]
+pub enum Alphabet {
+    Amino,
+    Dna,
+    Rna,
+    #[default]
+    AlphabetNotSet,
+}
+
+impl Alphabet {
+    pub fn canonical_iter(&self) -> impl Iterator<Item = u8> {
+        0u8..self.canonical_size() as u8
+    }
+
+    pub fn ambiguous_iter(&self) -> impl Iterator<Item = u8> {
+        (((self.canonical_size() + 1) as u8)..(self.full_size() as u8)).take(self.ambiguous_size())
+    }
+
+    pub fn canonical_size(&self) -> usize {
+        match self {
+            Alphabet::Amino => 20,
+            Alphabet::Dna => 4,
+            Alphabet::Rna => 4,
+            Alphabet::AlphabetNotSet => panic!(),
+        }
+    }
+
+    pub fn ambiguous_size(&self) -> usize {
+        match self {
+            Alphabet::Amino => 6,
+            Alphabet::Dna => 11,
+            Alphabet::Rna => 11,
+            Alphabet::AlphabetNotSet => panic!(),
+        }
+    }
+
+    pub fn full_size(&self) -> usize {
+        match self {
+            Alphabet::Amino => 29,
+            Alphabet::Dna => 18,
+            Alphabet::Rna => 18,
+            Alphabet::AlphabetNotSet => panic!(),
+        }
+    }
+
+    pub fn ambiguity_map(&self) -> AmbiguityMap {
+        match self {
+            Alphabet::Amino => AmbiguityMap {
+                alphabet: self.clone(),
+                map: vec![
+                    "K".to_digital_aminos(),  // O -> [ K ]
+                    "C".to_digital_aminos(),  // U -> [ C ]
+                    vec![],                   // X -> [ ]
+                    "ND".to_digital_aminos(), // B -> [ N, D ]
+                    "QE".to_digital_aminos(), // Z -> [ Q, E ]
+                    "IL".to_digital_aminos(), // J -> [ I, L]
+                ],
+            },
+            Alphabet::Dna => todo!("DNA alphabet not implemented"),
+            Alphabet::Rna => todo!("RNA alphabet not implemented"),
+            Alphabet::AlphabetNotSet => panic!("no alphabet"),
+        }
+    }
+}
+
+pub trait AminoUtilsUtf8 {
+    fn to_digital_amino(&self) -> u8;
+    fn to_digital_aminos(&self) -> Vec<u8>;
+}
+
+impl AminoUtilsUtf8 for char {
+    fn to_digital_amino(&self) -> u8 {
+        match self {
+            'A' | 'a' => 0,
+            'C' | 'c' => 1,
+            'D' | 'd' => 2,
+            'E' | 'e' => 3,
+            'F' | 'f' => 4,
+            'G' | 'g' => 5,
+            'H' | 'h' => 6,
+            'I' | 'i' => 7,
+            'K' | 'k' => 8,
+            'L' | 'l' => 9,
+            'M' | 'm' => 10,
+            'N' | 'n' => 11,
+            'P' | 'p' => 12,
+            'Q' | 'q' => 13,
+            'R' | 'r' => 14,
+            'S' | 's' => 15,
+            'T' | 't' => 16,
+            'V' | 'v' => 17,
+            'W' | 'w' => 18,
+            'Y' | 'y' => 19,
+            _ => 29,
+        }
+    }
+
+    fn to_digital_aminos(&self) -> Vec<u8> {
+        vec![self.to_digital_amino()]
+    }
+}
+
+impl AminoUtilsUtf8 for &str {
+    fn to_digital_amino(&self) -> u8 {
+        if self.len() > 1 {
+            panic!("to_digital_amino() called with string length > 1");
+        }
+        match self.chars().next() {
+            Some(c) => c.to_digital_amino(),
+            None => 29,
+        }
+    }
+
+    fn to_digital_aminos(&self) -> Vec<u8> {
+        self.as_bytes()
+            .iter()
+            .map(|b| (*b as char).to_digital_amino())
+            .collect::<Vec<_>>()
+    }
+}
+
+pub trait AminoUtilsDigital {
+    fn to_utf8_byte_amino(&self) -> u8;
+    fn to_utf8_bytes_amino(&self) -> Vec<u8>;
+    fn to_string_amino(&self) -> String;
+}
 
 /// maps from \<usize\> -> \<UTF8 value for usize\>
 pub const UTF8_NUMERIC: [u8; 11] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, UTF8_STAR];

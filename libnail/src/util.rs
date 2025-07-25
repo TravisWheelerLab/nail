@@ -143,31 +143,27 @@ pub trait VecMath<T>
 where
     T: Float,
 {
-    fn avg(&self) -> Option<T>;
+    fn mean(&self) -> Option<T>;
     fn argmax(&self) -> Option<usize>;
-    fn normalize(&mut self);
-    fn add(&mut self, other: &[T]);
-    fn sub(&mut self, other: &[T]);
-    fn scale(&mut self, factor: T);
-    fn saturate_lower(&mut self, min: T);
 }
 
-impl<T> VecMath<T> for Vec<T>
+impl<T, U> VecMath<T> for U
 where
     T: Float,
+    U: AsRef<[T]>,
 {
-    fn avg(&self) -> Option<T> {
+    fn mean(&self) -> Option<T> {
         let mut sum = T::from_usize(0);
-        self.iter().for_each(|&item| sum += item);
+        self.as_ref().iter().for_each(|&item| sum += item);
 
-        Some(sum / T::from_usize(self.len()))
+        Some(sum / T::from_usize(self.as_ref().len()))
     }
 
     fn argmax(&self) -> Option<usize> {
-        let mut max = *self.first()?;
+        let mut max = *self.as_ref().first()?;
         let mut argmax: usize = 0;
 
-        for (idx, &item) in self.iter().enumerate().skip(1) {
+        for (idx, &item) in self.as_ref().iter().enumerate().skip(1) {
             if item > max {
                 max = item;
                 argmax = idx;
@@ -176,27 +172,50 @@ where
 
         Some(argmax)
     }
+}
 
+pub trait VecMathMut<T>
+where
+    T: Float,
+{
+    fn normalize(&mut self);
+    fn add(&mut self, other: &[T]);
+    fn sub(&mut self, other: &[T]);
+    fn scale(&mut self, factor: T);
+    fn saturate_lower(&mut self, min: T);
+}
+
+impl<T, U> VecMathMut<T> for U
+where
+    T: Float,
+    U: AsMut<[T]>,
+{
     fn normalize(&mut self) {
         let mut sum = T::from_usize(0);
-        self.iter().for_each(|&item| sum += item);
-        self.iter_mut().for_each(|item| *item /= sum);
+        self.as_mut().iter().for_each(|&item| sum += item);
+        self.as_mut().iter_mut().for_each(|item| *item /= sum);
     }
 
     fn add(&mut self, other: &[T]) {
-        self.iter_mut().zip(other).for_each(|(a, &b)| *a += b);
+        self.as_mut()
+            .iter_mut()
+            .zip(other)
+            .for_each(|(a, &b)| *a += b);
     }
 
     fn sub(&mut self, other: &[T]) {
-        self.iter_mut().zip(other).for_each(|(a, &b)| *a -= b);
+        self.as_mut()
+            .iter_mut()
+            .zip(other)
+            .for_each(|(a, &b)| *a -= b);
     }
 
     fn scale(&mut self, factor: T) {
-        self.iter_mut().for_each(|item| *item *= factor);
+        self.as_mut().iter_mut().for_each(|item| *item *= factor);
     }
 
     fn saturate_lower(&mut self, min: T) {
-        self.iter_mut().for_each(|item| {
+        self.as_mut().iter_mut().for_each(|item| {
             if *item < min {
                 *item = min
             }
@@ -254,7 +273,7 @@ pub fn mean_relative_entropy(a: &[Vec<f32>], b: &[f32]) -> f32 {
     a.iter()
         .map(|p| relative_entropy(p, b))
         .collect::<Vec<f32>>()
-        .avg()
+        .mean()
         .unwrap()
 }
 

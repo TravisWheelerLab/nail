@@ -156,7 +156,7 @@ impl AlignStage for DefaultAlignStage {
         stats.forward_cells(bounds.num_cells);
 
         // for now we compute the P-value for filtering purposes
-        let forward_p_value = p_value(forward_score, profile.forward_lambda, profile.forward_tau);
+        let forward_p_value = p_value(forward_score, profile.fwd_lambda, profile.fwd_tau);
         stats.score(forward_score);
         stats.p_value(forward_p_value);
 

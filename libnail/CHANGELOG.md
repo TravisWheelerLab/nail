@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [Unreleased]
+
+### Added
+- added `AmbiguityMap` struct
+- added `AminoUtilsUtf8` and `AminoUtilsDigital` traits
+
+### Changed
+- renamed `Profile.forward_tau` and `Profile.forward_lambda` to `fwd_tau` and `fwd_lambda`
+- moved `Alphabet` and`AminoAcid` to mod `alphabet`
+- split self mutating functions from trait `VecMath` into new trait `VecMathMut`
 
 ## [0.4.0] - 2025-6-18
 
@@ -28,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added structs `Emission`, `CoreToCore`, `BackgroundLoop`, `CoreEntry`
 - added traits `MinAssign`, `MaxAssign` and blanket impls
 - added macro `assert_eq_pairs!`
+
 ### Changed
 - `Profile.match_scores` and `Profile.insert_scores` vectors combined into `Profile.emission_scores`
 - structs `Sequence`, `Profile` now have an ending pad position
@@ -36,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - renamed struct `AntiDiagonalBounds` to `Cloud`
 - changed cloud search implementation to better match the Forward/Backward recurrence
 - renamed trait `VecUtils` to `VecMath`
+
 ### Removed
 - removed structs `CloudAntiDiagonal`, `CloudMatrixLinear`
 
