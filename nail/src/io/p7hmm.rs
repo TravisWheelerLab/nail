@@ -1,4 +1,5 @@
 use std::{
+    default,
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -147,9 +148,10 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
     prf.build()
 }
 
-#[derive(PartialEq, EnumString, AsRefStr)]
+#[derive(Default, PartialEq, EnumString, AsRefStr)]
 #[strum(serialize_all = "UPPERCASE")]
 enum P7HeaderFlag {
+    #[default]
     #[strum(serialize = "")]
     None,
     #[strum(serialize = "HMMER3/f")]
@@ -182,7 +184,7 @@ enum P7HeaderFlag {
     #[strum(serialize = "CKSUM")]
     Checksum,
     #[strum(serialize = "GA")]
-    GatheringThreshold,
+    GatheringThresholds,
     #[strum(serialize = "TC")]
     TrustedCutoffs,
     #[strum(serialize = "NC")]
@@ -445,24 +447,13 @@ impl LexicalP7HmmIndex {
             for (pos, &byte) in buf_slice.iter().enumerate() {
                 let current_offset = total_bytes_read + pos;
 
-                let flag_ctx = || {
-                    format!(
-                        "failed to parse flag in header: \"{}\"\nbuffer pos: {}\ncontext: \x1b[31m{}\x1b[0m{}\x1b[34m{}\x1b[0m",
-                        buf_slice.word_from(pos + 1).unwrap(),
-                        pos,
-                        buf_slice.str(pos.saturating_sub(500), pos - 1).unwrap(),
-                        buf_slice[pos] as char,
-                        buf_slice.str(pos + 1, (pos + 500).min(buf_slice.len() - 1)).unwrap(),
-                    )
-                };
-
                 match parse_state {
                     ParseState::Format => {
                         if byte == b'\n' {
                             match buf_slice
                                 .word_from(pos + 1)?
                                 .parse::<P7HeaderFlag>()
-                                .with_context(flag_ctx)?
+                                .unwrap_or_default()
                             {
                                 P7HeaderFlag::None => Ok(()),
                                 P7HeaderFlag::Format => {
@@ -470,7 +461,7 @@ impl LexicalP7HmmIndex {
                                     Ok(())
                                 }
                                 f => Err(anyhow!(
-                                    "p7HMM record starts with format flag: \"{}\"",
+                                    "p7HMM record starts with incorrect flag: \"{}\"",
                                     f.as_ref()
                                 )),
                             }?
@@ -481,7 +472,7 @@ impl LexicalP7HmmIndex {
                             match buf_slice
                                 .word_from(pos + 1)?
                                 .parse::<P7HeaderFlag>()
-                                .with_context(flag_ctx)?
+                                .unwrap_or_default()
                             {
                                 P7HeaderFlag::Name => {
                                     name.push_str(
