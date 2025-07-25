@@ -81,10 +81,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     }
 
     let now = Instant::now();
-    println!("reading query database...");
+    println!("indexing query database...");
     let queries = read_queries(&args.query_path, args.num_threads)?;
     println!(
-        "\x1b[Areading query database...   done ({:.2}s)",
+        "\x1b[Aindexing query database...  done ({:.2}s)",
         now.elapsed().as_secs_f64()
     );
 

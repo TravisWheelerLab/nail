@@ -364,6 +364,8 @@ impl LexicalP7HmmIndex {
         let mut index = indexes.remove(0);
         indexes.into_iter().for_each(|i| index.extend(i));
 
+        index.offsets.shrink_to_fit();
+
         Ok(index)
     }
 
