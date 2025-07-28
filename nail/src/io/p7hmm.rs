@@ -1,5 +1,4 @@
 use std::{
-    default,
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -42,7 +41,11 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
     for line in bytes.split(|b| *b == b'\n').filter(|b| !b.is_empty()) {
         match state {
             ParseState::Header => {
-                let flag = line.first_word()?.parse::<P7HeaderFlag>()?;
+                let flag = line
+                    .first_word()?
+                    .parse::<P7HeaderFlag>()
+                    .unwrap_or_default();
+
                 let value = std::str::from_utf8(&line[flag.as_ref().len()..])?.trim();
 
                 match flag {
