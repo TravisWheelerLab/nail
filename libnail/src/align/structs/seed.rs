@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Seed {
     pub seq_start: usize,
     pub seq_end: usize,

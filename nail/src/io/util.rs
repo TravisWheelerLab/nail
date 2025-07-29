@@ -1,6 +1,6 @@
 use std::io::{self, Read, Seek, SeekFrom};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 
 pub(crate) trait ByteBufferExt {
     /// Get the index of the first non-whitespace byte
@@ -48,6 +48,7 @@ pub enum ReadState {
 }
 
 pub trait ReadSeekExt: Read + Seek {
+    /// Calls read on `inner` and returns a `ReadState`
     fn read_with_state(&mut self, buf: &mut [u8]) -> anyhow::Result<ReadState> {
         let n_bytes_read = self.read(buf)?;
         let pos = self.stream_position()?;
@@ -67,6 +68,24 @@ pub trait ReadSeekExt: Read + Seek {
             (n, false) => ReadState::Reading(n),
         })
     }
+
+    /// Reads to the first newline from the current position of `inner` and
+    /// returns the number of bytes read until the newline was found.
+    ///
+    /// Returns an error if a newline isn't found within the number of bytes
+    /// allowed by the length of `buf`.
+    fn read_to_first_newline(&mut self, buf: &mut [u8]) -> anyhow::Result<usize> {
+        let buf_slice = match self.read_with_state(buf)? {
+            ReadState::Reading(n) => &buf[0..n],
+            ReadState::Final(n) => &buf[0..n],
+            ReadState::Done => bail!("read 0 bytes when searching for newline"),
+        };
+
+        buf_slice
+            .iter()
+            .position(|b| *b == b'\n')
+            .ok_or(anyhow!("no newline found in: {} bytes", buf_slice.len()))
+    }
 }
 
 impl<T: Read + Seek> ReadSeekExt for T {}
@@ -83,9 +102,10 @@ pub struct SeekableTake<T> {
 
 impl<T: Read + Seek> SeekableTake<T> {
     pub fn new(mut inner: T, start: u64, limit: u64) -> io::Result<Self> {
-        let current = inner.seek(SeekFrom::Start(start))?;
         let end = inner.seek(SeekFrom::End(0))?;
-        inner.seek(SeekFrom::Start(current))?;
+        let start = start.min(end);
+        let limit = limit.min(end.saturating_sub(start));
+        inner.seek(SeekFrom::Start(start))?;
 
         Ok(Self {
             inner,

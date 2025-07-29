@@ -1,19 +1,22 @@
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, BufWriter, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
+    sync::Arc,
 };
 
 use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::{Fasta, P7Hmm, ProfileDatabase, SequenceDatabase},
+    io::{ByteBufferExt, Fasta, P7Hmm, ProfileDatabase, ReadSeekExt, ReadState, SequenceDatabase},
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths, MmseqsScoreModel,
     },
     search::Queries,
 };
+
+use anyhow::anyhow;
 
 fn merge_seed_maps<'a>(
     mut seed_map_a: SeedMap,
@@ -120,59 +123,91 @@ pub fn write_seed_map(map: &SeedMap, buf: &mut impl Write) -> anyhow::Result<()>
     Ok(())
 }
 
-pub fn read_seed_map(buf: &mut impl Read) -> anyhow::Result<SeedMap> {
+pub fn read_seed_map<R: Read + Seek>(data: &mut R) -> anyhow::Result<SeedMap> {
     let mut seeds: SeedMap = HashMap::new();
-    let mut reader = BufReader::new(buf);
-    let mut line = String::new();
 
+    #[derive(Debug)]
     enum ParseState {
         PrfName,
         SeqName,
-        Seed,
+        Coords,
         End,
     }
+    use ParseState::*;
 
-    let mut state = ParseState::PrfName;
-    let mut prf_name = "".to_string();
+    // 2<<16 == 2^17 | ~128KiB buffer
+    let mut buf = vec![0u8; 2 << 16];
+
+    // search for the first newline in the first 2^13 bytes
+    let first_newline_pos = data.read_to_first_newline(&mut buf[0..2 << 12])?;
+
+    let mut state = SeqName;
+    let mut prf_name = (&buf[0..first_newline_pos])
+        .str(0, first_newline_pos - 1)?
+        .to_string();
     let mut seq_name = "".to_string();
     let mut prf_seeds = HashMap::new();
-    while reader.read_line(&mut line).unwrap() > 0 {
-        let trimmed = line.trim_end();
-        if trimmed.is_empty() {
-            continue;
-        } else if trimmed == "//" {
-            state = ParseState::End;
-        }
+    data.seek(SeekFrom::Start(first_newline_pos as u64))?;
 
-        match state {
-            ParseState::PrfName => {
-                prf_name = trimmed.to_string();
-                state = ParseState::SeqName;
+    while let Ok(read_state) = data.read_with_state(&mut buf) {
+        let buf_slice = match read_state {
+            ReadState::Reading(n) => {
+                let last_newline_pos = buf[..n]
+                    .iter()
+                    .rposition(|&b| b == b'\n')
+                    .ok_or(anyhow!(""))?;
+
+                let n_bytes_back = (n - last_newline_pos) as i64;
+                data.seek_relative(-n_bytes_back)?;
+                &buf[..last_newline_pos]
             }
-            ParseState::SeqName => {
-                seq_name = trimmed[1..].to_string();
-                state = ParseState::Seed;
-            }
-            ParseState::Seed => {
-                let tokens: Vec<&str> = trimmed.splitn(5, ':').collect();
-                let seed = Seed {
-                    seq_start: tokens[0].parse::<usize>()?,
-                    seq_end: tokens[1].parse::<usize>()?,
-                    prf_start: tokens[2].parse::<usize>()?,
-                    prf_end: tokens[3].parse::<usize>()?,
-                    score: tokens[4].parse::<f32>()?,
-                };
-                prf_seeds.insert(seq_name.clone(), seed);
-                state = ParseState::SeqName;
-            }
-            ParseState::End => {
-                seeds.insert(prf_name.clone(), prf_seeds);
-                prf_seeds = HashMap::new();
-                state = ParseState::PrfName;
+            ReadState::Final(n) => &buf[..n],
+            ReadState::Done => break,
+        };
+
+        let mut i = 0;
+        while i < buf_slice.len() {
+            let word = buf_slice.word_from(i + 1)?;
+
+            i += word.len() + 1;
+
+            match state {
+                PrfName => {
+                    prf_name.push_str(word);
+                    state = SeqName;
+                }
+                SeqName => {
+                    if word == "//" {
+                        state = End;
+                        i -= 1;
+                        continue;
+                    }
+                    seq_name.push_str(&word[1..]);
+                    state = Coords;
+                }
+                Coords => {
+                    let mut tokens = word.split(':');
+                    let seed = Seed {
+                        seq_start: tokens.next().unwrap().parse::<usize>()?,
+                        seq_end: tokens.next().unwrap().parse::<usize>()?,
+                        prf_start: tokens.next().unwrap().parse::<usize>()?,
+                        prf_end: tokens.next().unwrap().parse::<usize>()?,
+                        score: tokens.next().unwrap().parse::<f32>()?,
+                    };
+                    seq_name.shrink_to_fit();
+                    prf_seeds.insert(seq_name.clone(), seed);
+                    seq_name.clear();
+                    state = SeqName;
+                }
+                End => {
+                    prf_name.shrink_to_fit();
+                    seeds.insert(prf_name.clone(), prf_seeds);
+                    prf_name.clear();
+                    prf_seeds = HashMap::new();
+                    state = PrfName;
+                }
             }
         }
-
-        line.clear();
     }
 
     Ok(seeds)
@@ -180,12 +215,14 @@ pub fn read_seed_map(buf: &mut impl Read) -> anyhow::Result<SeedMap> {
 
 #[derive(Default, Clone)]
 pub struct DefaultSeedStage {
-    seeds: SeedMap,
+    seeds: Arc<SeedMap>,
 }
 
 impl DefaultSeedStage {
     pub fn new(seeds: SeedMap) -> Self {
-        DefaultSeedStage { seeds }
+        DefaultSeedStage {
+            seeds: Arc::new(seeds),
+        }
     }
 }
 

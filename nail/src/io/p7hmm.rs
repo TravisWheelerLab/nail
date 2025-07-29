@@ -400,7 +400,7 @@ impl LexicalP7HmmIndex {
         let mut parse_state = ParseState::Header;
         let mut offsets = IndexMap::new();
 
-        // 2<<21 == 2^21 | ~2MiB buffer
+        // 2<<20 == 2^21 | ~2MiB buffer
         let mut buffer = vec![0; 2 << 20];
         let mut name = String::new();
         let mut total_bytes_read = 1 + start;

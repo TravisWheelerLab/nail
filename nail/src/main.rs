@@ -7,7 +7,6 @@ mod stats;
 mod util;
 
 use args::{NailCli, NailSubCommands};
-use io::P7Hmm;
 use search::search;
 use util::{check_mmseqs_installed, set_threads};
 
@@ -31,7 +30,7 @@ fn main() -> anyhow::Result<()> {
             set_threads(N)?;
 
             let now = std::time::Instant::now();
-            let profiles = io::ProfileDatabase::iter(&P7Hmm::from_path_par(HMM, N)?)
+            let profiles = io::ProfileDatabase::iter(&io::P7Hmm::from_path_par(HMM, N)?)
                 .collect::<Vec<libnail::structs::Profile>>();
             println!("took: {:?}", now.elapsed());
         }
