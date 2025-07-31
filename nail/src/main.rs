@@ -24,16 +24,7 @@ fn main() -> anyhow::Result<()> {
             set_threads(args.num_threads)?;
             search(args)?;
         }
-        NailSubCommands::Dev => {
-            const N: usize = 8;
-            const HMM: &str = "pfam.hmm";
-            set_threads(N)?;
-
-            let now = std::time::Instant::now();
-            let profiles = io::ProfileDatabase::iter(&io::P7Hmm::from_path_par(HMM, N)?)
-                .collect::<Vec<libnail::structs::Profile>>();
-            println!("took: {:?}", now.elapsed());
-        }
+        NailSubCommands::Dev => {}
     }
 
     Ok(())

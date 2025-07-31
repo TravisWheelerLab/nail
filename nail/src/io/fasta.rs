@@ -2,10 +2,10 @@ use std::{
     fs::File,
     io::{Read, Seek},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use indexmap::IndexMap;
 use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
@@ -116,6 +116,7 @@ impl<'a> DoubleEndedIterator for SequenceDatabaseIter<'a> {
 
 impl<'a> ExactSizeIterator for SequenceDatabaseIter<'a> {}
 
+#[derive(Default)]
 pub struct LexicalFastaIndex {
     pub(crate) offsets: IndexMap<String, FastaOffset>,
 }
@@ -186,23 +187,27 @@ impl LexicalFastaIndex {
             })
             .collect::<anyhow::Result<_>>()?;
 
-        let mut indexes: Vec<_> = files
+        let index = Arc::new(Mutex::new(Self::default()));
+
+        files
             .par_iter_mut()
-            .map(|(file, start)| Self::new(file, Some(*start)))
-            .collect();
+            .try_for_each(|(file, start)| Self::build(file, index.clone(), Some(*start)))?;
 
-        let mut index = indexes.remove(0);
-        indexes.into_iter().for_each(|i| index.extend(i));
-
-        index.offsets.shrink_to_fit();
-
-        Ok(index)
+        Ok(Arc::try_unwrap(index)
+            .ok()
+            .expect("other Arc clones exist")
+            .into_inner()
+            .unwrap())
     }
 
-    fn new<R: Read>(mut data: R, start: Option<u64>) -> Self {
+    fn build<R: Read>(
+        mut data: R,
+        index: Arc<Mutex<Self>>,
+        start: Option<u64>,
+    ) -> anyhow::Result<()> {
+        const N: usize = 1_000;
         let start = start.unwrap_or(0) as usize;
 
-        let mut offsets = IndexMap::new();
         enum ParseState {
             Name,
             Details,
@@ -210,26 +215,57 @@ impl LexicalFastaIndex {
             Process,
         }
 
-        let mut buffer = [0];
+        let mut buf = [0];
         // simple check to make sure we are reading a fasta
         // TODO: need more checks for format validation
         //       during the entire parsing process
-        if data.read(&mut buffer).unwrap() == 1 {
-            assert!(buffer[0] == b'>')
+        if data.read(&mut buf).unwrap() == 1 {
+            assert!(buf[0] == b'>')
         } else {
             panic!()
         }
 
+        let mut offsets: Vec<(String, FastaOffset)> = Vec::with_capacity(N);
+
         let mut state = ParseState::Name;
         // 2^20 gives us a ~1MiB buffer
-        let mut buffer = vec![0; 2 << 20];
+        let mut buf = vec![0; 2 << 20];
         let mut name = String::new();
         let mut total_bytes_read = 1 + start;
         let mut seq_line_cnt = 0;
 
         let mut offset = FastaOffset::new(start);
 
-        while let Ok(bytes_read) = data.read(&mut buffer) {
+        let process_fn =
+            |mut name: String, offset: FastaOffset, offsets: &mut Vec<(String, FastaOffset)>| {
+                if name.trim().is_empty() {
+                    bail!("failed to parse name from fasta buffer");
+                }
+
+                name.shrink_to_fit();
+
+                match index.try_lock() {
+                    Ok(mut guard) => {
+                        guard.offsets.insert(name, offset);
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        if offsets.len() < N {
+                            offsets.push((name, offset));
+                        } else {
+                            index
+                                .lock()
+                                .map_err(|_| anyhow!("mutex poisoned"))?
+                                .offsets
+                                .extend(offsets.drain(..));
+                        }
+                    }
+                    Err(_) => bail!("mutex poisoned"),
+                }
+
+                Ok(())
+            };
+
+        while let Ok(bytes_read) = data.read(&mut buf) {
             // TODO (IMPORTANT): truncate to final newline & seek back
 
             // when we read 0 bytes, its the EOF
@@ -238,12 +274,11 @@ impl LexicalFastaIndex {
                     - (offset.start + offset.name_len_bytes + offset.details_len_bytes);
                 offset.seq_len = offset.seq_len_bytes - seq_line_cnt - 1;
 
-                name.shrink_to_fit();
-                offsets.insert(name.clone(), offset);
+                process_fn(name, offset, &mut offsets)?;
                 break;
             }
 
-            for (i, &byte) in buffer[..bytes_read].iter().enumerate() {
+            for (i, &byte) in buf[..bytes_read].iter().enumerate() {
                 let current_offset = total_bytes_read + i;
                 match state {
                     ParseState::Name => match byte {
@@ -279,8 +314,7 @@ impl LexicalFastaIndex {
                         }
                     }
                     ParseState::Process => {
-                        name.shrink_to_fit();
-                        offsets.insert(name.clone(), offset);
+                        process_fn(name, offset, &mut offsets)?;
                         // -1 since we found the '>' on the previous byte
                         offset = FastaOffset::new(current_offset - 1);
                         name = String::new();
@@ -293,9 +327,7 @@ impl LexicalFastaIndex {
 
             total_bytes_read += bytes_read;
         }
-
-        offsets.shrink_to_fit();
-        Self { offsets }
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -304,10 +336,6 @@ impl LexicalFastaIndex {
 
     fn offset_by_name(&self, name: &str) -> Option<FastaOffset> {
         self.offsets.get(name).cloned()
-    }
-
-    fn extend(&mut self, other: Self) {
-        self.offsets.extend(other.offsets);
     }
 }
 
@@ -341,18 +369,6 @@ impl Fasta {
     pub fn from_path_par<P: AsRef<Path>>(path: P, n: usize) -> anyhow::Result<Self> {
         let index = Arc::new(LexicalFastaIndex::from_path(path.as_ref(), n)?);
         let file = File::open(path.as_ref())?;
-
-        Ok(Self {
-            file,
-            index,
-            buffer: Vec::new(),
-            path: PathBuf::from(path.as_ref()),
-        })
-    }
-
-    pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let mut file = File::open(path.as_ref())?;
-        let index = Arc::new(LexicalFastaIndex::new(&mut file, None));
 
         Ok(Self {
             file,
