@@ -29,6 +29,65 @@ impl AsRef<Profile> for Profile {
     }
 }
 
+mod serialize {
+    use super::Profile;
+
+    #[repr(u8)]
+    enum Version {
+        V1 = 0u8,
+    }
+
+    impl Profile {
+        pub fn serialize<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+            // [HEADER] | 2 bytes <custom>
+            out.write_all(&[Version::V1 as u8, 0])?;
+
+            // [ALPHABET] | 1 byte <u8>
+            out.write_all(&[self.alphabet as u8])?;
+
+            // [MODEL LEN] | 4 bytes <u32>
+            out.write_all(&(self.length as u32).to_le_bytes())?;
+
+            // [NAME LEN] | 4 bytes <u32>
+            out.write_all(&(self.name.len() as u32).to_le_bytes())?;
+
+            // [ACCESSION LEN] | 4 bytes <u32>
+            out.write_all(&(self.accession.len() as u32).to_le_bytes())?;
+
+            // [TAU] | 4 bytes <f32>
+            out.write_all(&self.forward_tau.to_le_bytes())?;
+
+            // [LAMBDA] | 4 bytes <f32>
+            out.write_all(&self.forward_lambda.to_le_bytes())?;
+
+            // [NAME] | N bytes <u8>(UTF8)
+            out.write_all(self.name.as_bytes())?;
+
+            // [ACCESSION] | A Bytes <u8>(UTF8)
+            out.write_all(self.accession.as_bytes())?;
+
+            // [CONSENSUS] | M bytes <u8>(UTF8)
+            out.write_all(&self.consensus_sequence_bytes_utf8)?;
+
+            // [TRANSITIONS] | [ 4 * 8 ] * ( M + 2 ) bytes
+            for v in &self.core_transitions {
+                for f in v {
+                    out.write_all(&f.to_le_bytes())?;
+                }
+            }
+
+            // [EMISSIONS] | [ 4 * 20 ] * ( M + 2 ) bytes
+            for v in &self.emission_scores[0] {
+                for f in v {
+                    out.write_all(&f.to_le_bytes())?;
+                }
+            }
+
+            Ok(())
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct Profile {
     /// The name of the profile

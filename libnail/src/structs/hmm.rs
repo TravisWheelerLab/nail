@@ -237,7 +237,8 @@ struct TokenIndexError;
 struct FloatRegexError;
 
 /// The alphabet of the sequences represented in a P7HMM.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy)]
+#[repr(u8)]
 pub enum Alphabet {
     Amino,
     Dna,
