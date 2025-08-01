@@ -88,6 +88,17 @@ pub enum Alphabet {
     AlphabetNotSet,
 }
 
+impl From<u8> for Alphabet {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Alphabet::Amino,
+            1 => Alphabet::Dna,
+            2 => Alphabet::Rna,
+            _ => Alphabet::AlphabetNotSet,
+        }
+    }
+}
+
 impl Alphabet {
     pub fn canonical_iter(&self) -> impl Iterator<Item = u8> {
         0u8..self.canonical_size() as u8

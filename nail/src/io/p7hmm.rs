@@ -33,6 +33,7 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
 
     let mut emission_buf = [0.0; Profile::MAX_ALPHABET_SIZE];
     let mut trans_buf = [0.0; Profile::NUM_STATE_TRANSITIONS - 1];
+    let mut swap_buf = [0.0; Profile::NUM_STATE_TRANSITIONS - 1];
     let mut state = ParseState::Header;
     let mut model_state = ModelState::Comp;
 
@@ -136,10 +137,10 @@ pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> 
 
                         // map p7HMM transition order to Profile order
                         P7HmmTransition::iter().for_each(|t| {
-                            trans_buf.swap(Transition::from(t) as usize, t as usize);
+                            swap_buf[Transition::from(t) as usize] = trans_buf[t as usize]
                         });
 
-                        prf.transition(pos, trans_buf);
+                        prf.transition(pos, swap_buf);
 
                         model_state = ModelState::Mat;
                     }
@@ -636,5 +637,35 @@ impl ProfileDatabase for P7Hmm {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.offsets.keys().map(|s| s.as_str())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn test_profile_serialize() -> anyhow::Result<()> {
+        let mut bytes = vec![];
+        let mut file = File::open(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
+        )?;
+        file.read_to_end(&mut bytes)?;
+        let prf = profile_from_p7hmm_record_bytes(&bytes)?;
+
+        let mut buf = vec![];
+
+        prf.serialize(&mut buf)?;
+
+        let de = Profile::deserialize(Cursor::new(buf))?;
+
+        assert_eq!(prf.name, de.name);
+        assert_eq!(prf.accession, de.accession);
+        assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
+        assert_eq!(prf.core_transitions, de.core_transitions);
+        assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
+        Ok(())
     }
 }

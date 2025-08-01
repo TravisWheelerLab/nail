@@ -219,6 +219,8 @@ fn cantor(a: usize, b: usize) -> usize {
 }
 
 mod serialize {
+    use std::io::{Read, Write};
+
     use super::Profile;
 
     #[repr(u8)]
@@ -226,8 +228,20 @@ mod serialize {
         V1 = 0u8,
     }
 
+    fn read_u32_le<R: Read>(r: &mut R) -> anyhow::Result<u32> {
+        let mut buf = [0u8; 4];
+        r.read_exact(&mut buf)?;
+        Ok(u32::from_le_bytes(buf))
+    }
+
+    fn read_f32_le<R: Read>(r: &mut R) -> anyhow::Result<f32> {
+        let mut buf = [0u8; 4];
+        r.read_exact(&mut buf)?;
+        Ok(f32::from_le_bytes(buf))
+    }
+
     impl Profile {
-        pub fn serialize<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        pub fn serialize<W: Write>(&self, out: &mut W) -> std::io::Result<()> {
             // [HEADER] | 2 bytes <custom>
             out.write_all(&[Version::V1 as u8, 0])?;
 
@@ -258,14 +272,14 @@ mod serialize {
             // [CONSENSUS] | M bytes <u8>(UTF8)
             out.write_all(&self.consensus_seq_bytes_utf8)?;
 
-            // [TRANSITIONS] | [ 4 * 8 ] * ( M + 2 ) bytes
+            // [TRANSITIONS] | [ 4 * 8 ] * ( M + 1 ) bytes
             for v in &self.core_transitions {
                 for f in v {
                     out.write_all(&f.to_le_bytes())?;
                 }
             }
 
-            // [EMISSIONS] | [ 4 * 20 ] * ( M + 2 ) bytes
+            // [EMISSIONS] | [ 4 * 29 ] * ( M + 2 ) bytes
             for v in &self.emission_scores[0] {
                 for f in v {
                     out.write_all(&f.to_le_bytes())?;
@@ -273,6 +287,61 @@ mod serialize {
             }
 
             Ok(())
+        }
+
+        pub fn deserialize<R: Read>(mut buf: R) -> anyhow::Result<Self> {
+            let mut header = [0u8; 2];
+            buf.read_exact(&mut header)?;
+
+            let mut alphabet = [0u8; 1];
+            buf.read_exact(&mut alphabet)?;
+
+            let length = read_u32_le(&mut buf)? as usize;
+            let name_len = read_u32_le(&mut buf)? as usize;
+            let accession_len = read_u32_le(&mut buf)? as usize;
+
+            let fwd_tau = read_f32_le(&mut buf)?;
+            let fwd_lambda = read_f32_le(&mut buf)?;
+
+            let mut name = vec![0u8; name_len];
+            buf.read_exact(&mut name)?;
+
+            let mut accession = vec![0u8; accession_len];
+            buf.read_exact(&mut accession)?;
+
+            let mut consensus = vec![0u8; length + 1];
+            buf.read_exact(&mut consensus)?;
+
+            let mut core_transitions = Vec::with_capacity(length + 1);
+            for _ in 0..(length + 1) {
+                let mut row = [0f32; 8];
+                for f in &mut row {
+                    *f = read_f32_le(&mut buf)?;
+                }
+                core_transitions.push(row);
+            }
+
+            let mut mat_emissions = Vec::with_capacity(length + 2);
+            for _ in 0..(length + 2) {
+                let mut row = [0f32; 29];
+                for f in &mut row {
+                    *f = read_f32_le(&mut buf)?;
+                }
+                mat_emissions.push(row);
+            }
+
+            Ok(Self {
+                alphabet: alphabet[0].into(),
+                length,
+                name: String::from_utf8(name).unwrap(),
+                accession: String::from_utf8(accession).unwrap(),
+                consensus_seq_bytes_utf8: consensus,
+                fwd_tau,
+                fwd_lambda,
+                core_transitions,
+                emission_scores: [mat_emissions, vec![]],
+                ..Default::default()
+            })
         }
     }
 }
@@ -477,7 +546,6 @@ impl ProfileBuilder {
         }
 
         let occupancy_sum: f32 = (1..=prf.length).fold(0.0, |acc, profile_idx| {
-            // TODO: test removing the length normalization
             acc + occupancy[profile_idx] * (prf.length - profile_idx + 1) as f32
         });
 
