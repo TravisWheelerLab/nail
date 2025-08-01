@@ -79,7 +79,7 @@ impl Index<u8> for AmbiguityMap {
     }
 }
 
-#[derive(Default, Clone, DataSize, PartialEq)]
+#[derive(Default, Clone, Copy, DataSize, PartialEq)]
 pub enum Alphabet {
     Amino,
     Dna,
