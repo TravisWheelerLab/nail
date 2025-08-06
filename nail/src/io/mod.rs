@@ -1,3 +1,6 @@
+mod database;
+pub use database::*;
+
 mod fasta;
 pub use fasta::*;
 

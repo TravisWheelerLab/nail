@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
+    io::{BufWriter, Read, Seek, SeekFrom, Write},
     sync::Arc,
 };
 
@@ -8,7 +8,7 @@ use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::{ByteBufferExt, Fasta, P7Hmm, ProfileDatabase, ReadSeekExt, ReadState, SequenceDatabase},
+    io::{ByteBufferExt, Database, Fasta, P7Hmm, ReadSeekExt, ReadState},
     mmseqs::{
         run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
         write_mmseqs_sequence_database, MmseqsDbPaths, MmseqsScoreModel,

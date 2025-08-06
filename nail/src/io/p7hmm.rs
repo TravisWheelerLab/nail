@@ -17,6 +17,8 @@ use indexmap::IndexMap;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
+use super::{Database, DatabaseIter};
+
 pub fn profile_from_p7hmm_record_bytes(bytes: &[u8]) -> anyhow::Result<Profile> {
     enum ParseState {
         Header,
@@ -243,51 +245,6 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
             Ok(())
         })
 }
-
-dyn_clone::clone_trait_object!(ProfileDatabase);
-pub trait ProfileDatabase: dyn_clone::DynClone + Send + Sync {
-    fn get(&mut self, name: &str) -> Option<Profile>;
-    fn len(&self) -> usize;
-    fn iter(&self) -> ProfileDatabaseIter;
-}
-
-pub struct ProfileDatabaseIter<'a> {
-    pub(crate) inner: Box<dyn ProfileDatabase>,
-    pub(crate) names_iter: Box<dyn DoubleEndedIterator<Item = &'a str> + 'a>,
-}
-
-impl<'a> ProfileDatabaseIter<'a> {
-    pub fn names(self) -> Vec<&'a str> {
-        self.names_iter.collect()
-    }
-}
-
-impl<'a> Iterator for ProfileDatabaseIter<'a> {
-    type Item = Profile;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.names_iter.next().and_then(|n| self.inner.get(n))
-    }
-
-    // implementing size_hint to always return the
-    // exact size of the iterator is REQUIRED for
-    // the ExactSizerIterator trait to work; the
-    // default impl of size_hint returns (0, None)
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.inner.len();
-        (size, Some(size))
-    }
-}
-
-// rayon expects the the iterators it
-// uses to implement DoubleEndedIterator
-impl<'a> DoubleEndedIterator for ProfileDatabaseIter<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.names_iter.next_back().and_then(|n| self.inner.get(n))
-    }
-}
-
-impl<'a> ExactSizeIterator for ProfileDatabaseIter<'a> {}
 
 pub struct LexicalP7HmmIndex {
     pub(crate) offsets: IndexMap<String, P7HmmOffset>,
@@ -642,7 +599,7 @@ impl P7Hmm {
     }
 }
 
-impl ProfileDatabase for P7Hmm {
+impl Database<Profile> for P7Hmm {
     fn get(&mut self, name: &str) -> Option<Profile> {
         self.get(name)
     }
@@ -651,8 +608,8 @@ impl ProfileDatabase for P7Hmm {
         self.len()
     }
 
-    fn iter(&self) -> ProfileDatabaseIter {
-        ProfileDatabaseIter {
+    fn iter(&self) -> DatabaseIter<Profile> {
+        DatabaseIter {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.offsets.keys().map(|s| s.as_str())),
         }

@@ -13,12 +13,11 @@ use anyhow::{anyhow, bail, Context};
 use libnail::{
     align::{structs::Seed, Nats},
     alphabet::UTF8_TO_DIGITAL_AMINO,
-    structs::Profile,
 };
 
 use crate::{
     args::SearchArgs,
-    io::{Fasta, P7Hmm, ProfileDatabase, SequenceDatabase},
+    io::{Database, Fasta, P7Hmm},
     pipeline::SeedMap,
     util::{CommandExt, PathBufExt},
 };
@@ -173,7 +172,7 @@ pub fn write_mmseqs_profile_database(
 
     for (prf_cnt, mut prf) in profiles.iter().enumerate() {
         if let Some(mre) = mre_target {
-            prf.adjust_mean_relative_entropy(mre);
+            prf.adjust_mean_relative_entropy(mre)?;
         }
         for prf_idx in 1..=prf.length {
             for byte in (0..20)

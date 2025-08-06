@@ -10,9 +10,10 @@ use indexmap::IndexMap;
 use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
     structs::{Profile, Sequence},
-    util::IterPrint,
 };
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+
+use super::{Database, DatabaseIter};
 
 fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
     let header_newline_pos = match bytes.iter().position(|&b| b == b'\n') {
@@ -71,51 +72,6 @@ fn sequence_from_fasta_record_bytes(bytes: &[u8]) -> anyhow::Result<Sequence> {
         utf8_bytes,
     })
 }
-
-dyn_clone::clone_trait_object!(SequenceDatabase);
-pub trait SequenceDatabase: dyn_clone::DynClone + Send + Sync {
-    fn get(&mut self, name: &str) -> Option<Sequence>;
-    fn len(&self) -> usize;
-    fn iter(&self) -> SequenceDatabaseIter;
-}
-
-pub struct SequenceDatabaseIter<'a> {
-    pub(crate) inner: Box<dyn SequenceDatabase>,
-    pub(crate) names_iter: Box<dyn DoubleEndedIterator<Item = &'a str> + 'a>,
-}
-
-impl<'a> SequenceDatabaseIter<'a> {
-    pub fn names(self) -> Vec<&'a str> {
-        self.names_iter.collect()
-    }
-}
-
-impl<'a> Iterator for SequenceDatabaseIter<'a> {
-    type Item = Sequence;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.names_iter.next().and_then(|n| self.inner.get(n))
-    }
-
-    // implementing size_hint to always return the
-    // exact size of the iterator is REQUIRED for
-    // the ExactSizerIterator trait to work; the
-    // default impl of size_hint returns (0, None)
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.inner.len();
-        (size, Some(size))
-    }
-}
-
-// rayon expects the the iterators it
-// uses to implement DoubleEndedIterator
-impl<'a> DoubleEndedIterator for SequenceDatabaseIter<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.names_iter.next_back().and_then(|n| self.inner.get(n))
-    }
-}
-
-impl<'a> ExactSizeIterator for SequenceDatabaseIter<'a> {}
 
 #[derive(Default)]
 pub struct LexicalFastaIndex {
@@ -408,6 +364,7 @@ impl Fasta {
         self.iter().try_for_each(|s| writeln!(out, "{s}"))?;
         Ok(())
     }
+
     pub fn get(&mut self, name: &str) -> Option<Sequence> {
         let offset = self.index.offset_by_name(name)?;
 
@@ -440,7 +397,7 @@ impl Fasta {
     }
 }
 
-impl SequenceDatabase for Fasta {
+impl Database<Sequence> for Fasta {
     fn get(&mut self, name: &str) -> Option<Sequence> {
         self.get(name)
     }
@@ -449,8 +406,8 @@ impl SequenceDatabase for Fasta {
         self.len()
     }
 
-    fn iter(&self) -> SequenceDatabaseIter {
-        SequenceDatabaseIter {
+    fn iter(&self) -> DatabaseIter<Sequence> {
+        DatabaseIter {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.offsets.keys().map(|s| s.as_str())),
         }
