@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Read, Seek},
+    io::{BufWriter, Read, Seek, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
     structs::{Profile, Sequence},
+    util::IterPrint,
 };
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
@@ -158,13 +159,17 @@ impl LexicalFastaIndex {
                 .expect("failed to seek");
 
             let mut offset = 0;
-            'outer: loop {
+            'inner: loop {
                 match file.read(&mut buffer) {
+                    Ok(0) => {
+                        *start += offset;
+                        break 'inner;
+                    }
                     Ok(bytes_read) => {
                         for b in buffer[0..bytes_read].iter() {
                             if *b == b'>' {
                                 *start += offset;
-                                break 'outer;
+                                break 'inner;
                             }
                             offset += 1;
                         }
@@ -173,6 +178,21 @@ impl LexicalFastaIndex {
                 }
             }
         });
+
+        // if we have duplicate starts, then the file was
+        // really small and we had at least one thread
+        // reach EOF before ever finding it's own chunk
+        block_starts.dedup();
+
+        match block_starts.last() {
+            // if the last start points to EOF,
+            // then we don't want it around
+            Some(st) if *st == sz => {
+                block_starts.pop();
+            }
+            Some(_) => {}
+            None => bail!("empty block_starts"),
+        }
 
         let mut block_ends: Vec<u64> = block_starts.iter().skip(1).map(|b| b - 1).collect();
         block_ends.push(sz - 1);
@@ -236,34 +256,35 @@ impl LexicalFastaIndex {
 
         let mut offset = FastaOffset::new(start);
 
-        let process_fn =
-            |mut name: String, offset: FastaOffset, offsets: &mut Vec<(String, FastaOffset)>| {
-                if name.trim().is_empty() {
-                    bail!("failed to parse name from fasta buffer");
+        let process_fn = |mut name: String,
+                          offset: FastaOffset,
+                          offsets: &mut Vec<(String, FastaOffset)>,
+                          done: bool| {
+            if name.trim().is_empty() {
+                bail!("failed to parse name from fasta buffer");
+            }
+
+            name.shrink_to_fit();
+            offsets.push((name, offset));
+
+            match index.try_lock() {
+                Ok(mut guard) => {
+                    guard.offsets.extend(offsets.drain(..));
                 }
-
-                name.shrink_to_fit();
-
-                match index.try_lock() {
-                    Ok(mut guard) => {
-                        guard.offsets.insert(name, offset);
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if offsets.len() == N || done {
+                        index
+                            .lock()
+                            .map_err(|_| anyhow!("mutex poisoned"))?
+                            .offsets
+                            .extend(offsets.drain(..));
                     }
-                    Err(std::sync::TryLockError::WouldBlock) => {
-                        if offsets.len() < N {
-                            offsets.push((name, offset));
-                        } else {
-                            index
-                                .lock()
-                                .map_err(|_| anyhow!("mutex poisoned"))?
-                                .offsets
-                                .extend(offsets.drain(..));
-                        }
-                    }
-                    Err(_) => bail!("mutex poisoned"),
                 }
+                Err(_) => bail!("mutex poisoned"),
+            }
 
-                Ok(())
-            };
+            Ok(())
+        };
 
         while let Ok(bytes_read) = data.read(&mut buf) {
             // TODO (IMPORTANT): truncate to final newline & seek back
@@ -274,7 +295,7 @@ impl LexicalFastaIndex {
                     - (offset.start + offset.name_len_bytes + offset.details_len_bytes);
                 offset.seq_len = offset.seq_len_bytes - seq_line_cnt - 1;
 
-                process_fn(name, offset, &mut offsets)?;
+                process_fn(name, offset, &mut offsets, true)?;
                 break;
             }
 
@@ -314,7 +335,7 @@ impl LexicalFastaIndex {
                         }
                     }
                     ParseState::Process => {
-                        process_fn(name, offset, &mut offsets)?;
+                        process_fn(name, offset, &mut offsets, false)?;
                         // -1 since we found the '>' on the previous byte
                         offset = FastaOffset::new(current_offset - 1);
                         name = String::new();
@@ -382,6 +403,11 @@ impl Fasta {
         self.index.len()
     }
 
+    pub fn write<W: Write>(&self, out: W) -> anyhow::Result<()> {
+        let mut out = BufWriter::new(out);
+        self.iter().try_for_each(|s| writeln!(out, "{s}"))?;
+        Ok(())
+    }
     pub fn get(&mut self, name: &str) -> Option<Sequence> {
         let offset = self.index.offset_by_name(name)?;
 

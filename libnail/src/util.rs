@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering::{Equal, Greater, Less},
     fmt::{Debug, Display},
+    io::{BufWriter, Write},
     ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign},
 };
 
@@ -17,7 +18,7 @@ pub trait MinAssign {
 impl<T: PartialOrd + Copy> MaxAssign for T {
     fn max_assign(&mut self, other: Self) {
         if *self < other {
-            *self = other.clone();
+            *self = other;
         }
     }
 }
@@ -25,7 +26,7 @@ impl<T: PartialOrd + Copy> MaxAssign for T {
 impl<T: PartialOrd + Copy> MinAssign for T {
     fn min_assign(&mut self, other: Self) {
         if *self > other {
-            *self = other.clone();
+            *self = other;
         }
     }
 }
@@ -51,50 +52,51 @@ impl<T: Display + Debug> Print for T {
     }
 }
 
-pub trait CollectionPrint {
-    fn print(&self);
-    fn print_debug(&self);
-}
-
-impl<T: Display + Debug> CollectionPrint for Vec<T> {
-    fn print(&self) {
-        self.iter()
-            .enumerate()
-            .for_each(|(i, e)| println!("{i}: {e}"));
-    }
-
-    fn print_debug(&self) {
-        self.iter()
-            .enumerate()
-            .for_each(|(i, e)| println!("{i}: {e:?}"));
-    }
-}
-
 pub trait IterPrint {
-    fn print_each(self);
+    fn print_each(&self);
+    fn write_display<W: Write>(&self, out: W) -> anyhow::Result<()>;
 }
 
 pub trait IterDebug {
-    fn debug_each(self);
+    fn debug_each(&self);
+    fn write_debug<W: Write>(&self, out: W) -> anyhow::Result<()>;
 }
 
 impl<I, T> IterPrint for I
 where
-    I: Iterator<Item = T>,
+    I: IntoIterator<Item = T> + ?Sized,
+    for<'a> &'a I: IntoIterator<Item = &'a T>,
     T: Display,
 {
-    fn print_each(self) {
-        self.for_each(|i| println!("{i}"));
+    fn print_each(&self) {
+        self.into_iter().for_each(|i| println!("{i}"));
+    }
+
+    fn write_display<W: Write>(&self, out: W) -> anyhow::Result<()> {
+        let mut out = BufWriter::new(out);
+        for (i, item) in self.into_iter().enumerate() {
+            writeln!(out, "{i}: {item}")?;
+        }
+        Ok(())
     }
 }
 
 impl<I, T> IterDebug for I
 where
-    I: Iterator<Item = T>,
+    I: IntoIterator<Item = T> + ?Sized,
+    for<'a> &'a I: IntoIterator<Item = &'a T>,
     T: Debug,
 {
-    fn debug_each(self) {
-        self.for_each(|i| println!("{i:?}"));
+    fn debug_each(&self) {
+        self.into_iter().for_each(|i| println!("{i:?}"));
+    }
+
+    fn write_debug<W: Write>(&self, out: W) -> anyhow::Result<()> {
+        let mut out = BufWriter::new(out);
+        for (i, item) in self.into_iter().enumerate() {
+            writeln!(out, "{i}: {item:?}")?;
+        }
+        Ok(())
     }
 }
 
@@ -282,19 +284,6 @@ pub fn relative_entropy(a: &[f32], b: &[f32]) -> f32 {
         .zip(b)
         .map(|(p_a, p_b)| p_a * (p_a / p_b).log2())
         .sum()
-}
-
-pub fn f32_vec_argmax(vec: &Vec<f32>) -> usize {
-    let mut max: f32 = vec[0];
-    let mut argmax: usize = 0;
-
-    for i in 1..vec.len() {
-        if vec[i] > max {
-            max = vec[i];
-            argmax = i;
-        }
-    }
-    argmax
 }
 
 lazy_static! {

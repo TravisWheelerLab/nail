@@ -269,7 +269,7 @@ pub fn compute_forward_cells<M>(
         mx[d_src_cell] + prf[CoreToCore(d_src, d_dest)]
     );
 
-    mx[(E, seq_idx)] = log_sum!(mx[m_cell], mx[d_cell], mx[(E, seq_idx)])
+    mx[(E, seq_idx)] = log_sum!(mx[m_cell], mx[d_cell], mx[(E, seq_idx)]);
 }
 
 pub fn cloud_search_fwd<M>(

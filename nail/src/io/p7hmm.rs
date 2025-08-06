@@ -327,8 +327,12 @@ impl LexicalP7HmmIndex {
             file.seek(SeekFrom::Start(*start)).expect("failed to seek");
 
             let mut offset = 0u64;
-            'outer: loop {
+            'inner: loop {
                 match file.read(&mut buffer) {
+                    Ok(0) => {
+                        *start += offset;
+                        break 'inner;
+                    }
                     Ok(bytes_read) => {
                         for (pos, b) in buffer[0..bytes_read].iter().enumerate() {
                             // if we see an H, grab 8 characters
@@ -338,7 +342,7 @@ impl LexicalP7HmmIndex {
                                     buffer.as_slice().word_from(pos)?.parse::<P7HeaderFlag>()
                                 {
                                     *start += offset;
-                                    break 'outer;
+                                    break 'inner;
                                 }
                             }
                             offset += 1;
@@ -347,6 +351,21 @@ impl LexicalP7HmmIndex {
                     _ => bail!("failed to read from p7HMM buffer"),
                 }
             }
+        }
+
+        // if we have duplicate starts, then the file was
+        // really small and we had at least one thread
+        // reach EOF before ever finding it's own chunk
+        block_starts.dedup();
+
+        match block_starts.last() {
+            // if the last start points to EOF,
+            // then we don't want it around
+            Some(st) if *st == sz => {
+                block_starts.pop();
+            }
+            Some(_) => {}
+            None => bail!("empty block_starts"),
         }
 
         let mut block_ends: Vec<u64> = block_starts.iter().skip(1).map(|b| b - 1).collect();
