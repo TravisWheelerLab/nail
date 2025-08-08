@@ -10,7 +10,7 @@ impl Fasta {
     pub fn par_iter(&self) -> DatabaseParIter<Sequence> {
         DatabaseParIter {
             inner: Box::new(self.clone()),
-            names: self.index.offsets.keys().map(|s| s.as_str()).collect(),
+            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
         }
     }
 }

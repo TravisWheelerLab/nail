@@ -7,6 +7,7 @@ mod stats;
 mod util;
 
 use args::{NailCli, NailSubCommands};
+use io::Fasta;
 use search::search;
 use util::{check_mmseqs_installed, set_threads};
 
@@ -24,7 +25,15 @@ fn main() -> anyhow::Result<()> {
             set_threads(args.num_threads)?;
             search(args)?;
         }
-        NailSubCommands::Dev => {}
+        NailSubCommands::Dev => {
+            const N: usize = 8;
+            const F: &str = "./target.fa";
+            const H: &str = "./query.hmm";
+
+            let now = std::time::Instant::now();
+            let a = Fasta::from_path(F)?;
+            println!("{:?}", now.elapsed());
+        }
     }
 
     Ok(())
