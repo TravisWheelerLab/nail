@@ -2,6 +2,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 
 use anyhow::{anyhow, bail};
 
+#[allow(dead_code)]
 pub(crate) trait ByteBufferExt {
     /// Get the index of the first non-whitespace byte
     fn first_non_whitespace_pos(&self) -> Option<usize>;
@@ -11,6 +12,8 @@ pub(crate) trait ByteBufferExt {
     fn first_word(&self) -> anyhow::Result<&str>;
     /// Grab the string between start and end
     fn str(&self, start: usize, end: usize) -> anyhow::Result<&str>;
+    /// Interpret the buffer as &str
+    fn as_str(&self) -> anyhow::Result<&str>;
 }
 
 impl ByteBufferExt for &[u8] {
@@ -37,6 +40,10 @@ impl ByteBufferExt for &[u8] {
 
     fn str(&self, start: usize, end: usize) -> anyhow::Result<&str> {
         Ok(std::str::from_utf8(&self[start..=end])?)
+    }
+
+    fn as_str(&self) -> anyhow::Result<&str> {
+        Ok(std::str::from_utf8(&self[0..self.len()])?)
     }
 }
 

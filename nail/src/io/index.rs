@@ -19,15 +19,46 @@ pub enum Delimiter {
     Terminating,
 }
 
+#[derive(Debug)]
+pub enum DelimiterLocation {
+    Present(u64),
+    Ambiguous(u64),
+    Absent,
+}
+
+const fn tail(bytes: &'static [u8]) -> &'static [u8] {
+    // ASSUMPTION:
+    //   bytes.len() >= 1
+    unsafe { core::slice::from_raw_parts(bytes.as_ptr().add(1), bytes.len() - 1) }
+}
+
 pub trait RecordParser: Send + Sync + 'static {
     const DELIM: &'static [u8];
+    const DELIM_HEAD: u8 = Self::DELIM[0];
+    const DELIM_TAIL: &'static [u8] = tail(Self::DELIM);
+    const DELIM_LEN: usize = Self::DELIM.len();
+    const DELIM_TAIL_LEN: usize = Self::DELIM_TAIL.len();
     const DELIM_TYPE: Delimiter;
     type Offset;
     type Record;
 
-    fn new() -> Self;
+    fn new(start_pos: u64) -> Self;
     fn offset(&mut self, line: &[u8], start: u64) -> Option<(String, Self::Offset)>;
     fn parse(buf: &[u8]) -> anyhow::Result<Self::Record>;
+
+    fn delimiter_location(buf: &[u8]) -> DelimiterLocation {
+        match buf.windows(Self::DELIM_LEN).position(|w| w == Self::DELIM) {
+            Some(pos) => DelimiterLocation::Present(pos as u64),
+            None => {
+                let n_skip = buf.len().saturating_sub(Self::DELIM_TAIL_LEN);
+                let tail_len = buf.len() - n_skip;
+                match buf.iter().skip(n_skip).position(|b| *b == Self::DELIM_HEAD) {
+                    Some(pos) => DelimiterLocation::Ambiguous((tail_len - pos - 1) as u64),
+                    None => DelimiterLocation::Absent,
+                }
+            }
+        }
+    }
 }
 
 pub trait IndexInner<O>: Send + Sync + 'static {
@@ -105,67 +136,76 @@ where
         path: impl AsRef<Path>,
     ) -> anyhow::Result<Self> {
         let mut file = File::open(path.as_ref())?;
+
         let sz = file.metadata().unwrap().len();
         let chunk_sz = sz / N as u64;
+        let mut delim_positions: Vec<u64> = vec![];
 
         // 2 << (B - 1) == 2^B
         let mut buf = vec![0; 2 << (B - 1)];
-        let mut block_starts: Vec<u64> = vec![];
 
-        let (delim_first, delim_rem) = P::DELIM.split_first().ok_or(anyhow!("empty delimiter"))?;
-
-        let delim_len = delim_rem.len();
-
-        use ReadState::*;
-        use SeekFrom::{Current, Start};
-        'outer: for mut start in (0..N).map(|i| i as u64 * chunk_sz) {
-            file.seek(Start(start))?;
+        'outer: for mut start in (1..N).map(|i| i as u64 * chunk_sz) {
+            file.seek(SeekFrom::Start(start))?;
 
             'inner: loop {
                 match file.read_with_state(&mut buf)? {
-                    Reading(n) => {
-                        for (pos, b) in buf[..n].iter().enumerate() {
-                            if b == delim_first {
-                                let st = pos + 1;
-                                let buf_len = buf[st..].len();
-
-                                if buf_len < delim_len {
-                                    file.seek(Current(-((buf_len + 1) as i64)))?;
-                                    continue;
-                                };
-
-                                if &buf[st..st + delim_len] == delim_rem {
-                                    block_starts.push(start + pos as u64);
-                                    break 'inner;
-                                }
+                    ReadState::Reading(bytes_read) => {
+                        match P::delimiter_location(&buf[..bytes_read]) {
+                            DelimiterLocation::Present(pos) => {
+                                delim_positions.push(start + pos);
+                                break 'inner;
                             }
-                        }
-                        start += n as u64;
-                    }
-                    Final(n) => {
-                        for (pos, b) in buf[..n].iter().enumerate() {
-                            if b == delim_first {
-                                let st = pos + 1;
-                                let buf_len = buf[st..].len();
-
-                                if buf_len < delim_len {
-                                    break 'outer;
-                                };
-
-                                if &buf[st..st + delim_len] == delim_rem {
-                                    block_starts.push(start + st as u64);
-                                    break 'inner;
-                                }
+                            DelimiterLocation::Ambiguous(n_back) => {
+                                file.seek_relative(-(n_back as i64))?;
+                                start += bytes_read as u64 - n_back;
+                                continue;
+                            }
+                            DelimiterLocation::Absent => {
+                                start += bytes_read as u64;
                             }
                         }
                     }
-                    Done => break 'outer,
+                    ReadState::Final(bytes_read) => {
+                        if let DelimiterLocation::Present(pos) =
+                            P::delimiter_location(&buf[..bytes_read])
+                        {
+                            delim_positions.push(start + pos);
+                        }
+
+                        break 'inner;
+                    }
+                    ReadState::Done => break 'outer,
                 }
             }
         }
 
-        let mut block_ends: Vec<u64> = block_starts.iter().skip(1).map(|b| b - 1).collect();
-        block_ends.push(sz - 1);
+        let (block_starts, block_ends) = match P::DELIM_TYPE {
+            Delimiter::Initiating => {
+                let mut block_starts = delim_positions;
+                block_starts.dedup();
+                let mut block_ends: Vec<u64> = block_starts.iter().map(|b| b - 1).collect();
+
+                block_starts.insert(0, 0);
+                block_ends.push(sz - 1);
+
+                (block_starts, block_ends)
+            }
+            Delimiter::Terminating => {
+                let mut block_ends = delim_positions
+                    .into_iter()
+                    .map(|p| p + P::DELIM_LEN as u64)
+                    .collect::<Vec<u64>>();
+
+                block_ends.retain(|e| *e < sz);
+                block_ends.push(sz - 1);
+                block_ends.dedup();
+
+                let mut block_starts = vec![0];
+                block_starts.extend(block_ends.iter().take(block_ends.len() - 1).map(|b| b + 1));
+
+                (block_starts, block_ends)
+            }
+        };
 
         let mut files_and_starts: Vec<_> = block_starts
             .into_iter()
@@ -218,7 +258,7 @@ where
 
         use ReadState::*;
         let mut pos = start.unwrap_or(0);
-        let mut parser = P::new();
+        let mut parser = P::new(pos);
         let mut on_first_record = true;
         let mut buf = vec![0; 2 << (B - 1)];
         let mut names_and_offsets: Vec<(String, P::Offset)> = Vec::with_capacity(N);
@@ -271,5 +311,134 @@ where
         process_fn(&mut names_and_offsets, true)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! dummy_parser {
+        ($name:ident, $delim:expr) => {
+            #[derive(Debug)]
+            struct $name;
+
+            impl RecordParser for $name {
+                const DELIM: &'static [u8] = $delim;
+                const DELIM_TYPE: Delimiter = Delimiter::Initiating;
+                type Offset = ();
+                type Record = ();
+
+                fn new() -> Self {
+                    $name
+                }
+                fn offset(&mut self, _: &[u8], _: u64) -> Option<(String, Self::Offset)> {
+                    None
+                }
+                fn parse(_: &[u8]) -> anyhow::Result<Self::Record> {
+                    Ok(())
+                }
+            }
+        };
+    }
+
+    fn present_at<P: RecordParser>(buf: &[u8], at: u64) {
+        match P::delimiter_location(buf) {
+            DelimiterLocation::Present(pos) => assert_eq!(pos, at),
+            x => panic!("expected Present({at}), got {x:?}"),
+        }
+    }
+    fn ambiguous_at<P: RecordParser>(buf: &[u8], at: u64) {
+        match P::delimiter_location(buf) {
+            DelimiterLocation::Ambiguous(pos) => assert_eq!(pos, at),
+            x => panic!("expected Ambiguous({at}), got {x:?}"),
+        }
+    }
+    fn absent<P: RecordParser>(buf: &[u8]) {
+        match P::delimiter_location(buf) {
+            DelimiterLocation::Absent => {}
+            x => panic!("expected Absent, got {x:?}"),
+        }
+    }
+
+    // ---- 1-byte delim: ">" ----
+    dummy_parser!(One, b">");
+
+    #[test]
+    fn one_present() {
+        present_at::<One>(b">start", 0);
+        present_at::<One>(b"xx>yy", 2);
+        present_at::<One>(b"aaa>bbb>ccc", 3);
+    }
+
+    #[test]
+    fn one_absent_and_no_ambiguous() {
+        absent::<One>(b"");
+        absent::<One>(b"nope");
+        present_at::<One>(b"end>", 3);
+    }
+
+    // ---- 2-byte delim: "//" ----
+    dummy_parser!(Two, b"//");
+
+    #[test]
+    fn two_present() {
+        present_at::<Two>(b"//heh", 0);
+        present_at::<Two>(b"xx//yy", 2);
+        present_at::<Two>(b"/not yet//now", 8);
+        present_at::<Two>(b"its/at/the/end//", 14);
+    }
+
+    #[test]
+    fn two_ambiguous_tail() {
+        ambiguous_at::<Two>(b"/", 0);
+        ambiguous_at::<Two>(b"abc/", 0);
+    }
+
+    #[test]
+    fn two_absent() {
+        absent::<Two>(b"");
+        absent::<Two>(b"a/b/c");
+        absent::<Two>(b"abc/xyz");
+    }
+
+    #[test]
+    fn two_present_beats_ambiguous() {
+        present_at::<Two>(b"//", 0);
+        present_at::<Two>(b"//nope/", 0);
+    }
+
+    // ---- 5-byte delim: "ABCDE" ----
+    dummy_parser!(Five, b"ABCDE");
+
+    #[test]
+    fn five_present() {
+        present_at::<Five>(b"ABCDE", 0);
+        present_at::<Five>(b"xxABCDEyy", 2);
+        present_at::<Five>(b"AABCDE", 1);
+    }
+
+    #[test]
+    fn five_ambiguous_tail() {
+        ambiguous_at::<Five>(b"A", 0);
+        ambiguous_at::<Five>(b"xxA", 0);
+        //                        3210
+        ambiguous_at::<Five>(b"xyzABCD", 3);
+        //                          3210
+        ambiguous_at::<Five>(b"AAA AAAAA", 3);
+    }
+
+    #[test]
+    fn five_absent() {
+        absent::<Five>(b"");
+        absent::<Five>(b"xyz");
+        absent::<Five>(b"xxxABXYZ");
+        absent::<Five>(b"xxxABCDX");
+    }
+
+    #[test]
+    fn five_present_beats_ambiguous() {
+        present_at::<Five>(b"ABCDExxx", 0);
+        present_at::<Five>(b"xxABCDE", 2);
     }
 }

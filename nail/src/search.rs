@@ -30,7 +30,7 @@ impl Queries {
     }
 }
 
-fn read_queries(path: impl AsRef<Path>, num_threads: usize) -> anyhow::Result<Queries> {
+fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
     let query_format = guess_query_format_from_query_file(&path)?;
 
     match query_format {
@@ -39,8 +39,7 @@ fn read_queries(path: impl AsRef<Path>, num_threads: usize) -> anyhow::Result<Qu
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries =
-                P7Hmm::from_path_par(&path, num_threads).context("failed to openy query hmm")?;
+            let queries = P7Hmm::from_path(&path).context("failed to open query hmm")?;
             Ok(Queries::Profile(queries))
         }
         _ => {
@@ -81,7 +80,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let now = Instant::now();
     println!("indexing query database...");
-    let queries = read_queries(&args.query_path, args.num_threads)?;
+    let queries = read_queries(&args.query_path)?;
     println!(
         "\x1b[Aindexing query database...  done ({:.2}s)",
         now.elapsed().as_secs_f64()

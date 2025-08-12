@@ -8,21 +8,13 @@ use std::time::Instant;
 use anyhow::Context;
 use thiserror::Error;
 
+#[allow(dead_code)]
 pub fn burn(dur: std::time::Duration) {
     let start = Instant::now();
     while Instant::now() - start < dur {
         std::hint::spin_loop();
     }
 }
-
-pub trait Check: Sized {
-    fn check(self, f: impl FnOnce(&Self)) -> Self {
-        f(&self);
-        self
-    }
-}
-
-impl<T> Check for T {}
 
 #[derive(Default, Debug, Clone)]
 pub enum FileFormat {

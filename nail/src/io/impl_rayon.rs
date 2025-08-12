@@ -29,7 +29,7 @@ impl P7Hmm {
     pub fn par_iter(&self) -> DatabaseParIter<Profile> {
         DatabaseParIter {
             inner: Box::new(self.clone()),
-            names: self.index.offsets.keys().map(|s| s.as_str()).collect(),
+            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
         }
     }
 }

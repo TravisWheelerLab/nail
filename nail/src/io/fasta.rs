@@ -48,7 +48,7 @@ impl RecordParser for FastaParser {
     type Offset = FastaOffset;
     type Record = Sequence;
 
-    fn new() -> Self {
+    fn new(_: u64) -> Self {
         Self {
             state: FastaParserState::Delim,
             name: String::new(),
@@ -228,5 +228,62 @@ impl Database<Sequence> for Fasta {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::read_to_string;
+
+    use super::*;
+
+    #[test]
+    fn test_fasta_index_starts() -> anyhow::Result<()> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let fasta_str = read_to_string(&path)?;
+        let starts: Vec<usize> = fasta_str
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| (*b == b'>').then_some(i))
+            .collect();
+
+        let fasta_bytes = fasta_str.as_bytes();
+        let names: Vec<&str> = starts
+            .iter()
+            .filter_map(|p| fasta_bytes.word_from(p + 1).ok())
+            .collect();
+
+        let index = FastaIndex::from_path::<15, 1>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        let index = FastaIndex::from_path::<15, 2>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        let index = FastaIndex::from_path::<15, 3>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        let index = FastaIndex::from_path::<15, 4>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        let index = FastaIndex::from_path::<15, 20>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        Ok(())
     }
 }
