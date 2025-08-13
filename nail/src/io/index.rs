@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail, Context};
 use indexmap::IndexMap;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::io::{ReadSeekExt, SeekableTake};
+use crate::io::{ByteBufferExt, ReadSeekExt, SeekableTake};
 
 use super::ReadState;
 
@@ -193,7 +193,15 @@ where
             Delimiter::Terminating => {
                 let mut block_ends = delim_positions
                     .into_iter()
-                    .map(|p| p + P::DELIM_LEN as u64)
+                    .map(|p| {
+                        if P::DELIM != b"\n" {
+                            // if we have any delimeter other than newline,
+                            // we jump past the newline after the delimiter
+                            p + P::DELIM_LEN as u64
+                        } else {
+                            p
+                        }
+                    })
                     .collect::<Vec<u64>>();
 
                 block_ends.retain(|e| *e < sz);
@@ -329,7 +337,7 @@ mod tests {
                 type Offset = ();
                 type Record = ();
 
-                fn new() -> Self {
+                fn new(_: u64) -> Self {
                     $name
                 }
                 fn offset(&mut self, _: &[u8], _: u64) -> Option<(String, Self::Offset)> {

@@ -18,8 +18,6 @@ use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use super::{Database, DatabaseIter, Delimiter, Index, RecordParser};
 
-pub type P7HmmIndex = Index<IndexMap<String, P7HmmOffset>, P7HmmParser>;
-
 #[derive(Clone, Default)]
 pub struct P7HmmOffset {
     // points to the 'H' byte in the 'HMMER3/f ...' line
@@ -64,13 +62,14 @@ impl RecordParser for P7HmmParser {
     fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Self::Offset)> {
         use P7HmmParserState::*;
 
+        self.offset.n_bytes += line.len();
+
         let first_word = match line.first_word() {
             Ok(w) => w,
             Err(_) => return None,
         };
 
         let mut ret = None;
-        self.offset.n_bytes += line.len();
         match (&self.state, first_word.parse()) {
             (Name, Ok(P7HeaderFlag::Name)) => {
                 let name_start = line[P7HeaderFlag::Name.as_ref().len()..]
@@ -331,6 +330,7 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
         })
 }
 
+pub type P7HmmIndex = Index<IndexMap<String, P7HmmOffset>, P7HmmParser>;
 pub struct P7Hmm {
     path: PathBuf,
     file: File,

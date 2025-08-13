@@ -16,8 +16,6 @@ use crate::io::ByteBufferExt;
 
 use super::{Database, DatabaseIter, Delimiter, Index, RecordParser};
 
-pub type FastaIndex = Index<IndexMap<String, FastaOffset>, FastaParser>;
-
 #[derive(Default, Clone)]
 pub struct FastaOffset {
     // this points to the '>' byte that starts the fasta record
@@ -142,6 +140,7 @@ impl RecordParser for FastaParser {
     }
 }
 
+pub type FastaIndex = Index<IndexMap<String, FastaOffset>, FastaParser>;
 pub struct Fasta {
     path: PathBuf,
     file: File,
