@@ -1,19 +1,17 @@
 use std::{
     collections::HashMap,
     io::{BufWriter, Read, Seek, SeekFrom, Write},
-    sync::Arc,
 };
 
 use libnail::{align::structs::Seed, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::{ByteBufferExt, Database, Fasta, P7Hmm, ReadSeekExt, ReadState},
+    io::{ByteBufferExt, Fasta, P7Hmm, ReadSeekExt, ReadState, SeedList, Seeds},
     mmseqs::{
-        run_mmseqs_search, seeds_from_mmseqs_align_tsv, write_mmseqs_profile_database,
-        write_mmseqs_sequence_database, MmseqsDbPaths, MmseqsScoreModel,
+        run_mmseqs_search, write_mmseqs_profile_database, write_mmseqs_sequence_database,
+        MmseqsDbPaths, MmseqsScoreModel,
     },
-    search::Queries,
 };
 
 use anyhow::anyhow;
@@ -51,34 +49,34 @@ pub fn seed_profile_to_sequence(
     profiles: &P7Hmm,
     seqs: &Fasta,
     args: &SearchArgs,
-) -> anyhow::Result<SeedMap> {
+) -> anyhow::Result<Seeds> {
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(seqs, &paths.target_db)?;
     write_mmseqs_profile_database(profiles, &paths.query_db, None)?;
 
     run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
-    let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
     if !args.pipeline_args.double_seed {
-        return Ok(seed_map_a);
+        return Seeds::from_path(&paths.align_tsv);
     }
 
-    write_mmseqs_profile_database(&profiles, &paths.query_db, Some(1.0))?;
+    todo!()
+    // write_mmseqs_profile_database(&profiles, &paths.query_db, Some(1.0))?;
 
-    run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
-    let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+    // run_mmseqs_search(&paths, args, MmseqsScoreModel::Profile)?;
+    // let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
-    let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, profiles.names_iter());
+    // let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, profiles.names_iter());
 
-    Ok(seed_map_merged)
+    // Ok(seed_map_merged)
 }
 
 pub fn seed_sequence_to_sequence(
     queries: &Fasta,
     targets: &Fasta,
     args: &SearchArgs,
-) -> anyhow::Result<SeedMap> {
+) -> anyhow::Result<Seeds> {
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
@@ -86,25 +84,25 @@ pub fn seed_sequence_to_sequence(
 
     run_mmseqs_search(&paths, args, MmseqsScoreModel::Blosum62)?;
 
-    let seed_map_a = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
-
     if !args.pipeline_args.double_seed {
-        return Ok(seed_map_a);
+        return Seeds::from_path(&paths.align_tsv);
     }
 
-    run_mmseqs_search(&paths, args, MmseqsScoreModel::Blosum80)?;
+    todo!()
 
-    let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
+    // run_mmseqs_search(&paths, args, MmseqsScoreModel::Blosum80)?;
 
-    let names = queries.names_iter();
-    let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, names);
+    // let seed_map_b = seeds_from_mmseqs_align_tsv(&paths.align_tsv)?;
 
-    Ok(seed_map_merged)
+    // let names = queries.names_iter();
+    // let seed_map_merged = merge_seed_maps(seed_map_a, seed_map_b, names);
+
+    // Ok(seed_map_merged)
 }
 
 dyn_clone::clone_trait_object!(SeedStage);
 pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
-    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>>;
+    fn run(&mut self, profile: &Profile) -> Option<SeedList>;
 }
 
 pub type SeedMap = HashMap<String, HashMap<String, Seed>>;
@@ -213,67 +211,19 @@ pub fn read_seed_map<R: Read + Seek>(data: &mut R) -> anyhow::Result<SeedMap> {
     Ok(seeds)
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DefaultSeedStage {
-    seeds: Arc<SeedMap>,
+    seeds: Seeds,
 }
 
 impl DefaultSeedStage {
-    pub fn new(seeds: SeedMap) -> Self {
-        DefaultSeedStage {
-            seeds: Arc::new(seeds),
-        }
+    pub fn new(seeds: Seeds) -> Self {
+        DefaultSeedStage { seeds }
     }
 }
 
 impl SeedStage for DefaultSeedStage {
-    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>> {
-        self.seeds.get(&profile.name)
-    }
-}
-
-#[derive(Clone)]
-pub struct MaxSeedStage {
-    seeds: SeedMap,
-}
-
-impl MaxSeedStage {
-    pub fn new(queries: &Queries, targets: &Fasta) -> Self {
-        let queries_and_lengths: Vec<(String, usize)> = match queries {
-            Queries::Sequence(fasta) => fasta.iter().map(|s| (s.name.clone(), s.length)).collect(),
-            Queries::Profile(p7hmm) => p7hmm.iter().map(|p| (p.name.clone(), p.length)).collect(),
-        };
-
-        let seeds: SeedMap = queries_and_lengths
-            .into_iter()
-            .map(|(q, l)| {
-                (
-                    q.clone(),
-                    targets
-                        .iter()
-                        .map(|t| {
-                            (
-                                t.name.clone(),
-                                Seed {
-                                    seq_start: 1,
-                                    seq_end: t.length,
-                                    prf_start: 1,
-                                    prf_end: l,
-                                    score: 0.0,
-                                },
-                            )
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-
-        Self { seeds }
-    }
-}
-
-impl SeedStage for MaxSeedStage {
-    fn run(&mut self, profile: &Profile) -> Option<&HashMap<String, Seed>> {
+    fn run(&mut self, profile: &Profile) -> Option<SeedList> {
         self.seeds.get(&profile.name)
     }
 }

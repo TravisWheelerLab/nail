@@ -4,12 +4,11 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::{Fasta, P7Hmm};
+use crate::io::{Fasta, P7Hmm, Seeds};
 use crate::pipeline::{
-    read_seed_map, run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence,
-    seed_profile_to_sequence, seed_sequence_to_sequence, write_seed_map, DefaultAlignStage,
-    DefaultCloudSearchStage, DefaultSeedStage, FullDpCloudSearchStage, MaxSeedStage, OutputStage,
-    Pipeline, SeedStage,
+    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
+    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
+    FullDpCloudSearchStage, OutputStage, Pipeline, SeedStage,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -105,7 +104,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         Some(ref path) => {
             let now = Instant::now();
             println!("reading seeds...");
-            let seeds = read_seed_map(&mut std::fs::File::open(path)?)?;
+            let seeds = Seeds::from_path(path);
             println!(
                 "\x1b[Areading seeds...            done ({:.2}s)",
                 now.elapsed().as_secs_f64()
@@ -118,11 +117,9 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
             println!("running mmseqs...");
             let seeds = match queries {
                 Queries::Sequence(ref queries) => {
-                    seed_sequence_to_sequence(queries, &targets, &args)?
+                    seed_sequence_to_sequence(queries, &targets, &args)
                 }
-                Queries::Profile(ref queries) => {
-                    seed_profile_to_sequence(queries, &targets, &args)?
-                }
+                Queries::Profile(ref queries) => seed_profile_to_sequence(queries, &targets, &args),
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(
@@ -132,28 +129,24 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
             seeds
         }
-    };
+    }?;
 
     if let Some(ref path) = args.io_args.seeds_output_path {
-        // TODO: don't open with allow_overwrite = true
-        //       after I've updated the open() API
-        let now = Instant::now();
-        println!("writing seeds...");
-        write_seed_map(&seeds, &mut path.open(true)?)?;
-        println!(
-            "\x1b[Awriting seeds...            done ({:.2}s)",
-            now.elapsed().as_secs_f64()
-        );
+        todo!();
+        // let now = Instant::now();
+        // println!("writing seeds...");
+        // write_seed_map(&seeds, &mut path.open(true)?)?;
+        // println!(
+        //     "\x1b[Awriting seeds...            done ({:.2}s)",
+        //     now.elapsed().as_secs_f64()
+        // );
     }
 
     if args.pipeline_args.only_seed {
         return Ok(());
     }
 
-    let seed_stage: Box<dyn SeedStage> = match args.dev_args.max_seed {
-        true => Box::new(MaxSeedStage::new(&queries, &targets)),
-        false => Box::new(DefaultSeedStage::new(seeds)),
-    };
+    let seed_stage: Box<dyn SeedStage> = Box::new(DefaultSeedStage::new(seeds));
 
     let mut pipeline = Pipeline {
         targets,

@@ -57,10 +57,10 @@ impl RecordParser for SeedParser {
             seeds.push((
                 tokens[1].into(),
                 Seed {
-                    seq_start: tokens[2].parse()?,
-                    seq_end: tokens[3].parse()?,
-                    prf_start: tokens[4].parse()?,
-                    prf_end: tokens[5].parse()?,
+                    seq_start: tokens[4].parse()?,
+                    seq_end: tokens[5].parse()?,
+                    prf_start: tokens[2].parse()?,
+                    prf_end: tokens[3].parse()?,
                     score: tokens[6].parse()?,
                 },
             ))

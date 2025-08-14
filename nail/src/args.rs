@@ -194,10 +194,6 @@ pub struct DevArgs {
     /// Compute the full DP matrices
     #[arg(long, action, hide = true)]
     pub full_dp: bool,
-
-    /// Give a full seed for every possible alignment
-    #[arg(long, action, hide = true)]
-    pub max_seed: bool,
 }
 
 #[derive(Args, Debug, Clone, Default)]
