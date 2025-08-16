@@ -478,7 +478,7 @@ impl ProfileBuilder {
     pub fn build(mut self) -> anyhow::Result<Profile> {
         let name = self.name.ok_or(anyhow!("missing: name"))?;
         let length = self.length.ok_or(anyhow!("missing: length"))?;
-        let accession = self.accession.ok_or(anyhow!("missing: accesssion"))?;
+        let accession = self.accession.unwrap_or_default();
         let fwd_tau = self.fwd_tau.ok_or(anyhow!("missing: tau"))?;
         let fwd_lambda = self.fwd_lambda.ok_or(anyhow!("missing: tau"))?;
 
@@ -569,9 +569,6 @@ impl ProfileBuilder {
             .zip(transitions)
             .skip(1)
             .for_each(|(scores, probs)| {
-                // P7HmmTransition::iter().for_each(|t| {
-                //     scores[Transition::from(t) as usize] = probs[t as usize].ln_or_inf()
-                // })
                 scores
                     .iter_mut()
                     .zip(probs)
@@ -686,6 +683,8 @@ impl Profile {
         use Transition::*;
 
         let mut prf = ProfileBuilder::default();
+        prf.length(seq.length);
+        prf.name(seq.name.clone());
 
         // the transition probabilities are uniform
         let mut trans_buf = [0.0; 7];
@@ -696,6 +695,10 @@ impl Profile {
         trans_buf[II as usize] = P_EXTEND;
         trans_buf[DM as usize] = 1.0 - P_EXTEND;
         trans_buf[DD as usize] = P_EXTEND;
+
+        // since we skip match emissions
+        // at 0, throw these on first
+        prf.transition(0, trans_buf);
 
         let mut emit_buf = [0.0f32; 20];
 
@@ -726,8 +729,8 @@ impl Profile {
         let total_entropy = prf
             .mat_emissions
             .iter()
-            .map(|e| e.unwrap())
             .skip(1)
+            .map(|e| e.unwrap())
             .map(|probs| {
                 probs
                     .iter()
