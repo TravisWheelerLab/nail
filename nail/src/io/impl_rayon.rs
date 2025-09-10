@@ -1,4 +1,4 @@
-use super::{Database, DatabaseIter, Fasta, P7Hmm};
+use super::{Database, DatabaseValues, Fasta, P7Hmm};
 use libnail::structs::{Profile, Sequence};
 
 use rayon::iter::{
@@ -95,10 +95,10 @@ pub struct DatabaseProducer<'a, T> {
 impl<'a, T> Producer for DatabaseProducer<'a, T> {
     type Item = T;
 
-    type IntoIter = DatabaseIter<'a, T>;
+    type IntoIter = DatabaseValues<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        DatabaseIter {
+        DatabaseValues {
             inner: self.inner,
             names_iter: Box::new(self.names.iter().copied()),
         }

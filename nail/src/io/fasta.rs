@@ -12,9 +12,9 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use crate::io::ByteBufferExt;
+use crate::io::{ByteBufferExt, DatabaseIter};
 
-use super::{Database, DatabaseIter, Delimiter, Index, RecordParser};
+use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
 #[derive(Default, Clone)]
 pub struct FastaOffset {
@@ -186,7 +186,7 @@ impl Fasta {
 
     pub fn write<W: Write>(&self, out: W) -> anyhow::Result<()> {
         let mut out = BufWriter::new(out);
-        self.iter().try_for_each(|s| writeln!(out, "{s}"))?;
+        self.values().try_for_each(|s| writeln!(out, "{s}"))?;
         Ok(())
     }
 
@@ -224,6 +224,13 @@ impl Database<Sequence> for Fasta {
 
     fn iter(&self) -> DatabaseIter<Sequence> {
         DatabaseIter {
+            inner: Box::new(self.clone()),
+            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
+        }
+    }
+
+    fn values(&self) -> DatabaseValues<Sequence> {
+        DatabaseValues {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
         }

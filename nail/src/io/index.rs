@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail, Context};
 use indexmap::IndexMap;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::io::{ByteBufferExt, ReadSeekExt, SeekableTake};
+use crate::io::{ReadSeekExt, SeekableTake};
 
 use super::ReadState;
 

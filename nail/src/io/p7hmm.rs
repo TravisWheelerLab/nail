@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::io::util::ByteBufferExt;
+use crate::io::{util::ByteBufferExt, DatabaseIter};
 
 use libnail::structs::{
     profile::{ProfileBuilder, Transition},
@@ -16,7 +16,7 @@ use anyhow::{bail, Context};
 use indexmap::IndexMap;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
-use super::{Database, DatabaseIter, Delimiter, Index, RecordParser};
+use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
 #[derive(Clone, Default)]
 pub struct P7HmmOffset {
@@ -408,6 +408,13 @@ impl Database<Profile> for P7Hmm {
 
     fn iter(&self) -> DatabaseIter<Profile> {
         DatabaseIter {
+            inner: Box::new(self.clone()),
+            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
+        }
+    }
+
+    fn values(&self) -> DatabaseValues<Profile> {
+        DatabaseValues {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
         }

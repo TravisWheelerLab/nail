@@ -5,8 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use super::{Database, DatabaseIter, Delimiter, Index, RecordParser};
-use crate::io::{ByteBufferExt, IndexInner};
+use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
+use crate::io::{ByteBufferExt, DatabaseIter, IndexInner};
 
 use anyhow::bail;
 use indexmap::IndexMap;
@@ -191,6 +191,13 @@ impl Database<SeedList> for Seeds {
 
     fn iter(&self) -> DatabaseIter<SeedList> {
         DatabaseIter {
+            inner: Box::new(self.clone()),
+            names_iter: Box::new(self.index.inner.index.keys().map(|s| s.as_str())),
+        }
+    }
+
+    fn values(&self) -> DatabaseValues<SeedList> {
+        DatabaseValues {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.index.keys().map(|s| s.as_str())),
         }
