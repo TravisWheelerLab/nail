@@ -104,6 +104,9 @@ impl Pipeline {
                         None => return None,
                     };
 
+                    // configuring for the target length adjusts special state transitions
+                    profile.configure_for_target_length(target.length);
+
                     let cloud_result = self.cloud_search.run(profile, &target, seed);
 
                     let align_result = match cloud_result {

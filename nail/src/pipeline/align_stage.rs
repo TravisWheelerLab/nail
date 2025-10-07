@@ -134,9 +134,6 @@ impl AlignStage for DefaultAlignStage {
     ) -> StageResult<Alignment, AlignStageStats> {
         let mut stats = AlignStageStatsBuilder::default();
 
-        // configuring for the target length adjusts special state transitions
-        profile.configure_for_target_length(target.length);
-
         let now = Instant::now();
         self.forward_matrix
             .reuse(target.length, profile.length, bounds);
