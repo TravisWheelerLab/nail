@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
-use std::fmt::Formatter;
 use std::fmt::{self, Debug};
+use std::fmt::{Display, Formatter};
 use std::ops::Index;
 
 use super::Sequence;
@@ -374,6 +374,54 @@ pub struct Profile {
     pub alphabet: Alphabet,
     pub fwd_tau: f32,
     pub fwd_lambda: f32,
+}
+
+impl Display for Profile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(f, "NAME  {}", self.name)?;
+        writeln!(f, "LENG  {}", self.length)?;
+        writeln!(f, "ALPH  {}", self.alphabet)?;
+        writeln!(f, "TAU   {:.6}", self.fwd_tau)?;
+        writeln!(f, "LAMB  {:.6}", self.fwd_lambda)?;
+
+        let pw = self.length.to_string().len();
+
+        write!(f, "{:W$}", "", W = pw + 2)?;
+        self.alphabet
+            .canonical_iter()
+            .try_for_each(|c| write!(f, "  {:>6}", c.to_utf8_byte_amino() as char))?;
+        writeln!(f)?;
+
+        write!(f, "{:W$}", "", W = pw + 2)?;
+        writeln!(
+            f,
+            "  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}  {:>6}",
+            "m->m", "i->m", "m->i", "d->m", "i->i", "m->d", "d->d", "b->m",
+        )?;
+
+        for i in 0..=self.length {
+            write!(
+                f,
+                "{} {i:>W$}",
+                self.consensus_seq_bytes_utf8[i] as char,
+                W = pw
+            )?;
+
+            for s in &self.emission_scores[0][i] {
+                write!(f, "  {s:6.3}")?;
+            }
+            writeln!(f)?;
+
+            write!(f, "{:W$}", "", W = pw + 2)?;
+            for s in &self.core_transitions[i] {
+                write!(f, "  {s:6.3}")?;
+            }
+            writeln!(f)?;
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Index<CoreToCore> for Profile {

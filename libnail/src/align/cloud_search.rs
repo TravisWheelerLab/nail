@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     align::structs::{Cloud, Seed},
     alphabet::AminoAcid,
@@ -19,6 +21,12 @@ pub struct CloudSearchParams {
     pub gamma: usize,
     pub alpha: f32,
     pub beta: f32,
+}
+
+impl Display for CloudSearchParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "γ{} α{} β{}", self.gamma, self.alpha, self.beta)
+    }
 }
 
 impl Default for CloudSearchParams {

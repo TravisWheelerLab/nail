@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::{fmt::Display, ops::Index};
 
 use datasize::DataSize;
 use phf::phf_map;
@@ -86,6 +86,21 @@ pub enum Alphabet {
     Rna,
     #[default]
     AlphabetNotSet,
+}
+
+impl Display for Alphabet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Alphabet::Amino => "amino",
+                Alphabet::Dna => "dna",
+                Alphabet::Rna => "rna",
+                Alphabet::AlphabetNotSet => "unset",
+            },
+        )
+    }
 }
 
 impl From<u8> for Alphabet {
