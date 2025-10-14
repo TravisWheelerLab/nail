@@ -203,7 +203,7 @@ pub struct MmseqsArgs {
     pub k: usize,
 
     /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
-    #[arg(long = "mmseqs-k-score", default_value_t = 80usize, value_name = "N")]
+    #[arg(long = "mmseqs-k-score", default_value_t = 60usize, value_name = "N")]
     pub k_score: usize,
 
     /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
@@ -217,8 +217,16 @@ pub struct MmseqsArgs {
     /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
     #[arg(
         long = "mmseqs-max-seqs",
-        default_value_t = 1000usize,
+        default_value_t = 2000usize,
         value_name = "N"
     )]
     pub max_seqs: usize,
+
+    /// MMseqs2 prefilter: Correct for locally biased amino acid composition (range 0-1) [1]
+    #[arg(
+        long = "mmseqs-comp-bias-corr",
+        default_value_t = 1usize,
+        value_name = "N"
+    )]
+    pub comp_bias_corr: usize,
 }

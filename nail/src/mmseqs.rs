@@ -257,7 +257,11 @@ pub fn run_mmseqs_search<P: AsRef<Path>>(
                 "--min-ungapped-score",
                 &args.mmseqs_args.min_ungapped_score.to_string(),
             ])
-            .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
+            .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
+            .args([
+                "--comp-bias-corr",
+                &args.mmseqs_args.comp_bias_corr.to_string(),
+            ]);
 
         if let Some(ref path) = score_mat_path {
             prefilter.arg("--sub-mat");
@@ -275,6 +279,10 @@ pub fn run_mmseqs_search<P: AsRef<Path>>(
             .arg(&paths.target_db)
             .arg(&paths.prefilter_db)
             .arg(&paths.align_db)
+            .args([
+                "--comp-bias-corr",
+                &args.mmseqs_args.comp_bias_corr.to_string(),
+            ])
             .args(["--threads", &args.num_threads.to_string()])
             .args(["-e", &effective_e_value.to_string()])
             // the '-a' argument enables alignment backtraces in mmseqs2
