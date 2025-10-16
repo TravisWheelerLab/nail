@@ -252,16 +252,12 @@ pub fn run_mmseqs_search<P: AsRef<Path>>(
             .arg(&paths.prefilter_db)
             .args(["--threads", &args.num_threads.to_string()])
             .args(["-k", &args.mmseqs_args.k.to_string()])
-            .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
-            .args([
-                "--min-ungapped-score",
-                &args.mmseqs_args.min_ungapped_score.to_string(),
-            ])
-            .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
-            .args([
-                "--comp-bias-corr",
-                &args.mmseqs_args.comp_bias_corr.to_string(),
-            ]);
+            .args(["-s", &args.mmseqs_args.s.to_string()])
+            .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
+
+        if let Some(v) = args.mmseqs_args.comp_bias_corr {
+            prefilter.args(["--comp-bias-corr", &v.to_string()]);
+        }
 
         if let Some(ref path) = score_mat_path {
             prefilter.arg("--sub-mat");
@@ -279,15 +275,15 @@ pub fn run_mmseqs_search<P: AsRef<Path>>(
             .arg(&paths.target_db)
             .arg(&paths.prefilter_db)
             .arg(&paths.align_db)
-            .args([
-                "--comp-bias-corr",
-                &args.mmseqs_args.comp_bias_corr.to_string(),
-            ])
             .args(["--threads", &args.num_threads.to_string()])
             .args(["-e", &effective_e_value.to_string()])
             // the '-a' argument enables alignment backtraces in mmseqs2
             // it is required to get start positions for alignments
             .args(["-a", "1"]);
+
+        if let Some(v) = args.mmseqs_args.comp_bias_corr {
+            align.args(["--comp-bias-corr", &v.to_string()]);
+        }
 
         if let Some(path) = score_mat_path {
             align.arg("--sub-mat");
