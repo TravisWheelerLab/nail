@@ -151,7 +151,7 @@ pub fn backward(
             dp_matrix.get_special(target_idx, Profile::E_IDX),
         );
 
-        for profile_idx in (profile_start_on_current_row..profile_end_on_current_row).rev() {
+        for profile_idx in (profile_start_on_current_row..=profile_end_on_current_row).rev() {
             dp_matrix.set_match(
                 target_idx,
                 profile_idx,
