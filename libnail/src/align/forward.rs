@@ -80,36 +80,50 @@ pub fn forward(
             );
         }
 
-        let last_profile_idx = bounds.right_row_bounds[target_idx];
+        let profile_idx = bounds.right_row_bounds[target_idx];
 
         // unrolled match state match[M]
         dp_matrix.set_match(
             target_idx,
-            last_profile_idx,
+            profile_idx,
             log_sum!(
-                dp_matrix.get_match(target_idx - 1, last_profile_idx - 1)
-                    + profile.transition_score(Transition::MM as usize, last_profile_idx - 1),
-                dp_matrix.get_insert(target_idx - 1, last_profile_idx - 1)
-                    + profile.transition_score(Transition::IM as usize, last_profile_idx - 1),
+                dp_matrix.get_match(target_idx - 1, profile_idx - 1)
+                    + profile.transition_score(Transition::MM as usize, profile_idx - 1),
+                dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
+                    + profile.transition_score(Transition::IM as usize, profile_idx - 1),
                 dp_matrix.get_special(target_idx - 1, Profile::B_IDX)
-                    + profile.transition_score(Transition::BM as usize, last_profile_idx - 1),
-                dp_matrix.get_delete(target_idx - 1, last_profile_idx - 1)
-                    + profile.transition_score(Transition::DM as usize, last_profile_idx - 1)
-            ) + profile.match_score(current_target_character as usize, last_profile_idx),
+                    + profile.transition_score(Transition::BM as usize, profile_idx - 1),
+                dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
+                    + profile.transition_score(Transition::DM as usize, profile_idx - 1)
+            ) + profile.match_score(current_target_character as usize, profile_idx),
         );
 
         // unrolled insert state insert[M]
-        dp_matrix.set_insert(target_idx, last_profile_idx, -f32::INFINITY);
+        // **note:
+        //   here, we either use the normal dependency OR
+        //   if we're at the end of the model, we force -inf
+        let ins_score = if profile_idx == profile.length {
+            -f32::INFINITY
+        } else {
+            log_sum!(
+                dp_matrix.get_match(target_idx - 1, profile_idx)
+                    + profile.transition_score(Transition::MI as usize, profile_idx),
+                dp_matrix.get_insert(target_idx - 1, profile_idx)
+                    + profile.transition_score(Transition::II as usize, profile_idx)
+            ) + profile.insert_score(current_target_character as usize, profile_idx)
+        };
+
+        dp_matrix.set_insert(target_idx, profile_idx, ins_score);
 
         // unrolled delete state delete[M]
         dp_matrix.set_delete(
             target_idx,
-            last_profile_idx,
+            profile_idx,
             log_sum!(
-                dp_matrix.get_match(target_idx, last_profile_idx - 1)
-                    + profile.transition_score(Transition::MD as usize, last_profile_idx - 1),
-                dp_matrix.get_delete(target_idx, last_profile_idx - 1)
-                    + profile.transition_score(Transition::DD as usize, last_profile_idx - 1)
+                dp_matrix.get_match(target_idx, profile_idx - 1)
+                    + profile.transition_score(Transition::MD as usize, profile_idx - 1),
+                dp_matrix.get_delete(target_idx, profile_idx - 1)
+                    + profile.transition_score(Transition::DD as usize, profile_idx - 1)
             ),
         );
 
@@ -118,8 +132,8 @@ pub fn forward(
             target_idx,
             Profile::E_IDX,
             log_sum!(
-                dp_matrix.get_match(target_idx, last_profile_idx),
-                dp_matrix.get_delete(target_idx, last_profile_idx),
+                dp_matrix.get_match(target_idx, profile_idx),
+                dp_matrix.get_delete(target_idx, profile_idx),
                 dp_matrix.get_special(target_idx, Profile::E_IDX)
             ),
         );

@@ -222,11 +222,6 @@ pub fn backward(
         );
     }
 
-    // dp_matrix.set_special(
-    //     row_bounds.target_start - 1,
-    //     Profile::SPECIAL_J_IDX,
-    //     -f32::INFINITY,
-    // );
     dp_matrix.set_special(row_bounds.seq_start - 1, Profile::C_IDX, -f32::INFINITY);
     dp_matrix.set_special(row_bounds.seq_start - 1, Profile::E_IDX, -f32::INFINITY);
     dp_matrix.set_special(

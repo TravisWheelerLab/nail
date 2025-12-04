@@ -48,8 +48,6 @@ pub fn posterior(
                     .exp(),
             );
 
-            denominator += posterior_matrix.get_match(target_idx, profile_idx);
-
             posterior_matrix.set_insert(
                 target_idx,
                 profile_idx,
@@ -59,9 +57,10 @@ pub fn posterior(
                     .exp(),
             );
 
-            denominator += posterior_matrix.get_insert(target_idx, profile_idx);
-
             posterior_matrix.set_delete(target_idx, profile_idx, 0.0);
+
+            denominator += posterior_matrix.get_insert(target_idx, profile_idx);
+            denominator += posterior_matrix.get_match(target_idx, profile_idx);
         }
 
         posterior_matrix.set_match(
@@ -73,9 +72,20 @@ pub fn posterior(
                 .exp(),
         );
 
-        denominator += posterior_matrix.get_match(target_idx, profile_end_in_current_row);
-        posterior_matrix.set_insert(target_idx, profile_end_in_current_row, 0.0);
+        let ins_prob = if profile_end_in_current_row == profile.length {
+            0.0
+        } else {
+            (forward_matrix.get_insert(target_idx, profile_end_in_current_row)
+                + backward_matrix.get_insert(target_idx, profile_end_in_current_row)
+                - overall_score)
+                .exp()
+        };
+
+        posterior_matrix.set_insert(target_idx, profile_end_in_current_row, ins_prob);
         posterior_matrix.set_delete(target_idx, profile_end_in_current_row, 0.0);
+
+        denominator += posterior_matrix.get_insert(target_idx, profile_end_in_current_row);
+        denominator += posterior_matrix.get_match(target_idx, profile_end_in_current_row);
 
         posterior_matrix.set_special(target_idx, Profile::E_IDX, 0.0);
 
