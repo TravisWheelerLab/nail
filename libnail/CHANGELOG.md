@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed `Hmm` struct
 - removed function `Profile::new()`
 
+### Fixed
+
+- fixed boundary condition bugs in `forward()`, `backward()`, and `posterior()`
+
 ## [0.4.0] - 2025-6-18
 
 ### Added
