@@ -16,17 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- added mod `io::Index`
-- added mod `io::p7hmm`
-- added mod `io::seeds`
-
-### Changed
-- moved `Fasta` struct & related to mod `io::fasta`
-- changed mmseqs2 params:
-    - removed `--mmseqs-k-score` and `--min-ungapped-score`
-    - added `--mmseqs-s`
-    - changed default `--mmseqs-k` parameter to k=6
 
 ### Added
 - added `nail dev` command to CLI
@@ -36,11 +25,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added `Fasta.lengths_iter()`
 - added `write_seed_map()`
 - added `read_seed_map()`
+- added mod `io::Index`
+- added mod `io::p7hmm`
+- added mod `io::seeds`
 
 ### Changed
 - changed `FastaOffset` length fields to include `_bytes` suffix
 - mod `io::rayon` renamed to `io::impl_rayon`
 - `LexicalFastaIndex::new()` now also takes `start: Option<u64>` to supply a relative starting offset
+- moved `Fasta` struct & related to mod `io::fasta`
+- changed mmseqs2 params:
+    - removed `--mmseqs-k-score` and `--min-ungapped-score`
+    - added `--mmseqs-s`
+    - changed default `--mmseqs-k` parameter to k=6
+
+### Removed
+- removed `--double-seed` option from CLI
 
 ## [0.4.0] - 2025-6-18
 

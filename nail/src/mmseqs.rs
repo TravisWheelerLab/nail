@@ -138,7 +138,6 @@ pub fn write_mmseqs_sequence_database(
 pub fn write_mmseqs_profile_database(
     profiles: &P7Hmm,
     path: impl AsRef<Path>,
-    mre_target: Option<f32>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
     let db_name = db_path.file_name().unwrap().to_str().unwrap();
@@ -163,10 +162,7 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (prf_cnt, mut prf) in profiles.values().enumerate() {
-        if let Some(mre) = mre_target {
-            prf.adjust_mean_relative_entropy(mre)?;
-        }
+    for (prf_cnt, prf) in profiles.values().enumerate() {
         for prf_idx in 1..=prf.length {
             for byte in (0..20)
                 .map(|residue| Nats(prf.match_score(residue, prf_idx)))

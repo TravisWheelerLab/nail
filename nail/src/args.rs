@@ -165,10 +165,6 @@ pub struct PipelineArgs {
     )]
     pub e_value_threshold: f64,
 
-    /// Seed alignments twice (high/low expected sequence divergence)
-    #[arg(long = "double-seed", action)]
-    pub double_seed: bool,
-
     /// Produce alignment seeds and terminate
     #[arg(long = "only-seed", action)]
     pub only_seed: bool,
