@@ -2,7 +2,8 @@ use libnail::{
     align::structs::{
         Alignment, Boundaries, CellStats, DisplayStrings, DpMatrixSparse, RowBounds, Scores,
     },
-    structs::{hmm::Alphabet, Profile, Sequence},
+    alphabet::Alphabet,
+    structs::{Profile, Sequence},
 };
 use std::{
     any::TypeId,
@@ -27,7 +28,7 @@ use crate::{
     search::Queries,
 };
 
-pub struct Bytes(usize);
+pub struct Bytes(pub usize);
 
 #[allow(dead_code)]
 impl Bytes {
@@ -49,6 +50,14 @@ impl std::ops::Add for Bytes {
 
     fn add(self, rhs: Self) -> Self::Output {
         Bytes(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub for Bytes {
+    type Output = Bytes;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Bytes(self.0 - rhs.0)
     }
 }
 
@@ -103,8 +112,23 @@ where
                 self_sz + Bytes(self.capacity() * std::mem::size_of::<T>())
             }
             AllocationKind::Other => {
-                todo!("called size() on Vec<T> where T is non-primitive")
+                let uninitialized =
+                    Bytes((self.capacity() - self.len()) * std::mem::size_of::<T>());
+                let initialized = self.iter().map(|item| item.size()).sum();
+                self_sz + uninitialized + initialized
             }
+        }
+    }
+}
+
+impl<T, const N: usize> AllocationSize for [T; N]
+where
+    T: AllocationSize + 'static,
+{
+    fn size(&self) -> Bytes {
+        match allocation_kind::<T>() {
+            AllocationKind::Primitive => Bytes(N * std::mem::size_of::<T>()),
+            AllocationKind::Other => self.iter().map(|item| item.size()).sum(),
         }
     }
 }
@@ -161,26 +185,29 @@ impl AllocationSize for Sequence {
     }
 }
 
+impl AllocationSize for Alphabet {
+    fn size(&self) -> Bytes {
+        Bytes(std::mem::size_of::<Alphabet>())
+    }
+}
+
 impl AllocationSize for Profile {
     fn size(&self) -> Bytes {
-        Bytes(std::mem::size_of::<Profile>()) +
         self.name.size()
             + self.accession.size()
             + self.length.size()
             + self.target_length.size()
             + self.max_length.size()
-            + Bytes(self.core_transitions.capacity() * std::mem::size_of::<[f32; 8]>())
+            + self.core_transitions.size()
             + self.emission_scores[0].size()
             + self.emission_scores[1].size()
             + self.entry_transitions.size()
-            // self.special_transitions
-            + Bytes(std::mem::size_of::<[[f32;2]; 5]>())
+            + self.special_transitions.size()
             + self.expected_j_uses.size()
-            + Bytes(self.consensus_sequence_bytes_utf8.capacity() * std::mem::size_of::<u8>())
-            // self.alphabet
-            + Bytes(std::mem::size_of::<Alphabet>())
-            + self.forward_tau.size()
-            + self.forward_lambda.size()
+            + self.consensus_seq_bytes_utf8.size()
+            + self.fwd_tau.size()
+            + self.fwd_lambda.size()
+            + self.alphabet.size()
     }
 }
 

@@ -13,14 +13,14 @@ pub use output_stage::*;
 use std::cell::RefCell;
 use std::time::Instant;
 
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::ParallelIterator;
 use thiserror::Error;
 use thread_local::ThreadLocal;
 
-use libnail::structs::{Hmm, Profile};
+use libnail::structs::Profile;
 
 use crate::{
-    io::Fasta,
+    io::{Fasta, P7Hmm},
     stats::{Stats, ThreadedTimed},
 };
 
@@ -104,6 +104,9 @@ impl Pipeline {
                         None => return None,
                     };
 
+                    // configuring for the target length adjusts special state transitions
+                    profile.configure_for_target_length(target.length);
+
                     let cloud_result = self.cloud_search.run(profile, &target, seed);
 
                     let align_result = match cloud_result {
@@ -132,16 +135,16 @@ impl Pipeline {
     }
 }
 
-pub fn run_pipeline_profile_to_sequence(queries: &mut [Profile], pipeline: &mut Pipeline) {
+pub fn run_pipeline_profile_to_sequence(queries: &P7Hmm, pipeline: &mut Pipeline) {
     let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
-    queries.par_iter_mut().panic_fuse().for_each(|profile| {
+    queries.par_iter().panic_fuse().for_each(|mut prf| {
         let now = Instant::now();
         let mut pipeline = thread_local_pipeline
             .get_or(|| RefCell::new(pipeline.clone()))
             .borrow_mut();
 
-        let _ = pipeline.run(profile);
+        let _ = pipeline.run(&mut prf);
 
         pipeline
             .stats
@@ -152,17 +155,15 @@ pub fn run_pipeline_profile_to_sequence(queries: &mut [Profile], pipeline: &mut 
 pub fn run_pipeline_sequence_to_sequence(queries: &Fasta, pipeline: &mut Pipeline) {
     let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
-    queries.par_iter().panic_fuse().for_each(|sequence| {
+    queries.par_iter().panic_fuse().for_each(|seq| {
         let now = Instant::now();
 
         let mut pipeline = thread_local_pipeline
             .get_or(|| RefCell::new(pipeline.clone()))
             .borrow_mut();
 
-        let mut profile = Hmm::from_blosum_62_and_sequence(&sequence)
-            .map(|h| Profile::new(&h))
-            .expect("failed to build profile from sequence");
-        profile.calibrate_tau(200, 100, 0.04);
+        let mut profile =
+            Profile::from_blosum_62_and_seq(&seq).expect("failed to build profile from sequence");
 
         pipeline
             .stats

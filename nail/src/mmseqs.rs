@@ -1,25 +1,19 @@
 use self::consts::*;
 
 use std::{
-    collections::HashMap,
-    fs::{create_dir_all, File},
-    io::{BufRead, BufReader, Write},
+    fs::create_dir_all,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail};
 
-use libnail::{
-    align::{structs::Seed, Nats},
-    alphabet::UTF8_TO_DIGITAL_AMINO,
-    structs::Profile,
-};
+use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO};
 
 use crate::{
     args::SearchArgs,
-    io::{Fasta, SequenceDatabase},
-    pipeline::SeedMap,
+    io::{Database, Fasta, P7Hmm},
     util::{CommandExt, PathBufExt},
 };
 
@@ -69,7 +63,6 @@ pub struct MmseqsDbPaths {
     pub target_db: PathBuf,
     pub prefilter_db: PathBuf,
     pub align_db: PathBuf,
-    pub align_tsv: PathBuf,
 }
 
 impl MmseqsDbPaths {
@@ -80,7 +73,6 @@ impl MmseqsDbPaths {
             target_db: dir.join("targetDB"),
             prefilter_db: dir.join("prefilterDB"),
             align_db: dir.join("alignDB"),
-            align_tsv: dir.join("align.tsv"),
         }
     }
 
@@ -119,7 +111,7 @@ pub fn write_mmseqs_sequence_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (seq_count, seq) in sequences.iter().enumerate() {
+    for (seq_count, seq) in sequences.values().enumerate() {
         db.write_all(&seq.utf8_bytes[1..])?;
         db.write_all(&[10u8, 0u8])?;
 
@@ -144,8 +136,9 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: &[impl AsRef<Profile>],
+    profiles: &P7Hmm,
     path: impl AsRef<Path>,
+    mre_target: Option<f32>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
     let db_name = db_path.file_name().unwrap().to_str().unwrap();
@@ -170,10 +163,13 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (profile_count, profile) in profiles.iter().map(|p| p.as_ref()).enumerate() {
-        for profile_idx in 1..=profile.length {
+    for (prf_cnt, mut prf) in profiles.values().enumerate() {
+        if let Some(mre) = mre_target {
+            prf.adjust_mean_relative_entropy(mre)?;
+        }
+        for prf_idx in 1..=prf.length {
             for byte in (0..20)
-                .map(|residue| Nats(profile.match_score(residue, profile_idx)))
+                .map(|residue| Nats(prf.match_score(residue, prf_idx)))
                 .map(|nats| nats.to_bits())
                 .map(|bits| bits.value())
                 // multiply the bits by 8.0 just because
@@ -185,7 +181,7 @@ pub fn write_mmseqs_profile_database(
             }
 
             let consensus_byte_digital = *UTF8_TO_DIGITAL_AMINO
-                .get(&profile.consensus_sequence_bytes_utf8[profile_idx])
+                .get(&prf.consensus_seq_bytes_utf8[prf_idx])
                 .unwrap();
 
             // query sequence byte?
@@ -204,25 +200,21 @@ pub fn write_mmseqs_profile_database(
             db.write_all(&[0u8])?;
         }
 
-        let db_byte_length = profile.length * 25;
+        let db_byte_length = prf.length * 25;
 
-        writeln!(
-            db_index,
-            "{}\t{}\t{}",
-            profile_count, db_offset, db_byte_length,
-        )?;
+        writeln!(db_index, "{}\t{}\t{}", prf_cnt, db_offset, db_byte_length,)?;
 
         // for some reason, the header has newlines and 0-byte separators?
-        writeln!(db_header, "{}", profile.name)?;
+        writeln!(db_header, "{}", prf.name)?;
         db_header.write_all(&[0u8])?;
 
         // +1 for the 0 byte, +1 for the newline
-        let header_byte_length = profile.name.len() + 2;
+        let header_byte_length = prf.name.len() + 2;
 
         writeln!(
             db_header_index,
             "{}\t{}\t{}",
-            profile_count, header_offset, header_byte_length
+            prf_cnt, header_offset, header_byte_length
         )?;
 
         db_offset += db_byte_length;
@@ -232,8 +224,9 @@ pub fn write_mmseqs_profile_database(
     Ok(())
 }
 
-pub fn run_mmseqs_search(
+pub fn run_mmseqs_search<P: AsRef<Path>>(
     paths: &MmseqsDbPaths,
+    align_tsv: P,
     args: &SearchArgs,
     score_model: MmseqsScoreModel,
 ) -> anyhow::Result<()> {
@@ -259,12 +252,12 @@ pub fn run_mmseqs_search(
             .arg(&paths.prefilter_db)
             .args(["--threads", &args.num_threads.to_string()])
             .args(["-k", &args.mmseqs_args.k.to_string()])
-            .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
-            .args([
-                "--min-ungapped-score",
-                &args.mmseqs_args.min_ungapped_score.to_string(),
-            ])
+            .args(["-s", &args.mmseqs_args.s.to_string()])
             .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
+
+        if let Some(v) = args.mmseqs_args.comp_bias_corr {
+            prefilter.args(["--comp-bias-corr", &v.to_string()]);
+        }
 
         if let Some(ref path) = score_mat_path {
             prefilter.arg("--sub-mat");
@@ -288,6 +281,10 @@ pub fn run_mmseqs_search(
             // it is required to get start positions for alignments
             .args(["-a", "1"]);
 
+        if let Some(v) = args.mmseqs_args.comp_bias_corr {
+            align.args(["--comp-bias-corr", &v.to_string()]);
+        }
+
         if let Some(path) = score_mat_path {
             align.arg("--sub-mat");
             align.arg(path);
@@ -301,7 +298,7 @@ pub fn run_mmseqs_search(
         .arg(&paths.query_db)
         .arg(&paths.target_db)
         .arg(&paths.align_db)
-        .arg(&paths.align_tsv)
+        .arg(align_tsv.as_ref())
         .args(["--threads", &args.num_threads.to_string()])
         .args([
             "--format-output",
@@ -310,48 +307,4 @@ pub fn run_mmseqs_search(
         .run()?;
 
     Ok(())
-}
-
-pub fn seeds_from_mmseqs_align_tsv(path: impl AsRef<Path>) -> anyhow::Result<SeedMap> {
-    let path = path.as_ref();
-
-    let mut seed_map: SeedMap = HashMap::new();
-
-    let mmseqs_align_file = File::open(path).context(format!(
-        "couldn't open mmseqs align file at: {}",
-        path.to_string_lossy()
-    ))?;
-
-    let align_reader = BufReader::new(mmseqs_align_file);
-
-    for line in align_reader.lines().map_while(Result::ok) {
-        let line_tokens: Vec<&str> = line.split('\t').collect();
-
-        let target_header = line_tokens[1];
-        let target_header_tokens: Vec<&str> = target_header.split_whitespace().collect();
-        let target_name = target_header_tokens[0].to_string();
-        let target_start = line_tokens[4].parse::<usize>()?;
-        let target_end = line_tokens[5].parse::<usize>()?;
-
-        let query_header = line_tokens[0];
-        let query_header_tokens: Vec<&str> = query_header.split_whitespace().collect();
-        let profile_name = query_header_tokens[0].to_string();
-        let profile_start = line_tokens[2].parse::<usize>()?;
-        let profile_end = line_tokens[3].parse::<usize>()?;
-        let score = line_tokens[6].parse::<f32>()?;
-
-        let profile_map = seed_map.entry(profile_name).or_default();
-        profile_map.insert(
-            target_name,
-            Seed {
-                seq_start: target_start,
-                seq_end: target_end,
-                prf_start: profile_start,
-                prf_end: profile_end,
-                score,
-            },
-        );
-    }
-
-    Ok(seed_map)
 }

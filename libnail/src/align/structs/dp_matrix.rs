@@ -1041,6 +1041,26 @@ impl AdMatrixLinear {
 
         self.seq_len = new_seq_len;
     }
+
+    pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        writeln!(out, "seq_len: {}", self.seq_len)?;
+
+        self.core_data.iter().try_for_each(|row| {
+            row.iter().try_for_each(|state| {
+                state.iter().try_for_each(|val| write!(out, "{val:8.4} "))?;
+                writeln!(out)
+            })
+        })?;
+        writeln!(out)?;
+
+        self.background_data.iter().try_for_each(|state| {
+            state.iter().try_for_each(|val| write!(out, "{val:8.4} "))?;
+            writeln!(out)
+        })?;
+        writeln!(out)?;
+
+        Ok(())
+    }
 }
 
 impl Index<BackgroundCell> for AdMatrixLinear {

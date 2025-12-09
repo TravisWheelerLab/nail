@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering::{Equal, Greater, Less},
     fmt::{Debug, Display},
+    io::{BufWriter, Write},
     ops::{AddAssign, Div, DivAssign, MulAssign, SubAssign},
 };
 
@@ -17,7 +18,7 @@ pub trait MinAssign {
 impl<T: PartialOrd + Copy> MaxAssign for T {
     fn max_assign(&mut self, other: Self) {
         if *self < other {
-            *self = other.clone();
+            *self = other;
         }
     }
 }
@@ -25,7 +26,7 @@ impl<T: PartialOrd + Copy> MaxAssign for T {
 impl<T: PartialOrd + Copy> MinAssign for T {
     fn min_assign(&mut self, other: Self) {
         if *self > other {
-            *self = other.clone();
+            *self = other;
         }
     }
 }
@@ -51,50 +52,51 @@ impl<T: Display + Debug> Print for T {
     }
 }
 
-pub trait CollectionPrint {
-    fn print(&self);
-    fn print_debug(&self);
-}
-
-impl<T: Display + Debug> CollectionPrint for Vec<T> {
-    fn print(&self) {
-        self.iter()
-            .enumerate()
-            .for_each(|(i, e)| println!("{i}: {e}"));
-    }
-
-    fn print_debug(&self) {
-        self.iter()
-            .enumerate()
-            .for_each(|(i, e)| println!("{i}: {e:?}"));
-    }
-}
-
 pub trait IterPrint {
-    fn print_each(self);
+    fn print_each(&self);
+    fn write_display<W: Write>(&self, out: W) -> anyhow::Result<()>;
 }
 
 pub trait IterDebug {
-    fn debug_each(self);
+    fn debug_each(&self);
+    fn write_debug<W: Write>(&self, out: W) -> anyhow::Result<()>;
 }
 
 impl<I, T> IterPrint for I
 where
-    I: Iterator<Item = T>,
+    I: IntoIterator<Item = T> + ?Sized,
+    for<'a> &'a I: IntoIterator<Item = &'a T>,
     T: Display,
 {
-    fn print_each(self) {
-        self.for_each(|i| println!("{i}"));
+    fn print_each(&self) {
+        self.into_iter().for_each(|i| println!("{i}"));
+    }
+
+    fn write_display<W: Write>(&self, out: W) -> anyhow::Result<()> {
+        let mut out = BufWriter::new(out);
+        for (i, item) in self.into_iter().enumerate() {
+            writeln!(out, "{i}: {item}")?;
+        }
+        Ok(())
     }
 }
 
 impl<I, T> IterDebug for I
 where
-    I: Iterator<Item = T>,
+    I: IntoIterator<Item = T> + ?Sized,
+    for<'a> &'a I: IntoIterator<Item = &'a T>,
     T: Debug,
 {
-    fn debug_each(self) {
-        self.for_each(|i| println!("{i:?}"));
+    fn debug_each(&self) {
+        self.into_iter().for_each(|i| println!("{i:?}"));
+    }
+
+    fn write_debug<W: Write>(&self, out: W) -> anyhow::Result<()> {
+        let mut out = BufWriter::new(out);
+        for (i, item) in self.into_iter().enumerate() {
+            writeln!(out, "{i}: {item:?}")?;
+        }
+        Ok(())
     }
 }
 
@@ -143,31 +145,27 @@ pub trait VecMath<T>
 where
     T: Float,
 {
-    fn avg(&self) -> Option<T>;
+    fn mean(&self) -> Option<T>;
     fn argmax(&self) -> Option<usize>;
-    fn normalize(&mut self);
-    fn add(&mut self, other: &[T]);
-    fn sub(&mut self, other: &[T]);
-    fn scale(&mut self, factor: T);
-    fn saturate_lower(&mut self, min: T);
 }
 
-impl<T> VecMath<T> for Vec<T>
+impl<T, U> VecMath<T> for U
 where
     T: Float,
+    U: AsRef<[T]>,
 {
-    fn avg(&self) -> Option<T> {
+    fn mean(&self) -> Option<T> {
         let mut sum = T::from_usize(0);
-        self.iter().for_each(|&item| sum += item);
+        self.as_ref().iter().for_each(|&item| sum += item);
 
-        Some(sum / T::from_usize(self.len()))
+        Some(sum / T::from_usize(self.as_ref().len()))
     }
 
     fn argmax(&self) -> Option<usize> {
-        let mut max = *self.first()?;
+        let mut max = *self.as_ref().first()?;
         let mut argmax: usize = 0;
 
-        for (idx, &item) in self.iter().enumerate().skip(1) {
+        for (idx, &item) in self.as_ref().iter().enumerate().skip(1) {
             if item > max {
                 max = item;
                 argmax = idx;
@@ -176,27 +174,50 @@ where
 
         Some(argmax)
     }
+}
 
+pub trait VecMathMut<T>
+where
+    T: Float,
+{
+    fn normalize(&mut self);
+    fn add(&mut self, other: &[T]);
+    fn sub(&mut self, other: &[T]);
+    fn scale(&mut self, factor: T);
+    fn saturate_lower(&mut self, min: T);
+}
+
+impl<T, U> VecMathMut<T> for U
+where
+    T: Float,
+    U: AsMut<[T]>,
+{
     fn normalize(&mut self) {
         let mut sum = T::from_usize(0);
-        self.iter().for_each(|&item| sum += item);
-        self.iter_mut().for_each(|item| *item /= sum);
+        self.as_mut().iter().for_each(|&item| sum += item);
+        self.as_mut().iter_mut().for_each(|item| *item /= sum);
     }
 
     fn add(&mut self, other: &[T]) {
-        self.iter_mut().zip(other).for_each(|(a, &b)| *a += b);
+        self.as_mut()
+            .iter_mut()
+            .zip(other)
+            .for_each(|(a, &b)| *a += b);
     }
 
     fn sub(&mut self, other: &[T]) {
-        self.iter_mut().zip(other).for_each(|(a, &b)| *a -= b);
+        self.as_mut()
+            .iter_mut()
+            .zip(other)
+            .for_each(|(a, &b)| *a -= b);
     }
 
     fn scale(&mut self, factor: T) {
-        self.iter_mut().for_each(|item| *item *= factor);
+        self.as_mut().iter_mut().for_each(|item| *item *= factor);
     }
 
     fn saturate_lower(&mut self, min: T) {
-        self.iter_mut().for_each(|item| {
+        self.as_mut().iter_mut().for_each(|item| {
             if *item < min {
                 *item = min
             }
@@ -254,7 +275,7 @@ pub fn mean_relative_entropy(a: &[Vec<f32>], b: &[f32]) -> f32 {
     a.iter()
         .map(|p| relative_entropy(p, b))
         .collect::<Vec<f32>>()
-        .avg()
+        .mean()
         .unwrap()
 }
 
@@ -263,19 +284,6 @@ pub fn relative_entropy(a: &[f32], b: &[f32]) -> f32 {
         .zip(b)
         .map(|(p_a, p_b)| p_a * (p_a / p_b).log2())
         .sum()
-}
-
-pub fn f32_vec_argmax(vec: &Vec<f32>) -> usize {
-    let mut max: f32 = vec[0];
-    let mut argmax: usize = 0;
-
-    for i in 1..vec.len() {
-        if vec[i] > max {
-            max = vec[i];
-            argmax = i;
-        }
-    }
-    argmax
 }
 
 lazy_static! {

@@ -23,8 +23,6 @@ clap = { version = "4.5.23", features = ["derive", "wrap_help"] }
 libnail = { path = "../libnail", version = "0.4.0" }
 anyhow = "1.0.66"
 thiserror = "1.0.37"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.93"
 rayon = "1.7.0"
 thread_local = "1.1.7"
 dyn-clone = "1.0.17"
@@ -34,3 +32,4 @@ derive_builder = "0.20.1"
 indexmap = "2.7.0"
 colored = "3.0.0"
 color-backtrace = "0.7.0"
+datasize = "0.2.15"

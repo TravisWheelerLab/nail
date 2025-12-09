@@ -1,18 +1,32 @@
-use crate::align::structs::{Cloud, Seed};
-use crate::log_sum;
-use crate::max_f32;
-use crate::structs::profile::{AminoAcid, BackgroundLoop, CoreToCore, Emission};
-use crate::structs::{Profile, Sequence};
-use crate::util::{log_add, MaxAssign};
+use std::fmt::Display;
 
-use super::structs::{Ad, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix};
-use super::Nats;
+use crate::{
+    align::structs::{Cloud, Seed},
+    alphabet::AminoAcid,
+    log_sum, max_f32,
+    structs::{
+        profile::{BackgroundLoop, CoreToCore, Emission, Transition},
+        Profile, Sequence,
+    },
+    util::{log_add, MaxAssign},
+};
+
+use super::{
+    structs::{Ad, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix},
+    Nats,
+};
 
 #[derive(Clone)]
 pub struct CloudSearchParams {
     pub gamma: usize,
     pub alpha: f32,
     pub beta: f32,
+}
+
+impl Display for CloudSearchParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "γ{} α{} β{}", self.gamma, self.alpha, self.beta)
+    }
 }
 
 impl Default for CloudSearchParams {
@@ -106,7 +120,7 @@ pub fn compute_backward_cells<M>(
     mx[(B, seq_idx)] = log_sum!(
         mx[(B, seq_idx)],
         mx[m_src_cell]
-            + prf.transition_score(Profile::B_M_IDX, prf_idx)
+            + prf.transition_score(Transition::BM as usize, prf_idx)
             + prf[Emission(m_src, residue)]
     );
 }
@@ -230,7 +244,7 @@ pub fn compute_forward_cells<M>(
         mx[m_src_cell] + prf[CoreToCore(m_src, m_dest)],
         mx[i_src_cell] + prf[CoreToCore(i_src, m_dest)],
         mx[d_src_cell] + prf[CoreToCore(d_src, m_dest)],
-        mx[(B, seq_idx - 1)] + prf.transition_score(Profile::B_M_IDX, prf_idx - 1)
+        mx[(B, seq_idx - 1)] + prf.transition_score(Transition::BM as usize, prf_idx - 1)
     ) + prf[Emission(m_dest, residue)];
 
     // insert state
@@ -263,7 +277,7 @@ pub fn compute_forward_cells<M>(
         mx[d_src_cell] + prf[CoreToCore(d_src, d_dest)]
     );
 
-    mx[(E, seq_idx)] = log_sum!(mx[m_cell], mx[d_cell], mx[(E, seq_idx)])
+    mx[(E, seq_idx)] = log_sum!(mx[m_cell], mx[d_cell], mx[(E, seq_idx)]);
 }
 
 pub fn cloud_search_fwd<M>(

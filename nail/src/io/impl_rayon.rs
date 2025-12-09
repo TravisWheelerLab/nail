@@ -1,18 +1,61 @@
-use libnail::structs::Sequence;
+use super::{Database, DatabaseValues, Fasta, P7Hmm};
+use libnail::structs::{Profile, Sequence};
+
 use rayon::iter::{
     plumbing::{bridge, Consumer, Producer, ProducerCallback, UnindexedConsumer},
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
 
-use super::{Fasta, SequenceDatabase, SequenceDatabaseIter};
+impl Fasta {
+    pub fn par_iter(&self) -> DatabaseParIter<Sequence> {
+        DatabaseParIter {
+            inner: Box::new(self.clone()),
+            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
+        }
+    }
+}
 
-pub struct SequenceDatabaseParIter<'a> {
-    pub(super) inner: Box<dyn SequenceDatabase>,
+impl<'a> IntoParallelIterator for &'a Fasta {
+    type Iter = DatabaseParIter<'a, Sequence>;
+
+    type Item = Sequence;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.par_iter()
+    }
+}
+
+impl P7Hmm {
+    pub fn par_iter(&self) -> DatabaseParIter<Profile> {
+        DatabaseParIter {
+            inner: Box::new(self.clone()),
+            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
+        }
+    }
+}
+
+impl<'a> IntoParallelIterator for &'a P7Hmm {
+    type Iter = DatabaseParIter<'a, Profile>;
+
+    type Item = Profile;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.par_iter()
+    }
+}
+
+/////
+
+pub struct DatabaseParIter<'a, T> {
+    pub(super) inner: Box<dyn Database<T>>,
     pub(super) names: Vec<&'a str>,
 }
 
-impl<'a> ParallelIterator for SequenceDatabaseParIter<'a> {
-    type Item = Sequence;
+impl<'a, T> ParallelIterator for DatabaseParIter<'a, T>
+where
+    T: Send + Sync,
+{
+    type Item = T;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
     where
@@ -22,7 +65,10 @@ impl<'a> ParallelIterator for SequenceDatabaseParIter<'a> {
     }
 }
 
-impl<'a> IndexedParallelIterator for SequenceDatabaseParIter<'a> {
+impl<'a, T> IndexedParallelIterator for DatabaseParIter<'a, T>
+where
+    T: Send + Sync,
+{
     fn len(&self) -> usize {
         self.inner.len()
     }
@@ -32,7 +78,7 @@ impl<'a> IndexedParallelIterator for SequenceDatabaseParIter<'a> {
     }
 
     fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
-        let producer = SequenceDatabaseProducer {
+        let producer = DatabaseProducer {
             inner: self.inner,
             names: &self.names,
         };
@@ -41,37 +87,18 @@ impl<'a> IndexedParallelIterator for SequenceDatabaseParIter<'a> {
     }
 }
 
-impl Fasta {
-    pub fn par_iter(&self) -> SequenceDatabaseParIter {
-        SequenceDatabaseParIter {
-            inner: Box::new(self.clone()),
-            names: self.index.offsets.keys().map(|s| s.as_str()).collect(),
-        }
-    }
-}
-
-impl<'a> IntoParallelIterator for &'a Fasta {
-    type Iter = SequenceDatabaseParIter<'a>;
-
-    type Item = Sequence;
-
-    fn into_par_iter(self) -> Self::Iter {
-        self.par_iter()
-    }
-}
-
-pub struct SequenceDatabaseProducer<'a> {
-    inner: Box<dyn SequenceDatabase>,
+pub struct DatabaseProducer<'a, T> {
+    inner: Box<dyn Database<T>>,
     names: &'a [&'a str],
 }
 
-impl<'a> Producer for SequenceDatabaseProducer<'a> {
-    type Item = Sequence;
+impl<'a, T> Producer for DatabaseProducer<'a, T> {
+    type Item = T;
 
-    type IntoIter = SequenceDatabaseIter<'a>;
+    type IntoIter = DatabaseValues<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        SequenceDatabaseIter {
+        DatabaseValues {
             inner: self.inner,
             names_iter: Box::new(self.names.iter().copied()),
         }
@@ -80,11 +107,11 @@ impl<'a> Producer for SequenceDatabaseProducer<'a> {
     fn split_at(self, index: usize) -> (Self, Self) {
         let (left, right) = self.names.split_at(index);
         (
-            SequenceDatabaseProducer {
+            DatabaseProducer {
                 inner: self.inner.clone(),
                 names: left,
             },
-            SequenceDatabaseProducer {
+            DatabaseProducer {
                 inner: self.inner,
                 names: right,
             },

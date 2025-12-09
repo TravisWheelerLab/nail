@@ -3,9 +3,18 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use anyhow::Context;
 use thiserror::Error;
+
+#[allow(dead_code)]
+pub fn burn(dur: std::time::Duration) {
+    let start = Instant::now();
+    while Instant::now() - start < dur {
+        std::hint::spin_loop();
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub enum FileFormat {

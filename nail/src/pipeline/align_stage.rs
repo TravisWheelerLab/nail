@@ -134,9 +134,6 @@ impl AlignStage for DefaultAlignStage {
     ) -> StageResult<Alignment, AlignStageStats> {
         let mut stats = AlignStageStatsBuilder::default();
 
-        // configuring for the target length adjusts special state transitions
-        profile.configure_for_target_length(target.length);
-
         let now = Instant::now();
         self.forward_matrix
             .reuse(target.length, profile.length, bounds);
@@ -156,7 +153,7 @@ impl AlignStage for DefaultAlignStage {
         stats.forward_cells(bounds.num_cells);
 
         // for now we compute the P-value for filtering purposes
-        let forward_p_value = p_value(forward_score, profile.forward_lambda, profile.forward_tau);
+        let forward_p_value = p_value(forward_score, profile.fwd_lambda, profile.fwd_tau);
         stats.score(forward_score);
         stats.p_value(forward_p_value);
 

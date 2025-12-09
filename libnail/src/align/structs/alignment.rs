@@ -169,8 +169,8 @@ impl<'a> AlignmentBuilder<'a> {
 
                 let (forward_p_value, p_value) = match self.profile {
                     Some(profile) => (
-                        p_value(forward_score, profile.forward_lambda, profile.forward_tau),
-                        p_value(bit_score, profile.forward_lambda, profile.forward_tau),
+                        p_value(forward_score, profile.fwd_lambda, profile.fwd_tau),
+                        p_value(bit_score, profile.fwd_lambda, profile.fwd_tau),
                     ),
                     _ => bail!("Profile missing during Alignment construction"),
                 };
@@ -241,7 +241,7 @@ impl<'a> AlignmentBuilder<'a> {
                     })
                     .for_each(|step| {
                         posteriors.push(map_posterior_probability_to_bin_byte(step.posterior));
-                        let profile_byte = profile.consensus_sequence_bytes_utf8[step.profile_idx];
+                        let profile_byte = profile.consensus_seq_bytes_utf8[step.profile_idx];
                         let target_byte = target.utf8_bytes[step.target_idx];
 
                         match step.state {

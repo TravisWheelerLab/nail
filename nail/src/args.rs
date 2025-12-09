@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum NailSubCommands {
     #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
@@ -193,35 +194,32 @@ pub struct DevArgs {
     /// Compute the full DP matrices
     #[arg(long, action, hide = true)]
     pub full_dp: bool,
-
-    /// Give a full seed for every possible alignment
-    #[arg(long, action, hide = true)]
-    pub max_seed: bool,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct MmseqsArgs {
-    /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
-    #[arg(long = "mmseqs-k", default_value_t = 0usize, value_name = "N")]
+    /// MMseqs2 description: k-mer length (0: automatically set to optimum)
+    #[arg(long = "mmseqs-k", default_value_t = 6usize, value_name = "N")]
     pub k: usize,
 
-    /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
-    #[arg(long = "mmseqs-k-score", default_value_t = 80usize, value_name = "N")]
-    pub k_score: usize,
+    /// MMseqs2 description: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
+    #[arg(long = "mmseqs-s", default_value_t = 10.0, value_name = "X")]
+    pub s: f32,
 
-    /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
-    #[arg(
-        long = "mmseqs-min-ungapped-score",
-        default_value_t = 15usize,
-        value_name = "N"
-    )]
-    pub min_ungapped_score: usize,
-
-    /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
+    /// MMseqs2 description: Maximum results per query sequence allowed to pass the prefilter
     #[arg(
         long = "mmseqs-max-seqs",
-        default_value_t = 1000usize,
+        default_value_t = 2000usize,
         value_name = "N"
     )]
     pub max_seqs: usize,
+
+    /// MMseqs2 description: Correct for locally biased amino acid composition (range 0-1)
+    #[arg(
+        long = "mmseqs-comp-bias-corr",
+        default_value = None,
+        value_name = "N",
+        hide = true
+    )]
+    pub comp_bias_corr: Option<usize>,
 }
