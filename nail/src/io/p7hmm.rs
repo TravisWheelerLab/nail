@@ -359,7 +359,7 @@ impl Clone for P7Hmm {
 
 impl P7Hmm {
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let index = Arc::new(P7HmmIndex::from_path::<20, 4>(path.as_ref())?);
+        let index = Arc::new(P7HmmIndex::from_path::<20, 1>(path.as_ref())?);
         let file = File::open(path.as_ref())?;
 
         Ok(Self {

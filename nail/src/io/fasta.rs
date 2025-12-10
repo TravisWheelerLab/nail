@@ -169,7 +169,7 @@ impl Clone for Fasta {
 
 impl Fasta {
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let index = Arc::new(Index::from_path::<15, 4>(path.as_ref())?);
+        let index = Arc::new(Index::from_path::<15, 1>(path.as_ref())?);
         let file = File::open(path.as_ref())?;
 
         Ok(Self {
