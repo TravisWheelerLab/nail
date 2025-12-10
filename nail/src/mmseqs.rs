@@ -32,6 +32,7 @@ pub mod consts {
     pub const BLOSUM_80: &str = include_str!("..\\mat\\blosum80.mat");
 }
 
+#[allow(dead_code)]
 pub enum MmseqsScoreModel {
     Profile,
     Blosum62,

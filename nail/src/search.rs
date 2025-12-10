@@ -131,17 +131,6 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         }
     }?;
 
-    if let Some(ref path) = args.io_args.seeds_output_path {
-        todo!();
-        // let now = Instant::now();
-        // println!("writing seeds...");
-        // write_seed_map(&seeds, &mut path.open(true)?)?;
-        // println!(
-        //     "\x1b[Awriting seeds...            done ({:.2}s)",
-        //     now.elapsed().as_secs_f64()
-        // );
-    }
-
     if args.pipeline_args.only_seed {
         return Ok(());
     }

@@ -2,7 +2,7 @@ use libnail::structs::Profile;
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, P7Hmm, SeedList, Seeds},
+    io::{Fasta, P7Hmm, SeedList, Seeds},
     mmseqs::{
         run_mmseqs_search, write_mmseqs_profile_database, write_mmseqs_sequence_database,
         MmseqsDbPaths, MmseqsScoreModel,
@@ -18,7 +18,11 @@ pub fn seed_profile_to_sequence(
 
     write_mmseqs_sequence_database(seqs, &paths.target_db)?;
 
-    let align_tsv = &paths.dir()?.join("align_a.tsv");
+    let align_tsv = match &args.io_args.seeds_output_path {
+        Some(path) => path,
+        None => &paths.dir()?.join("seeds.tsv"),
+    };
+
     write_mmseqs_profile_database(profiles, &paths.query_db)?;
     run_mmseqs_search(&paths, align_tsv, args, MmseqsScoreModel::Profile)?;
     let seeds = Seeds::from_path(align_tsv)?;
@@ -35,7 +39,11 @@ pub fn seed_sequence_to_sequence(
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
     write_mmseqs_sequence_database(queries, &paths.query_db)?;
 
-    let align_tsv = &paths.dir()?.join("align_a.tsv");
+    let align_tsv = match &args.io_args.seeds_output_path {
+        Some(path) => path,
+        None => &paths.dir()?.join("seeds.tsv"),
+    };
+
     run_mmseqs_search(&paths, align_tsv, args, MmseqsScoreModel::Blosum62)?;
     let seeds = Seeds::from_path(align_tsv)?;
     Ok(seeds)

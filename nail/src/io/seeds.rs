@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -153,10 +153,6 @@ impl Seeds {
         self.index.len()
     }
 
-    pub fn write<W: Write>(&self, out: W) -> anyhow::Result<()> {
-        todo!()
-    }
-
     pub fn get(&mut self, name: &str) -> Option<SeedList> {
         let offset = self.index.get(name)?;
 
@@ -175,7 +171,7 @@ impl Seeds {
         }))
     }
 
-    pub fn names_iter(&self) -> impl Iterator<Item = &str> {
+    pub fn names_iter(&self) -> impl DoubleEndedIterator<Item = &str> {
         self.index.inner.index.keys().map(|k| k.as_str())
     }
 }
@@ -192,14 +188,14 @@ impl Database<SeedList> for Seeds {
     fn iter(&self) -> DatabaseIter<SeedList> {
         DatabaseIter {
             inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.index.keys().map(|s| s.as_str())),
+            names_iter: Box::new(self.names_iter()),
         }
     }
 
     fn values(&self) -> DatabaseValues<SeedList> {
         DatabaseValues {
             inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.index.keys().map(|s| s.as_str())),
+            names_iter: Box::new(self.names_iter()),
         }
     }
 }

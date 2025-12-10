@@ -1,6 +1,6 @@
 use std::io::{self, Read, Seek, SeekFrom};
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 
 #[allow(dead_code)]
 pub(crate) trait ByteBufferExt {
@@ -74,24 +74,6 @@ pub trait ReadSeekExt: Read + Seek {
             // read some bytes, not at the end
             (n, false) => ReadState::Reading(n),
         })
-    }
-
-    /// Reads to the first newline from the current position of `inner` and
-    /// returns the number of bytes read until the newline was found.
-    ///
-    /// Returns an error if a newline isn't found within the number of bytes
-    /// allowed by the length of `buf`.
-    fn read_to_first_newline(&mut self, buf: &mut [u8]) -> anyhow::Result<usize> {
-        let buf_slice = match self.read_with_state(buf)? {
-            ReadState::Reading(n) => &buf[0..n],
-            ReadState::Final(n) => &buf[0..n],
-            ReadState::Done => bail!("read 0 bytes when searching for newline"),
-        };
-
-        buf_slice
-            .iter()
-            .position(|b| *b == b'\n')
-            .ok_or(anyhow!("no newline found in: {} bytes", buf_slice.len()))
     }
 }
 

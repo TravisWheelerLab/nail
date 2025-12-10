@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added `Fasta.lengths_iter()`
 - added `write_seed_map()`
 - added `read_seed_map()`
-- added mod `io::Index`
+- added mod `io::database`
+- added mod `io::index`
 - added mod `io::p7hmm`
 - added mod `io::seeds`
 
@@ -34,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - mod `io::rayon` renamed to `io::impl_rayon`
 - `LexicalFastaIndex::new()` now also takes `start: Option<u64>` to supply a relative starting offset
 - moved `Fasta` struct & related to mod `io::fasta`
-- changed mmseqs2 params:
+- changed mmseqs2 CLI params:
     - removed `--mmseqs-k-score` and `--min-ungapped-score`
     - added `--mmseqs-s`
     - changed default `--mmseqs-k` parameter to k=6
