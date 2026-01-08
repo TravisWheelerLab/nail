@@ -1,26 +1,28 @@
 use self::consts::*;
 
 use std::{
-    fs::create_dir_all,
-    io::Write,
+    fs::{self, create_dir_all, File},
+    io::{BufRead, BufReader, Read, Seek, Write},
     path::{Path, PathBuf},
     process::Command,
 };
 
-use anyhow::{anyhow, bail};
-
-use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO};
+use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, P7Hmm},
+    io::{Database, Fasta, ReadSeekExt, ReadState},
     util::{CommandExt, PathBufExt},
 };
 
-pub mod consts {
+use anyhow::Context;
+use anyhow::{anyhow, bail};
+use regex::Regex;
 
+pub mod consts {
     pub const AMINO_DBTYPE: &[u8] = &[0, 0, 0, 0];
     pub const PROFILE_DBTYPE: &[u8] = &[2, 0, 0, 0];
+    pub const PREFILTER_DBTYPE: &[u8] = &[7, 0, 0, 0];
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
     #[cfg(not(target_os = "windows"))]
     pub const BLOSUM_62: &str = include_str!("../mat/blosum62.mat");
@@ -32,7 +34,229 @@ pub mod consts {
     pub const BLOSUM_80: &str = include_str!("..\\mat\\blosum80.mat");
 }
 
+pub enum ByteBuffer<'a> {
+    Complete(&'a [u8]),
+    Partial(&'a [u8], usize),
+    Empty,
+}
+
+struct Descriptor {
+    file_idx: usize,
+    offset: u64,
+    checkpoint: u64,
+    length: u64,
+}
+
+pub struct PrefilterDb {
+    files: Vec<File>,
+    descriptors: Vec<Descriptor>,
+    buf: Vec<u8>,
+}
+
+impl PrefilterDb {
+    pub fn from_path<P>(path: P) -> anyhow::Result<Self>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        let dir = path.parent().context("path has no parent dir")?;
+        let name = path
+            .file_stem()
+            .context("no file stem")?
+            .to_str()
+            .context("invalid utf8")?;
+
+        // ---
+
+        let index_path = path.with_extension("index");
+        let index_reader =
+            BufReader::new(File::open(&index_path).with_context(|| format!("{:?}", index_path))?);
+
+        let mut offsets = vec![];
+        let mut lengths = vec![];
+        for line in index_reader.lines() {
+            let line = line?;
+
+            let tokens = line
+                .split('\t')
+                .map(|s| s.parse::<u64>().expect("failed to parse index line"))
+                .collect::<Vec<_>>();
+
+            offsets.push(tokens[1]);
+            // -1 because the index lengths include a null byte
+            lengths.push(tokens[2] - 1);
+        }
+
+        offsets.shrink_to_fit();
+        lengths.shrink_to_fit();
+
+        // ---
+
+        let re = Regex::new(&format!(r"^{}\.\d+$", regex::escape(name)))?;
+        let mut paths = fs::read_dir(dir)?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| re.is_match(s))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+
+        paths.sort_by_key(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .and_then(|s| s.parse::<usize>().ok())
+                .expect("bad DB split suffix")
+        });
+
+        // if we have no paths here, that
+        // means the prefilter is one file
+        if paths.is_empty() {
+            paths.push(path.to_path_buf())
+        }
+
+        let mut files: Vec<File> = paths
+            .into_iter()
+            // .inspect(|p| println!("\x1b[34m{p:?}\x1b[0m"))
+            .map(File::open)
+            .collect::<Result<_, _>>()?;
+
+        let file_sizes: Vec<u64> = files
+            .iter()
+            .map(|f| f.metadata().map(|m| m.len()))
+            .collect::<Result<_, _>>()?;
+
+        let prefix_sum = file_sizes
+            .into_iter()
+            .scan(0u64, |acc, x| {
+                let cur = *acc;
+                *acc += x;
+                Some(cur)
+            })
+            .collect::<Vec<_>>();
+
+        // --
+
+        let mut descriptors = offsets
+            .into_iter()
+            .zip(lengths)
+            .map(|(offset, length)| {
+                let file_idx = match prefix_sum.binary_search(&offset) {
+                    // this means the binary search found the exact offset
+                    Ok(idx) => idx,
+                    // this means the binary search landed between offsets
+                    Err(idx) => idx.saturating_sub(1),
+                };
+
+                let relative_offset = offset - prefix_sum[file_idx];
+                Descriptor {
+                    file_idx,
+                    offset: relative_offset,
+                    checkpoint: 0,
+                    length,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for desc in descriptors.iter_mut() {
+            let file = &mut files[desc.file_idx];
+            file.seek(std::io::SeekFrom::Start(desc.offset + desc.length))?;
+
+            let mut b = [0u8; 1];
+            file.read_exact(&mut b)?;
+            let byte = b[0];
+            assert!(byte == 0);
+        }
+
+        Ok(Self {
+            files,
+            descriptors,
+            buf: Vec::with_capacity(2 << 11),
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.descriptors.len()
+    }
+
+    pub fn get(&mut self, prf_idx: usize) -> anyhow::Result<&[u8]> {
+        let desc = &mut self.descriptors[prf_idx];
+
+        if desc.length == 0 {
+            return Ok(&[]);
+        }
+
+        let file = &mut self.files[desc.file_idx];
+
+        file.seek(std::io::SeekFrom::Start(desc.offset))?;
+        let mut taken = file.take(desc.length);
+
+        self.buf.clear();
+        self.buf.resize(desc.length as usize, 0);
+
+        match taken.read_with_state(&mut self.buf)? {
+            ReadState::Final(_) => Ok(&self.buf),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn next_n(&'_ mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer<'_>> {
+        if n == 0 {
+            return Ok(ByteBuffer::Empty);
+        }
+
+        let desc = &mut self.descriptors[prf_idx];
+        let file = &mut self.files[desc.file_idx];
+
+        let start = desc.offset + desc.checkpoint;
+        let end = desc.offset + desc.length;
+        let remaining = end.saturating_sub(start);
+
+        if remaining == 0 {
+            return Ok(ByteBuffer::Empty);
+        }
+
+        file.seek(std::io::SeekFrom::Start(start))?;
+        let mut taken = file.take(remaining);
+
+        self.buf.clear();
+
+        const CHUNK_SZ: usize = 2 << 12;
+        let mut record_cnt = 0;
+        loop {
+            let old_len = self.buf.len();
+            self.buf.resize(old_len + CHUNK_SZ, 0);
+
+            let n_read = match taken.read_with_state(&mut self.buf[old_len..])? {
+                ReadState::Reading(n) | ReadState::Final(n) => n,
+                ReadState::Done => {
+                    self.buf.truncate(old_len);
+                    desc.checkpoint = desc.length;
+                    return Ok(ByteBuffer::Partial(&self.buf, record_cnt));
+                }
+            };
+
+            self.buf.truncate(old_len + n_read);
+
+            for (pos, &b) in self.buf.iter().enumerate().skip(old_len) {
+                if b == b'\n' {
+                    record_cnt += 1;
+                }
+
+                if record_cnt == n {
+                    desc.checkpoint += (pos + 1) as u64;
+                    self.buf.truncate(pos + 1);
+                    return Ok(ByteBuffer::Complete(&self.buf));
+                }
+            }
+        }
+    }
+}
+
 #[allow(dead_code)]
+#[derive(Clone, Copy)]
 pub enum MmseqsScoreModel {
     Profile,
     Blosum62,
@@ -137,7 +361,7 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: &P7Hmm,
+    profiles: impl Iterator<Item = Profile>,
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
@@ -163,7 +387,7 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (prf_cnt, prf) in profiles.values().enumerate() {
+    for (prf_cnt, prf) in profiles.enumerate() {
         for prf_idx in 1..=prf.length {
             for byte in (0..20)
                 .map(|residue| Nats(prf.match_score(residue, prf_idx)))
@@ -227,75 +451,123 @@ pub fn run_mmseqs_search<P: AsRef<Path>>(
     args: &SearchArgs,
     score_model: MmseqsScoreModel,
 ) -> anyhow::Result<()> {
+    let score_mx_path = score_model.write(paths.dir()?)?;
+
+    run_mmseqs_prefilter(
+        &paths.query_db,
+        &paths.target_db,
+        &paths.prefilter_db,
+        score_mx_path,
+        args,
+    )?;
+
+    let score_mx_path = score_model.write(paths.dir()?)?;
+    run_mmseqs_align(
+        &paths.query_db,
+        &paths.target_db,
+        &paths.prefilter_db,
+        &paths.align_db,
+        align_tsv,
+        score_mx_path,
+        args,
+    )
+}
+
+pub fn run_mmseqs_prefilter(
+    query_db_path: impl AsRef<Path>,
+    target_db_path: impl AsRef<Path>,
+    prefilter_db_path: impl AsRef<Path>,
+    // TODO: generics make this annoying
+    score_mx_path: Option<PathBuf>,
+    args: &SearchArgs,
+) -> anyhow::Result<()> {
+    let mut prefilter = Command::new("mmseqs");
+
+    let query_db = query_db_path.as_ref();
+    let target_db = target_db_path.as_ref();
+    let prefilter_db = prefilter_db_path.as_ref();
+
+    prefilter
+        .arg("prefilter")
+        .arg(query_db)
+        .arg(target_db)
+        .arg(prefilter_db)
+        .args(["--threads", &args.num_threads.to_string()])
+        .args(["-k", &args.mmseqs_args.k.to_string()])
+        .args(["-s", &args.mmseqs_args.s.to_string()])
+        // .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
+        .args(["--max-seqs", "2147483647"]);
+
+    if let Some(v) = args.mmseqs_args.comp_bias_corr {
+        prefilter.args(["--comp-bias-corr", &v.to_string()]);
+    }
+
+    if let Some(ref path) = score_mx_path {
+        prefilter.arg("--sub-mat");
+        prefilter.arg(path);
+    };
+
+    prefilter.run()?;
+
+    Ok(())
+}
+
+pub fn run_mmseqs_align(
+    query_db_path: impl AsRef<Path>,
+    target_db_path: impl AsRef<Path>,
+    prefilter_db_path: impl AsRef<Path>,
+    align_db_path: impl AsRef<Path>,
+    align_tsv_path: impl AsRef<Path>,
+    // TODO: generics make this annoying
+    score_mx_path: Option<PathBuf>,
+    args: &SearchArgs,
+) -> anyhow::Result<()> {
     let effective_e_value = args.pipeline_args.seed_pvalue_threshold
         * args
             .expert_args
             .target_database_size
             .ok_or(anyhow!("no target database size"))? as f64;
 
-    let _ = paths.align_db.remove();
-    let _ = paths.align_db.with_extension("dbtype").remove();
-    let _ = paths.align_db.with_extension("index").remove();
+    let query_db = query_db_path.as_ref();
+    let target_db = target_db_path.as_ref();
+    let prefilter_db = prefilter_db_path.as_ref();
+    let align_db = align_db_path.as_ref().to_path_buf();
+    let align_tsv = align_tsv_path.as_ref();
 
-    let score_mat_path = score_model.write(paths.dir()?)?;
+    let _ = align_db.remove();
+    let _ = align_db.with_extension("dbtype").remove();
+    let _ = align_db.with_extension("index").remove();
 
-    {
-        let mut prefilter = Command::new("mmseqs");
+    let mut align = Command::new("mmseqs");
+    align
+        .arg("align")
+        .arg(query_db)
+        .arg(target_db)
+        .arg(prefilter_db)
+        .arg(&align_db)
+        .args(["--threads", &args.num_threads.to_string()])
+        .args(["-e", &effective_e_value.to_string()])
+        // the '-a' argument enables alignment backtraces in mmseqs2
+        // it is required to get start positions for alignments
+        .args(["-a", "1"]);
 
-        prefilter
-            .arg("prefilter")
-            .arg(&paths.query_db)
-            .arg(&paths.target_db)
-            .arg(&paths.prefilter_db)
-            .args(["--threads", &args.num_threads.to_string()])
-            .args(["-k", &args.mmseqs_args.k.to_string()])
-            .args(["-s", &args.mmseqs_args.s.to_string()])
-            .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
-
-        if let Some(v) = args.mmseqs_args.comp_bias_corr {
-            prefilter.args(["--comp-bias-corr", &v.to_string()]);
-        }
-
-        if let Some(ref path) = score_mat_path {
-            prefilter.arg("--sub-mat");
-            prefilter.arg(path);
-        };
-
-        prefilter.run()?;
+    if let Some(v) = args.mmseqs_args.comp_bias_corr {
+        align.args(["--comp-bias-corr", &v.to_string()]);
     }
 
-    {
-        let mut align = Command::new("mmseqs");
-        align
-            .arg("align")
-            .arg(&paths.query_db)
-            .arg(&paths.target_db)
-            .arg(&paths.prefilter_db)
-            .arg(&paths.align_db)
-            .args(["--threads", &args.num_threads.to_string()])
-            .args(["-e", &effective_e_value.to_string()])
-            // the '-a' argument enables alignment backtraces in mmseqs2
-            // it is required to get start positions for alignments
-            .args(["-a", "1"]);
+    if let Some(ref path) = score_mx_path {
+        align.arg("--sub-mat");
+        align.arg(path);
+    };
 
-        if let Some(v) = args.mmseqs_args.comp_bias_corr {
-            align.args(["--comp-bias-corr", &v.to_string()]);
-        }
-
-        if let Some(path) = score_mat_path {
-            align.arg("--sub-mat");
-            align.arg(path);
-        };
-
-        align.run()?;
-    }
+    align.run()?;
 
     Command::new("mmseqs")
         .arg("convertalis")
-        .arg(&paths.query_db)
-        .arg(&paths.target_db)
-        .arg(&paths.align_db)
-        .arg(align_tsv.as_ref())
+        .arg(query_db)
+        .arg(target_db)
+        .arg(align_db)
+        .arg(align_tsv)
         .args(["--threads", &args.num_threads.to_string()])
         .args([
             "--format-output",

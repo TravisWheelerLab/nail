@@ -7,8 +7,9 @@ use crate::args::SearchArgs;
 use crate::io::{Fasta, P7Hmm, Seeds};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline, SeedStage,
+    seed_profile_to_sequence_progressive, seed_sequence_to_sequence, DefaultAlignStage,
+    DefaultCloudSearchStage, DefaultSeedStage, FullDpCloudSearchStage, OutputStage, Pipeline,
+    SeedStage,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -119,7 +120,9 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                 Queries::Sequence(ref queries) => {
                     seed_sequence_to_sequence(queries, &targets, &args)
                 }
-                Queries::Profile(ref queries) => seed_profile_to_sequence(queries, &targets, &args),
+                Queries::Profile(ref queries) => {
+                    seed_profile_to_sequence_progressive(queries, &targets, &args)
+                }
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(
