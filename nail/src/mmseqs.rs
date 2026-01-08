@@ -22,6 +22,7 @@ use regex::Regex;
 pub mod consts {
     pub const AMINO_DBTYPE: &[u8] = &[0, 0, 0, 0];
     pub const PROFILE_DBTYPE: &[u8] = &[2, 0, 0, 0];
+    pub const ALIGN_DBTYPE: &[u8] = &[5, 0, 0, 0];
     pub const PREFILTER_DBTYPE: &[u8] = &[7, 0, 0, 0];
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
     #[cfg(not(target_os = "windows"))]
@@ -467,8 +468,15 @@ pub fn run_mmseqs_search<P: AsRef<Path>>(
         &paths.target_db,
         &paths.prefilter_db,
         &paths.align_db,
-        align_tsv,
         score_mx_path,
+        args,
+    )?;
+
+    run_mmseqs_convertalis(
+        &paths.query_db,
+        &paths.target_db,
+        &paths.align_db,
+        align_tsv,
         args,
     )
 }
@@ -517,7 +525,6 @@ pub fn run_mmseqs_align(
     target_db_path: impl AsRef<Path>,
     prefilter_db_path: impl AsRef<Path>,
     align_db_path: impl AsRef<Path>,
-    align_tsv_path: impl AsRef<Path>,
     // TODO: generics make this annoying
     score_mx_path: Option<PathBuf>,
     args: &SearchArgs,
@@ -532,7 +539,6 @@ pub fn run_mmseqs_align(
     let target_db = target_db_path.as_ref();
     let prefilter_db = prefilter_db_path.as_ref();
     let align_db = align_db_path.as_ref().to_path_buf();
-    let align_tsv = align_tsv_path.as_ref();
 
     let _ = align_db.remove();
     let _ = align_db.with_extension("dbtype").remove();
@@ -561,6 +567,21 @@ pub fn run_mmseqs_align(
     };
 
     align.run()?;
+
+    Ok(())
+}
+
+pub fn run_mmseqs_convertalis(
+    query_db_path: impl AsRef<Path>,
+    target_db_path: impl AsRef<Path>,
+    align_db_path: impl AsRef<Path>,
+    align_tsv_path: impl AsRef<Path>,
+    args: &SearchArgs,
+) -> anyhow::Result<()> {
+    let query_db = query_db_path.as_ref();
+    let target_db = target_db_path.as_ref();
+    let align_db = align_db_path.as_ref().to_path_buf();
+    let align_tsv = align_tsv_path.as_ref();
 
     Command::new("mmseqs")
         .arg("convertalis")
