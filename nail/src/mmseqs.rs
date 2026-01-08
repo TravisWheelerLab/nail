@@ -41,16 +41,18 @@ pub enum ByteBuffer<'a> {
     Empty,
 }
 
+#[derive(Clone, Copy)]
 struct Descriptor {
     file_idx: usize,
     offset: u64,
-    checkpoint: u64,
     length: u64,
 }
 
 pub struct PrefilterDb {
-    files: Vec<File>,
+    file: File,
+    paths: Vec<PathBuf>,
     descriptors: Vec<Descriptor>,
+    checkpoints: Vec<u64>,
     buf: Vec<u8>,
 }
 
@@ -118,15 +120,9 @@ impl PrefilterDb {
             paths.push(path.to_path_buf())
         }
 
-        let mut files: Vec<File> = paths
-            .into_iter()
-            // .inspect(|p| println!("\x1b[34m{p:?}\x1b[0m"))
-            .map(File::open)
-            .collect::<Result<_, _>>()?;
-
-        let file_sizes: Vec<u64> = files
+        let file_sizes: Vec<u64> = paths
             .iter()
-            .map(|f| f.metadata().map(|m| m.len()))
+            .map(|p| p.metadata().map(|m| m.len()))
             .collect::<Result<_, _>>()?;
 
         let prefix_sum = file_sizes
@@ -155,14 +151,13 @@ impl PrefilterDb {
                 Descriptor {
                     file_idx,
                     offset: relative_offset,
-                    checkpoint: 0,
                     length,
                 }
             })
             .collect::<Vec<_>>();
 
         for desc in descriptors.iter_mut() {
-            let file = &mut files[desc.file_idx];
+            let mut file = File::open(&paths[desc.file_idx])?;
             file.seek(std::io::SeekFrom::Start(desc.offset + desc.length))?;
 
             let mut b = [0u8; 1];
@@ -171,28 +166,35 @@ impl PrefilterDb {
             assert!(byte == 0);
         }
 
+        let file = File::open(&paths[0])?;
+        let checkpoints = vec![0; descriptors.len()];
+        let buf = Vec::with_capacity(2 << 11);
+
         Ok(Self {
-            files,
+            file,
+            paths,
             descriptors,
-            buf: Vec::with_capacity(2 << 11),
+            checkpoints,
+            buf,
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.descriptors.len()
+    pub fn open_file(&mut self, file_idx: usize) -> anyhow::Result<()> {
+        self.file = File::open(&self.paths[file_idx])?;
+        Ok(())
     }
 
     pub fn get(&mut self, prf_idx: usize) -> anyhow::Result<&[u8]> {
-        let desc = &mut self.descriptors[prf_idx];
+        let desc = self.descriptors[prf_idx];
 
         if desc.length == 0 {
             return Ok(&[]);
         }
 
-        let file = &mut self.files[desc.file_idx];
+        self.open_file(desc.file_idx)?;
 
-        file.seek(std::io::SeekFrom::Start(desc.offset))?;
-        let mut taken = file.take(desc.length);
+        self.file.seek(std::io::SeekFrom::Start(desc.offset))?;
+        let mut taken = (&mut self.file).take(desc.length);
 
         self.buf.clear();
         self.buf.resize(desc.length as usize, 0);
@@ -208,10 +210,12 @@ impl PrefilterDb {
             return Ok(ByteBuffer::Empty);
         }
 
-        let desc = &mut self.descriptors[prf_idx];
-        let file = &mut self.files[desc.file_idx];
+        let desc = self.descriptors[prf_idx];
+        self.open_file(desc.file_idx)?;
 
-        let start = desc.offset + desc.checkpoint;
+        let checkpoint = &mut self.checkpoints[prf_idx];
+
+        let start = desc.offset + *checkpoint;
         let end = desc.offset + desc.length;
         let remaining = end.saturating_sub(start);
 
@@ -219,8 +223,8 @@ impl PrefilterDb {
             return Ok(ByteBuffer::Empty);
         }
 
-        file.seek(std::io::SeekFrom::Start(start))?;
-        let mut taken = file.take(remaining);
+        self.file.seek(std::io::SeekFrom::Start(start))?;
+        let mut taken = (&mut self.file).take(remaining);
 
         self.buf.clear();
 
@@ -234,7 +238,7 @@ impl PrefilterDb {
                 ReadState::Reading(n) | ReadState::Final(n) => n,
                 ReadState::Done => {
                     self.buf.truncate(old_len);
-                    desc.checkpoint = desc.length;
+                    *checkpoint = desc.length;
                     return Ok(ByteBuffer::Partial(&self.buf, record_cnt));
                 }
             };
@@ -247,7 +251,7 @@ impl PrefilterDb {
                 }
 
                 if record_cnt == n {
-                    desc.checkpoint += (pos + 1) as u64;
+                    *checkpoint += (pos + 1) as u64;
                     self.buf.truncate(pos + 1);
                     return Ok(ByteBuffer::Complete(&self.buf));
                 }
