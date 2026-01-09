@@ -1,4 +1,4 @@
-use std::{fs::create_dir_all, io::Write};
+use std::{fs::create_dir_all, io::Write, time::Instant};
 
 use anyhow::Context;
 use libnail::{
@@ -16,6 +16,7 @@ use crate::{
         MmseqsScoreModel, PrefilterDb,
     },
     pipeline::StageResult,
+    stats::Stats,
     util::PathBufExt,
 };
 
@@ -32,8 +33,11 @@ pub struct SeedStageStats {
 pub fn seed_profile_to_sequence_progressive(
     profiles: &P7Hmm,
     seqs: &Fasta,
+    stats: &mut Stats,
     args: &SearchArgs,
 ) -> anyhow::Result<Seeds> {
+    let time_start = Instant::now();
+
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     // ---
@@ -41,6 +45,7 @@ pub fn seed_profile_to_sequence_progressive(
     write_mmseqs_sequence_database(seqs, &paths.target_db)?;
     write_mmseqs_profile_database(profiles.values(), &paths.query_db)?;
 
+    let now = Instant::now();
     run_mmseqs_prefilter(
         &paths.query_db,
         &paths.target_db,
@@ -48,6 +53,7 @@ pub fn seed_profile_to_sequence_progressive(
         None,
         args,
     )?;
+    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Prefilter, now.elapsed());
 
     // ---
 
@@ -68,8 +74,6 @@ pub fn seed_profile_to_sequence_progressive(
     let mut state: Vec<State> = (0..profiles.len()).map(|_| State::Active).collect();
     let mut prog_adbs = vec![];
     while state.contains(&State::Active) {
-        let start = std::time::Instant::now();
-
         let pf_path = dir.join(format!("{i}/prefilterDB"));
         let dir = pf_path.parent().unwrap();
         create_dir_all(dir)?;
@@ -115,7 +119,7 @@ pub fn seed_profile_to_sequence_progressive(
 
         let prog_adb_path = pf_path.with_file_name("alignDB");
 
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         run_mmseqs_align(
             &paths.query_db,
             &paths.target_db,
@@ -124,7 +128,7 @@ pub fn seed_profile_to_sequence_progressive(
             None,
             args,
         )?;
-        let align_time = now.elapsed();
+        stats.add_mmseqs_time(crate::stats::MmseqsTimed::Align, now.elapsed());
 
         let mut prog_adb =
             PrefilterDb::from_path(prog_adb_path).context("failed to open alignDB")?;
@@ -155,9 +159,6 @@ pub fn seed_profile_to_sequence_progressive(
                 State::Terminated => continue,
             }
         }
-
-        writeln!(report_out, "total: {:?}", start.elapsed())?;
-        writeln!(report_out, "align: {:?}", align_time)?;
 
         i += 1;
         n_take *= 2;
@@ -201,6 +202,7 @@ pub fn seed_profile_to_sequence_progressive(
         None => &paths.dir()?.join("seeds.tsv"),
     };
 
+    let now = Instant::now();
     run_mmseqs_convertalis(
         &paths.query_db,
         &paths.target_db,
@@ -208,8 +210,13 @@ pub fn seed_profile_to_sequence_progressive(
         align_tsv,
         args,
     )?;
+    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Convertalis, now.elapsed());
 
+    let now = Instant::now();
     let seeds = Seeds::from_path(align_tsv).context("failed to build seeds")?;
+    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
+
+    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
 
     Ok(seeds)
 }

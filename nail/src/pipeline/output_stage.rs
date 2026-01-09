@@ -37,6 +37,7 @@ pub enum HeaderStatus {
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct OutputStageStats {
+    pub n_reported: usize,
     pub lock_time: Duration,
     pub write_time: Duration,
 }
@@ -117,6 +118,8 @@ impl OutputStage {
             .collect();
 
         reported.sort_by(|a, b| a.scores.e_value.partial_cmp(&b.scores.e_value).unwrap());
+
+        stats.n_reported(reported.len());
 
         if let Some(writer) = &self.alignment_writer {
             let now = Instant::now();

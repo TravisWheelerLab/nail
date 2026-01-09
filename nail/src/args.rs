@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand};
 
@@ -64,6 +64,44 @@ pub struct SearchArgs {
     #[command(flatten)]
     #[clap(next_help_heading = "Dev options")]
     pub dev_args: DevArgs,
+}
+
+impl SearchArgs {
+    pub fn write(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        writeln!(
+            out,
+            "target: {}",
+            self.target_path.to_str().unwrap_or_default()
+        )?;
+        writeln!(
+            out,
+            "query:  {}",
+            self.query_path.to_str().unwrap_or_default()
+        )?;
+        writeln!(out)?;
+
+        writeln!(out, "pipeline arguments:")?;
+        writeln!(out, " ├─ mmseqs -k: {}", self.mmseqs_args.k)?;
+        writeln!(out, " ├─ mmseqs -s: {:.}", self.mmseqs_args.s)?;
+        writeln!(out, " ├─ α: {}", self.pipeline_args.alpha)?;
+        writeln!(out, " ├─ β: {}", self.pipeline_args.beta)?;
+        writeln!(out, " ├─ γ: {}", self.pipeline_args.gamma)?;
+        writeln!(out, " ├─ S: {}", self.pipeline_args.seed_pvalue_threshold)?;
+        writeln!(out, " ├─ C: {}", self.pipeline_args.cloud_pvalue_threshold)?;
+        writeln!(
+            out,
+            " ├─ F: {}",
+            self.pipeline_args.forward_pvalue_threshold
+        )?;
+        writeln!(out, " ├─ E: {}", self.pipeline_args.e_value_threshold)?;
+        writeln!(
+            out,
+            " └─ Z: {}",
+            self.expert_args.target_database_size.unwrap_or_default()
+        )?;
+
+        Ok(())
+    }
 }
 
 #[derive(Args, Debug, Clone, Default)]

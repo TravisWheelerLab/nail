@@ -121,7 +121,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                     seed_sequence_to_sequence(queries, &targets, &args)
                 }
                 Queries::Profile(ref queries) => {
-                    seed_profile_to_sequence_progressive(queries, &targets, &args)
+                    seed_profile_to_sequence_progressive(queries, &targets, &mut stats, &args)
                 }
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
@@ -179,6 +179,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .set_serial_time(SerialTimed::Total, start_time.elapsed());
 
     if args.print_summary_stats {
+        args.write(&mut stdout())?;
         pipeline.stats.write(&mut stdout())?;
     }
 
