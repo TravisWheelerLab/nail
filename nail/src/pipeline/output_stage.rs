@@ -189,7 +189,7 @@ impl OutputStage {
                     let now = Instant::now();
                     pipeline_results
                         .iter()
-                        .try_for_each(|r| writeln!(guard, "{}", r.tab_string()))?;
+                        .try_for_each(|r| writeln!(guard, "{}", r.stat_string()))?;
 
                     stats.add_write_time(now.elapsed());
                     Ok(())

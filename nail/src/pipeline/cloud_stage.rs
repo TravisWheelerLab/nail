@@ -20,25 +20,6 @@ use super::StageResult;
 
 pub type CloudStageResult = StageResult<RowBounds, CloudStageStats>;
 
-impl CloudStageResult {
-    pub fn tab_string(&self) -> String {
-        let (stats, pass_str) = match self {
-            StageResult::Filtered { stats } => (stats, "F"),
-            StageResult::Passed { stats, .. } => (stats, "P"),
-        };
-        format!(
-            "{} {:.2}b {:.1e} {} {} {} {}",
-            pass_str,
-            stats.score.value(),
-            stats.p_value,
-            stats.forward_cells,
-            stats.backward_cells,
-            stats.forward_time.as_nanos(),
-            stats.backward_time.as_nanos(),
-        )
-    }
-}
-
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct CloudStageStats {

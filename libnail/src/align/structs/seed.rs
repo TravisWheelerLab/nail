@@ -7,6 +7,7 @@ pub struct Seed {
     pub prf_start: usize,
     pub prf_end: usize,
     pub score: f32,
+    pub e_value: f64,
 }
 
 impl Display for Seed {

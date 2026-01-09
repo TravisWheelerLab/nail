@@ -1,7 +1,10 @@
 use std::{fs::create_dir_all, io::Write};
 
 use anyhow::Context;
-use libnail::structs::Profile;
+use libnail::{
+    align::{structs::Seed, Bits},
+    structs::Profile,
+};
 
 use crate::{
     args::SearchArgs,
@@ -12,8 +15,19 @@ use crate::{
         write_mmseqs_profile_database, write_mmseqs_sequence_database, ByteBuffer, MmseqsDbPaths,
         MmseqsScoreModel, PrefilterDb,
     },
+    pipeline::StageResult,
     util::PathBufExt,
 };
+
+pub type SeedStageResult = StageResult<Seed, SeedStageStats>;
+
+impl SeedStageResult {}
+
+#[derive(Default)]
+pub struct SeedStageStats {
+    pub score: Bits,
+    pub e_value: f64,
+}
 
 pub fn seed_profile_to_sequence_progressive(
     profiles: &P7Hmm,

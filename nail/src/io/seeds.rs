@@ -62,6 +62,7 @@ impl RecordParser for SeedParser {
                     prf_start: tokens[2].parse()?,
                     prf_end: tokens[3].parse()?,
                     score: tokens[6].parse()?,
+                    e_value: tokens[7].parse()?,
                 },
             ))
         }

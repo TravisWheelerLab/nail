@@ -17,36 +17,6 @@ use super::StageResult;
 
 pub type AlignStageResult = StageResult<Alignment, AlignStageStats>;
 
-impl AlignStageResult {
-    pub fn tab_string(&self) -> String {
-        match self {
-            StageResult::Filtered { stats } => {
-                format!(
-                    "F {:.2}b {:.1e} {} {}",
-                    stats.score.value(),
-                    stats.p_value,
-                    stats.forward_cells,
-                    stats.forward_time.as_nanos(),
-                )
-            }
-            StageResult::Passed { stats, data: ali } => {
-                format!(
-                    "P {:.2}b {:.1e} {} {} {} {} {} {} {:.1e}",
-                    stats.score.value(),
-                    stats.p_value,
-                    stats.forward_cells,
-                    stats.forward_time.as_nanos(),
-                    stats.backward_time.as_nanos(),
-                    stats.posterior_time.as_nanos(),
-                    stats.optimal_accuracy_time.as_nanos(),
-                    stats.null_two_time.as_nanos(),
-                    ali.scores.e_value,
-                )
-            }
-        }
-    }
-}
-
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct AlignStageStats {

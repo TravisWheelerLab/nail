@@ -17,7 +17,7 @@ use rayon::iter::ParallelIterator;
 use thiserror::Error;
 use thread_local::ThreadLocal;
 
-use libnail::structs::Profile;
+use libnail::{align::Bits, structs::Profile};
 
 use crate::{
     io::{Fasta, P7Hmm},
@@ -55,26 +55,68 @@ pub struct PipelineResult {
     pub target_name: String,
     pub profile_length: usize,
     pub target_length: usize,
+    pub seed_result: SeedStageResult,
     pub cloud_result: Option<CloudStageResult>,
     pub align_result: Option<AlignStageResult>,
 }
 
+pub trait TableDisplay {
+    fn cell(&self) -> String;
+}
+
+impl<T> TableDisplay for Option<T>
+where
+    T: TableDisplay,
+{
+    fn cell(&self) -> String {
+        match self {
+            Some(v) => v.cell(),
+            None => "-".to_string(),
+        }
+    }
+}
+
+impl TableDisplay for f64 {
+    fn cell(&self) -> String {
+        format!("{:.1e}", self)
+    }
+}
+
+impl TableDisplay for Bits {
+    fn cell(&self) -> String {
+        format!("{:.1}", self.0)
+    }
+}
+
 impl PipelineResult {
-    pub fn tab_string(&self) -> String {
+    pub fn stat_string(&self) -> String {
+        let seed_stats = self.seed_result.stats();
+        let (seed_s, seed_e) = (Some(seed_stats.score), Some(seed_stats.e_value));
+
+        let (cloud_s, cloud_p) = self
+            .cloud_result
+            .as_ref()
+            .map(|r| (Some(r.stats().score), Some(r.stats().p_value)))
+            .unwrap_or_default();
+
+        let (align_s, align_p) = self
+            .align_result
+            .as_ref()
+            .map(|r| (Some(r.stats().score), Some(r.stats().p_value)))
+            .unwrap_or_default();
+
         format!(
-            "({} {} {} {}) ({}) ({})",
+            "{} {} {} {} {} {} {} {} {} {}",
             self.profile_name,
             self.target_name,
             self.profile_length,
             self.target_length,
-            match self.cloud_result.as_ref() {
-                Some(result) => result.tab_string(),
-                None => "".to_string(),
-            },
-            match self.align_result.as_ref() {
-                Some(result) => result.tab_string(),
-                None => "".to_string(),
-            },
+            seed_s.cell(),
+            seed_e.cell(),
+            cloud_s.cell(),
+            cloud_p.cell(),
+            align_s.cell(),
+            align_p.cell(),
         )
     }
 }
@@ -96,9 +138,9 @@ impl Pipeline {
         let pipeline_results: Vec<PipelineResult> = match seeds {
             None => return Ok(()),
             Some(seeds) => seeds
-                .iter()
-                .filter_map(|(target_name, seed)| {
-                    let target = match self.targets.get(target_name) {
+                .into_iter()
+                .filter_map(|(seq_name, seed)| {
+                    let target = match self.targets.get(&seq_name) {
                         Some(target) => target,
                         // TODO: probably return an error here instead
                         None => return None,
@@ -107,7 +149,7 @@ impl Pipeline {
                     // configuring for the target length adjusts special state transitions
                     profile.configure_for_target_length(target.length);
 
-                    let cloud_result = self.cloud_search.run(profile, &target, seed);
+                    let cloud_result = self.cloud_search.run(profile, &target, &seed);
 
                     let align_result = match cloud_result {
                         StageResult::Passed {
@@ -121,6 +163,13 @@ impl Pipeline {
                         target_name: target.name.clone(),
                         profile_length: profile.length,
                         target_length: target.length,
+                        seed_result: StageResult::Passed {
+                            data: seed.clone(),
+                            stats: SeedStageStats {
+                                score: Bits(seed.score),
+                                e_value: seed.e_value,
+                            },
+                        },
                         cloud_result: Some(cloud_result),
                         align_result,
                     })
