@@ -406,14 +406,14 @@ impl Database<Profile> for P7Hmm {
         self.len()
     }
 
-    fn iter(&self) -> DatabaseIter<Profile> {
+    fn iter(&'_ self) -> DatabaseIter<'_, Profile> {
         DatabaseIter {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
         }
     }
 
-    fn values(&self) -> DatabaseValues<Profile> {
+    fn values(&'_ self) -> DatabaseValues<'_, Profile> {
         DatabaseValues {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),

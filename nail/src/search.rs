@@ -157,11 +157,11 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     println!("running nail pipeline...");
     let align_timer = Instant::now();
     match queries {
-        Queries::Sequence(queries) => {
+        Queries::Sequence(mut queries) => {
             run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
         }
-        Queries::Profile(queries) => {
-            run_pipeline_profile_to_sequence(&queries, &mut pipeline);
+        Queries::Profile(mut queries) => {
+            run_pipeline_profile_to_sequence(&mut queries, &mut pipeline);
         }
     }
 

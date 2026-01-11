@@ -186,14 +186,14 @@ impl Database<SeedList> for Seeds {
         self.len()
     }
 
-    fn iter(&self) -> DatabaseIter<SeedList> {
+    fn iter(&'_ self) -> DatabaseIter<'_, SeedList> {
         DatabaseIter {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.names_iter()),
         }
     }
 
-    fn values(&self) -> DatabaseValues<SeedList> {
+    fn values(&'_ self) -> DatabaseValues<'_, SeedList> {
         DatabaseValues {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.names_iter()),

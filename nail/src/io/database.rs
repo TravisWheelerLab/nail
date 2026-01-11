@@ -2,8 +2,8 @@ dyn_clone::clone_trait_object!(<T> Database<T>);
 pub trait Database<T>: dyn_clone::DynClone + Send + Sync {
     fn get(&mut self, name: &str) -> Option<T>;
     fn len(&self) -> usize;
-    fn iter(&self) -> DatabaseIter<T>;
-    fn values(&self) -> DatabaseValues<T>;
+    fn iter(&'_ self) -> DatabaseIter<'_, T>;
+    fn values(&'_ self) -> DatabaseValues<'_, T>;
 }
 
 pub struct DatabaseIter<'a, T> {

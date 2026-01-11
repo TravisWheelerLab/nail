@@ -457,7 +457,7 @@ impl Stats {
                         self.add_threaded_time(ThreadedTimed::MemoryInit, stats.memory_init_time);
                         self.add_threaded_time(ThreadedTimed::Forward, stats.forward_time);
                     }
-                    Passed { stats, data } => {
+                    Passed { stats, .. } => {
                         self.increment_count(CountedValue::PassedForward);
 
                         self.add_count(CountedValue::ForwardCells, stats.forward_cells);

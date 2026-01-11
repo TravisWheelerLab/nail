@@ -7,7 +7,7 @@ use rayon::iter::{
 };
 
 impl Fasta {
-    pub fn par_iter(&self) -> DatabaseParIter<Sequence> {
+    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, Sequence> {
         DatabaseParIter {
             inner: Box::new(self.clone()),
             names: self.index.inner.keys().map(|s| s.as_str()).collect(),
@@ -26,7 +26,7 @@ impl<'a> IntoParallelIterator for &'a Fasta {
 }
 
 impl P7Hmm {
-    pub fn par_iter(&self) -> DatabaseParIter<Profile> {
+    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, Profile> {
         DatabaseParIter {
             inner: Box::new(self.clone()),
             names: self.index.inner.keys().map(|s| s.as_str()).collect(),
