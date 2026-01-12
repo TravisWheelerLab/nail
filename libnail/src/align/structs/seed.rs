@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Seed {
+    pub prf: String,
+    pub seq: String,
     pub seq_start: usize,
     pub seq_end: usize,
     pub prf_start: usize,

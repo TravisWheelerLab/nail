@@ -4,12 +4,11 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::{Fasta, P7Hmm, Seeds};
+use crate::io::{Fasta, P7Hmm, Seeds2};
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
     seed_profile_to_sequence_progressive, seed_sequence_to_sequence, DefaultAlignStage,
-    DefaultCloudSearchStage, DefaultSeedStage, FullDpCloudSearchStage, OutputStage, Pipeline,
-    SeedStage,
+    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -105,7 +104,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         Some(ref path) => {
             let now = Instant::now();
             println!("reading seeds...");
-            let seeds = Seeds::from_path(path);
+            let seeds = Seeds2::from_path(path);
             println!(
                 "\x1b[Areading seeds...            done ({:.2}s)",
                 now.elapsed().as_secs_f64()
@@ -138,49 +137,49 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let seed_stage: Box<dyn SeedStage> = Box::new(DefaultSeedStage::new(seeds));
-
-    let mut pipeline = Pipeline {
-        targets,
-        seed: seed_stage,
-        cloud_search: match args.dev_args.full_dp {
-            true => Box::<FullDpCloudSearchStage>::default(),
-            false => Box::new(DefaultCloudSearchStage::new(&args)),
-        },
-        align: Box::new(
-            DefaultAlignStage::new(&args).context("failed to create DefaultAlignStage")?,
-        ),
-        output: OutputStage::new(&args).context("failed to create OutputStage")?,
-        stats,
-    };
-
     println!("running nail pipeline...");
     let align_timer = Instant::now();
     match queries {
-        Queries::Sequence(mut queries) => {
-            run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
+        Queries::Sequence(fasta) => {
+            unimplemented!()
+            // run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
         }
-        Queries::Profile(mut queries) => {
-            run_pipeline_profile_to_sequence(&mut queries, &mut pipeline);
+        Queries::Profile(profiles) => {
+            let mut pipeline = Pipeline {
+                profiles,
+                prf: None,
+                targets,
+                cloud_search: match args.dev_args.full_dp {
+                    true => Box::<FullDpCloudSearchStage>::default(),
+                    false => Box::new(DefaultCloudSearchStage::new(&args)),
+                },
+                align: Box::new(
+                    DefaultAlignStage::new(&args).context("failed to create DefaultAlignStage")?,
+                ),
+                output: OutputStage::new(&args).context("failed to create OutputStage")?,
+                stats,
+            };
+
+            run_pipeline_profile_to_sequence(&mut pipeline, seeds);
+
+            pipeline
+                .stats
+                .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
+
+            println!(
+                "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
+                align_timer.elapsed().as_secs_f64()
+            );
+
+            pipeline
+                .stats
+                .set_serial_time(SerialTimed::Total, start_time.elapsed());
+
+            if args.print_summary_stats {
+                args.write(&mut stdout())?;
+                pipeline.stats.write(&mut stdout())?;
+            }
         }
-    }
-
-    pipeline
-        .stats
-        .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
-
-    println!(
-        "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
-        align_timer.elapsed().as_secs_f64()
-    );
-
-    pipeline
-        .stats
-        .set_serial_time(SerialTimed::Total, start_time.elapsed());
-
-    if args.print_summary_stats {
-        args.write(&mut stdout())?;
-        pipeline.stats.write(&mut stdout())?;
     }
 
     Ok(())

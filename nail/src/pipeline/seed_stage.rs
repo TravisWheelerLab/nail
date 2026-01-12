@@ -1,14 +1,11 @@
 use std::{fs::create_dir_all, io::Write, time::Instant};
 
 use anyhow::Context;
-use libnail::{
-    align::{structs::Seed, Bits},
-    structs::Profile,
-};
+use libnail::align::{structs::Seed, Bits};
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, P7Hmm, SeedList, Seeds},
+    io::{Database, Fasta, P7Hmm, Seeds2},
     mmseqs::{
         consts::{ALIGN_DBTYPE, PREFILTER_DBTYPE},
         run_mmseqs_align, run_mmseqs_convertalis, run_mmseqs_prefilter, run_mmseqs_search,
@@ -35,7 +32,7 @@ pub fn seed_profile_to_sequence_progressive(
     seqs: &Fasta,
     stats: &mut Stats,
     args: &SearchArgs,
-) -> anyhow::Result<Seeds> {
+) -> anyhow::Result<Seeds2> {
     let time_start = Instant::now();
 
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
@@ -213,7 +210,7 @@ pub fn seed_profile_to_sequence_progressive(
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Convertalis, now.elapsed());
 
     let now = Instant::now();
-    let seeds = Seeds::from_path(align_tsv).context("failed to build seeds")?;
+    let seeds = Seeds2::from_path(align_tsv).context("failed to build seeds")?;
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
@@ -225,7 +222,7 @@ pub fn seed_profile_to_sequence(
     profiles: &P7Hmm,
     seqs: &Fasta,
     args: &SearchArgs,
-) -> anyhow::Result<Seeds> {
+) -> anyhow::Result<Seeds2> {
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(seqs, &paths.target_db)?;
@@ -237,7 +234,7 @@ pub fn seed_profile_to_sequence(
 
     write_mmseqs_profile_database(profiles.values(), &paths.query_db)?;
     run_mmseqs_search(&paths, align_tsv, args, MmseqsScoreModel::Profile)?;
-    let seeds = Seeds::from_path(align_tsv)?;
+    let seeds = Seeds2::from_path(align_tsv)?;
     Ok(seeds)
 }
 
@@ -245,7 +242,7 @@ pub fn seed_sequence_to_sequence(
     queries: &Fasta,
     targets: &Fasta,
     args: &SearchArgs,
-) -> anyhow::Result<Seeds> {
+) -> anyhow::Result<Seeds2> {
     let paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
 
     write_mmseqs_sequence_database(targets, &paths.target_db)?;
@@ -257,28 +254,6 @@ pub fn seed_sequence_to_sequence(
     };
 
     run_mmseqs_search(&paths, align_tsv, args, MmseqsScoreModel::Blosum62)?;
-    let seeds = Seeds::from_path(align_tsv)?;
+    let seeds = Seeds2::from_path(align_tsv)?;
     Ok(seeds)
-}
-
-dyn_clone::clone_trait_object!(SeedStage);
-pub trait SeedStage: dyn_clone::DynClone + Send + Sync {
-    fn run(&mut self, profile: &Profile) -> Option<SeedList>;
-}
-
-#[derive(Clone)]
-pub struct DefaultSeedStage {
-    seeds: Seeds,
-}
-
-impl DefaultSeedStage {
-    pub fn new(seeds: Seeds) -> Self {
-        DefaultSeedStage { seeds }
-    }
-}
-
-impl SeedStage for DefaultSeedStage {
-    fn run(&mut self, profile: &Profile) -> Option<SeedList> {
-        self.seeds.get(&profile.name)
-    }
 }

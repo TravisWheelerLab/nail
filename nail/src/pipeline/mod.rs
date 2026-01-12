@@ -1,4 +1,5 @@
 mod cloud_stage;
+use anyhow::Context;
 pub use cloud_stage::*;
 
 mod seed_stage;
@@ -13,8 +14,8 @@ pub use output_stage::*;
 use std::cell::RefCell;
 use std::time::Instant;
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use thiserror::Error;
+use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+
 use thread_local::ThreadLocal;
 
 use libnail::{
@@ -23,21 +24,9 @@ use libnail::{
 };
 
 use crate::{
-    io::{Fasta, P7Hmm},
+    io::{Fasta, P7Hmm, Seeds2},
     stats::{Stats, ThreadedTimed},
 };
-
-#[derive(Error, Debug)]
-#[error("no profile with name: {profile_name}")]
-pub struct ProfileNotFoundError {
-    profile_name: String,
-}
-
-#[derive(Error, Debug)]
-#[error("no target with name: {target_name}")]
-pub struct TargetNotFoundError {
-    target_name: String,
-}
 
 pub enum StageResult<D, S> {
     Filtered { stats: S },
@@ -126,8 +115,9 @@ impl PipelineResult {
 
 #[derive(Clone)]
 pub struct Pipeline {
+    pub profiles: P7Hmm,
+    pub prf: Option<Profile>,
     pub targets: Fasta,
-    pub seed: Box<dyn SeedStage>,
     pub cloud_search: Box<dyn CloudSearchStage>,
     pub align: Box<dyn AlignStage>,
     pub output: OutputStage,
@@ -135,86 +125,38 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    fn run(&mut self, profile: &mut Profile) -> anyhow::Result<()> {
-        let seeds = self.seed.run(profile);
+    fn run(&mut self, seed: &Seed) -> anyhow::Result<PipelineResult> {
+        match self.prf {
+            Some(ref prf) => {
+                if prf.name != seed.prf {
+                    self.prf = self.profiles.get(&seed.prf);
+                }
+            }
+            None => {
+                self.prf = self.profiles.get(&seed.prf);
+            }
+        }
 
-        let pipeline_results: Vec<PipelineResult> = match seeds {
-            None => return Ok(()),
-            Some(seeds) => seeds
-                .into_iter()
-                .filter_map(|(seq_name, seed)| {
-                    let target = match self.targets.get(&seq_name) {
-                        Some(target) => target,
-                        // TODO: probably return an error here instead
-                        None => return None,
-                    };
-
-                    // configuring for the target length adjusts special state transitions
-                    profile.configure_for_target_length(target.length);
-
-                    let cloud_result = self.cloud_search.run(profile, &target, &seed);
-
-                    let align_result = match cloud_result {
-                        StageResult::Passed {
-                            data: ref bounds, ..
-                        } => Some(self.align.run(profile, &target, bounds)),
-                        StageResult::Filtered { .. } => None,
-                    };
-
-                    Some(PipelineResult {
-                        profile_name: profile.name.clone(),
-                        target_name: target.name.clone(),
-                        profile_length: profile.length,
-                        target_length: target.length,
-                        seed_result: StageResult::Passed {
-                            data: seed.clone(),
-                            stats: SeedStageStats {
-                                score: Bits(seed.score),
-                                e_value: seed.e_value,
-                            },
-                        },
-                        cloud_result: Some(cloud_result),
-                        align_result,
-                    })
-                })
-                .collect(),
-        };
-
-        let output_stats = self.output.run(&pipeline_results)?;
-        self.stats.add_sample(&pipeline_results, &output_stats);
-
-        Ok(())
-    }
-
-    fn run2(
-        &mut self,
-        profile: &mut Profile,
-        seq_name: &str,
-        seed: &Seed,
-    ) -> anyhow::Result<PipelineResult> {
-        let target = match self.targets.get(seq_name) {
-            Some(target) => target,
-            // TODO: probably return an error here instead
-            None => panic!(),
-        };
+        let prf = self.prf.as_mut().expect("no prf");
+        let seq = self.targets.get(&seed.seq).context("no seq")?;
 
         // configuring for the target length adjusts special state transitions
-        profile.configure_for_target_length(target.length);
+        prf.configure_for_target_length(seq.length);
 
-        let cloud_result = self.cloud_search.run(profile, &target, seed);
+        let cloud_result = self.cloud_search.run(prf, &seq, seed);
 
         let align_result = match cloud_result {
             StageResult::Passed {
                 data: ref bounds, ..
-            } => Some(self.align.run(profile, &target, bounds)),
+            } => Some(self.align.run(prf, &seq, bounds)),
             StageResult::Filtered { .. } => None,
         };
 
         Ok(PipelineResult {
-            profile_name: profile.name.clone(),
-            target_name: target.name.clone(),
-            profile_length: profile.length,
-            target_length: target.length,
+            profile_name: prf.name.clone(),
+            target_name: seq.name.clone(),
+            profile_length: prf.length,
+            target_length: seq.length,
             seed_result: StageResult::Passed {
                 data: seed.clone(),
                 stats: SeedStageStats {
@@ -228,68 +170,38 @@ impl Pipeline {
     }
 }
 
-pub fn run_pipeline_profile_to_sequence(profiles: &mut P7Hmm, pipeline: &mut Pipeline) {
+pub fn run_pipeline_profile_to_sequence(pipeline: &mut Pipeline, seeds: Seeds2) {
     let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
-    let prf_names = profiles
-        .names_iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    seeds
+        .seeds
+        .par_chunks(100)
+        .panic_fuse()
+        .try_for_each(|chunk| -> anyhow::Result<()> {
+            let now = Instant::now();
+            let mut pipeline = tl_pipeline
+                .get_or(|| RefCell::new(pipeline.clone()))
+                .borrow_mut();
 
-    for n in prf_names.iter() {
-        let prf = profiles.get(n).expect("failed to retreive profile");
-        if let Some(seeds) = pipeline.seed.run(&prf) {
-            let tl_prf: ThreadLocal<RefCell<Profile>> = ThreadLocal::new();
+            let res = chunk
+                .iter()
+                .map(|seed| pipeline.run(seed))
+                .collect::<Result<Vec<_>, _>>()?;
 
-            let res = seeds
-                .par_iter()
-                .panic_fuse()
-                .map(|(seq_name, seed)| {
-                    let now = Instant::now();
-
-                    let mut prf = tl_prf.get_or(|| RefCell::new(prf.clone())).borrow_mut();
-                    let mut pipeline = tl_pipeline
-                        .get_or(|| RefCell::new(pipeline.clone()))
-                        .borrow_mut();
-
-                    let res = pipeline.run2(&mut prf, seq_name, seed);
-
-                    pipeline
-                        .stats
-                        .add_threaded_time(ThreadedTimed::Total, now.elapsed());
-
-                    res
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .unwrap();
-
-            let output_stats = pipeline.output.run(&res).unwrap();
+            let output_stats = pipeline.output.run(&res)?;
             pipeline.stats.add_sample(&res, &output_stats);
-        }
-    }
+
+            pipeline
+                .stats
+                .add_threaded_time(ThreadedTimed::Total, now.elapsed());
+
+            Ok(())
+        })
+        .unwrap();
 }
 
-pub fn run_pipeline_sequence_to_sequence(queries: &Fasta, pipeline: &mut Pipeline) {
-    let thread_local_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
+pub fn run_pipeline_sequence_to_sequence(pipeline: &mut Pipeline, seeds: Seeds2) {
+    let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
-    queries.par_iter().panic_fuse().for_each(|seq| {
-        let now = Instant::now();
-
-        let mut pipeline = thread_local_pipeline
-            .get_or(|| RefCell::new(pipeline.clone()))
-            .borrow_mut();
-
-        let mut profile =
-            Profile::from_blosum_62_and_seq(&seq).expect("failed to build profile from sequence");
-
-        pipeline
-            .stats
-            .add_threaded_time(ThreadedTimed::HmmBuild, now.elapsed());
-
-        let _ = pipeline.run(&mut profile);
-
-        pipeline
-            .stats
-            .add_threaded_time(ThreadedTimed::Total, now.elapsed())
-    });
+    unimplemented!()
 }
