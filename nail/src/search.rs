@@ -1,19 +1,23 @@
+use std::collections::HashMap;
 use std::io::stdout;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
 use crate::io::{Fasta, P7Hmm, Seeds2};
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_profile_to_sequence_progressive, seed_sequence_to_sequence, DefaultAlignStage,
-    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
+    run_pipeline_profile_to_sequence, seed_profile_to_sequence,
+    seed_profile_to_sequence_progressive, seed_progressive, seed_sequence_to_sequence,
+    DefaultAlignStage, DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
 
 use anyhow::Context;
+use libnail::structs::Profile;
+use rayon::iter::ParallelIterator;
 
 pub enum Queries {
     Sequence(Fasta),
@@ -115,14 +119,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         None => {
             let now = Instant::now();
             println!("running mmseqs...");
-            let seeds = match queries {
-                Queries::Sequence(ref queries) => {
-                    seed_sequence_to_sequence(queries, &targets, &args)
-                }
-                Queries::Profile(ref queries) => {
-                    seed_profile_to_sequence_progressive(queries, &targets, &mut stats, &args)
-                }
-            };
+            let seeds = seed_progressive(&queries, &targets, &mut stats, &args);
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(
                 "\x1b[Arunning mmseqs...           done ({:.2}s)",
@@ -137,49 +134,55 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("running nail pipeline...");
+    let profiles: Arc<HashMap<String, Profile>> = Arc::new(
+        match queries {
+            Queries::Sequence(fasta) => fasta
+                .par_iter()
+                .filter_map(|s| Profile::from_blosum_62_and_seq(&s).ok())
+                .collect::<Vec<_>>(),
+            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<Vec<_>>(),
+        }
+        .into_iter()
+        .map(|p| (p.name.clone(), p))
+        .collect(),
+    );
+
+    let mut pipeline = Pipeline {
+        profiles,
+        prf: None,
+        targets,
+        cloud_search: match args.dev_args.full_dp {
+            true => Box::<FullDpCloudSearchStage>::default(),
+            false => Box::new(DefaultCloudSearchStage::new(&args)),
+        },
+        align: Box::new(
+            DefaultAlignStage::new(&args).context("failed to create DefaultAlignStage")?,
+        ),
+        output: OutputStage::new(&args).context("failed to create OutputStage")?,
+        stats,
+    };
+
     let align_timer = Instant::now();
-    match queries {
-        Queries::Sequence(fasta) => {
-            unimplemented!()
-            // run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
-        }
-        Queries::Profile(profiles) => {
-            let mut pipeline = Pipeline {
-                profiles,
-                prf: None,
-                targets,
-                cloud_search: match args.dev_args.full_dp {
-                    true => Box::<FullDpCloudSearchStage>::default(),
-                    false => Box::new(DefaultCloudSearchStage::new(&args)),
-                },
-                align: Box::new(
-                    DefaultAlignStage::new(&args).context("failed to create DefaultAlignStage")?,
-                ),
-                output: OutputStage::new(&args).context("failed to create OutputStage")?,
-                stats,
-            };
+    println!("running nail pipeline...");
 
-            run_pipeline_profile_to_sequence(&mut pipeline, seeds);
+    run_pipeline_profile_to_sequence(&mut pipeline, seeds);
 
-            pipeline
-                .stats
-                .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
+    pipeline
+        .stats
+        .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
 
-            println!(
-                "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
-                align_timer.elapsed().as_secs_f64()
-            );
+    println!(
+        "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
+        align_timer.elapsed().as_secs_f64()
+    );
 
-            pipeline
-                .stats
-                .set_serial_time(SerialTimed::Total, start_time.elapsed());
+    pipeline
+        .stats
+        .set_serial_time(SerialTimed::Total, start_time.elapsed());
 
-            if args.print_summary_stats {
-                args.write(&mut stdout())?;
-                pipeline.stats.write(&mut stdout())?;
-            }
-        }
+    if args.print_summary_stats {
+        args.write(&mut stdout())?;
+        pipeline.stats.write(&mut stdout())?;
     }
 
     Ok(())

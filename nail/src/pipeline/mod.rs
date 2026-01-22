@@ -11,8 +11,9 @@ pub use align_stage::*;
 mod output_stage;
 pub use output_stage::*;
 
-use std::cell::RefCell;
+use std::collections::HashMap;
 use std::time::Instant;
+use std::{cell::RefCell, sync::Arc};
 
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 
@@ -24,7 +25,7 @@ use libnail::{
 };
 
 use crate::{
-    io::{Fasta, P7Hmm, Seeds2},
+    io::{Fasta, Seeds2},
     stats::{Stats, ThreadedTimed},
 };
 
@@ -115,7 +116,7 @@ impl PipelineResult {
 
 #[derive(Clone)]
 pub struct Pipeline {
-    pub profiles: P7Hmm,
+    pub profiles: Arc<HashMap<String, Profile>>,
     pub prf: Option<Profile>,
     pub targets: Fasta,
     pub cloud_search: Box<dyn CloudSearchStage>,
@@ -129,11 +130,11 @@ impl Pipeline {
         match self.prf {
             Some(ref prf) => {
                 if prf.name != seed.prf {
-                    self.prf = self.profiles.get(&seed.prf);
+                    self.prf = self.profiles.get(&seed.prf).map(|p| p.clone());
                 }
             }
             None => {
-                self.prf = self.profiles.get(&seed.prf);
+                self.prf = self.profiles.get(&seed.prf).map(|p| p.clone());
             }
         }
 
@@ -198,10 +199,4 @@ pub fn run_pipeline_profile_to_sequence(pipeline: &mut Pipeline, seeds: Seeds2) 
             Ok(())
         })
         .unwrap();
-}
-
-pub fn run_pipeline_sequence_to_sequence(pipeline: &mut Pipeline, seeds: Seeds2) {
-    let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
-
-    unimplemented!()
 }
