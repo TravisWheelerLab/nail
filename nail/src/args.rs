@@ -1,6 +1,9 @@
 use std::{io::Write, path::PathBuf};
 
+use anyhow::bail;
 use clap::{Args, Parser, Subcommand};
+
+use crate::util::term::*;
 
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
@@ -54,7 +57,7 @@ pub struct SearchArgs {
 
     /// Arguments that are passed to MMseqs2
     #[command(flatten)]
-    #[clap(next_help_heading = "MMseqs2 options")]
+    #[clap(next_help_heading = "Seeding options")]
     pub mmseqs_args: MmseqsArgs,
 
     #[command(flatten)]
@@ -67,6 +70,27 @@ pub struct SearchArgs {
 }
 
 impl SearchArgs {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.mmseqs_args.prog_seed {
+            if self.mmseqs_args.prog_n.is_none() {
+                bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
+            }
+            if self.mmseqs_args.prog_n.is_none() {
+                bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
+            }
+        } else {
+            #[allow(clippy::collapsible_if)]
+            if self.mmseqs_args.prog_n.is_some() {
+                bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+            }
+            if self.mmseqs_args.prog_n.is_some() {
+                bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn write(&self, out: &mut impl Write) -> anyhow::Result<()> {
         writeln!(
             out,
@@ -166,7 +190,7 @@ pub struct PipelineArgs {
     /// Seeding filter threshold
     #[arg(
         short = 'S',
-        default_value_t = 0.01f64,
+        default_value_t = 1e-4,
         value_name = "X",
         help = "Seeding filter threshold:\n  \
                 filter hits with P-value > X"
@@ -176,7 +200,7 @@ pub struct PipelineArgs {
     /// Cloud search filter threshold
     #[arg(
         short = 'C',
-        default_value_t = 1e-3,
+        default_value_t = 1e-2,
         value_name = "X",
         help = "Cloud search threshold:\n  \
                 filter hits with P-value > X"
@@ -232,28 +256,74 @@ pub struct DevArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct MmseqsArgs {
-    /// MMseqs2 description: k-mer length (0: automatically set to optimum)
-    #[arg(long = "mmseqs-k", default_value_t = 6usize, value_name = "N")]
+    /// MMseqs2 Parameter: k-mer length (0: automatically set to optimum)
+    #[arg(
+        long = "mmseqs-k",
+        default_value_t = 6usize,
+        value_name = "N",
+        help = "MMseqs2 parameter:\n  \
+                k-mer length (0: automatically set to optimum)"
+    )]
     pub k: usize,
 
-    /// MMseqs2 description: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
-    #[arg(long = "mmseqs-s", default_value_t = 10.0, value_name = "X")]
+    /// MMseqs2 Parameter: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
+    #[arg(
+        long = "mmseqs-s",
+        default_value_t = 10.0,
+        value_name = "X",
+        help = "MMseqs2 parameter:\n  \
+                Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive"
+    )]
     pub s: f32,
 
-    /// MMseqs2 description: Maximum results per query sequence allowed to pass the prefilter
+    /// MMseqs2 Parameter: Maximum results per query sequence allowed to pass the prefilter
     #[arg(
         long = "mmseqs-max-seqs",
-        default_value_t = 2000usize,
-        value_name = "N"
+        default_value_t = 200usize,
+        value_name = "N",
+        help = "MMseqs2 parameter:\n  \
+                Maximum results per query sequence allowed to pass the prefilter"
     )]
     pub max_seqs: usize,
 
-    /// MMseqs2 description: Correct for locally biased amino acid composition (range 0-1)
+    /// MMseqs2 Parameter: Correct for locally biased amino acid composition (range 0-1)
     #[arg(
         long = "mmseqs-comp-bias-corr",
         default_value = None,
         value_name = "N",
-        hide = true
+        hide = true,
+        help = "MMseqs2 parameter:\n  \
+                Correct for locally biased amino acid composition (range 0-1)"
     )]
     pub comp_bias_corr: Option<usize>,
+
+    /// Enable progressive seeding
+    #[arg(long, action, conflicts_with = "max_seqs")]
+    pub prog_seed: bool,
+
+    /// The initial number of mmseqs alignments per query
+    #[arg(
+        long,
+        default_value = "200",
+        default_value_if("prog_seed", "true", "200"),
+        default_value_if("prog_seed", "false", None),
+        value_name = "N",
+        conflicts_with = "max_seqs",
+        help = "Progressive seeding:\n  \
+                the initial number of mmseqs alignments per query"
+    )]
+    pub prog_n: Option<usize>,
+
+    /// test
+    #[arg(
+        long,
+        default_value = "0.01",
+        default_value_if("prog_seed", "true", "0.01"),
+        default_value_if("prog_seed", "false", None),
+        value_name = "X",
+        conflicts_with = "max_seqs",
+        help = "Progressive seeding:\n  \
+                the fraction of hits required to continue progressive seeding"
+    )]
+    pub prog_f: Option<f32>,
 }

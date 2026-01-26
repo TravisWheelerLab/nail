@@ -130,11 +130,11 @@ impl Pipeline {
         match self.prf {
             Some(ref prf) => {
                 if prf.name != seed.prf {
-                    self.prf = self.profiles.get(&seed.prf).map(|p| p.clone());
+                    self.prf = self.profiles.get(&seed.prf).cloned();
                 }
             }
             None => {
-                self.prf = self.profiles.get(&seed.prf).map(|p| p.clone());
+                self.prf = self.profiles.get(&seed.prf).cloned();
             }
         }
 
