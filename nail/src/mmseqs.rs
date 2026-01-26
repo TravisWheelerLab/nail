@@ -507,8 +507,7 @@ pub fn run_mmseqs_prefilter(
         .args(["--threads", &args.num_threads.to_string()])
         .args(["-k", &args.mmseqs_args.k.to_string()])
         .args(["-s", &args.mmseqs_args.s.to_string()])
-        // .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
-        .args(["--max-seqs", "2147483647"]);
+        .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
 
     if let Some(v) = args.mmseqs_args.comp_bias_corr {
         prefilter.args(["--comp-bias-corr", &v.to_string()]);

@@ -8,9 +8,8 @@ use std::time::Instant;
 use crate::args::SearchArgs;
 use crate::io::{Fasta, P7Hmm, Seeds2};
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, seed_profile_to_sequence,
-    seed_profile_to_sequence_progressive, seed_progressive, seed_sequence_to_sequence,
-    DefaultAlignStage, DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
+    run_pipeline_profile_to_sequence, seed_max_seqs, seed_progressive, DefaultAlignStage,
+    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats};
 use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
@@ -119,7 +118,11 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         None => {
             let now = Instant::now();
             println!("running mmseqs...");
-            let seeds = seed_progressive(&queries, &targets, &mut stats, &args);
+            let seeds = if args.mmseqs_args.prog_seed {
+                seed_progressive(&queries, &targets, &mut stats, &args)
+            } else {
+                seed_max_seqs(&queries, &targets, &mut stats, &args)
+            };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(
                 "\x1b[Arunning mmseqs...           done ({:.2}s)",

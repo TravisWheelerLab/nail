@@ -72,9 +72,17 @@ pub struct SearchArgs {
 impl SearchArgs {
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.mmseqs_args.prog_seed {
+            if self.mmseqs_args.max_seqs != 2_147_483_647 {
+                bail!(
+                    "the argument '{YELLOW}--mmseqs-max-seqs{RESET}' is set wrong: {}",
+                    self.mmseqs_args.max_seqs
+                )
+            }
+
             if self.mmseqs_args.prog_n.is_none() {
                 bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
             }
+
             if self.mmseqs_args.prog_n.is_none() {
                 bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
             }
@@ -107,6 +115,24 @@ impl SearchArgs {
         writeln!(out, "pipeline arguments:")?;
         writeln!(out, " ├─ mmseqs -k: {}", self.mmseqs_args.k)?;
         writeln!(out, " ├─ mmseqs -s: {:.}", self.mmseqs_args.s)?;
+        writeln!(
+            out,
+            " ├─ mmseqs --max-seqs: {:.}",
+            self.mmseqs_args.max_seqs
+        )?;
+        writeln!(out, " ├─ prog-seed: {}", self.mmseqs_args.prog_seed)?;
+        if self.mmseqs_args.prog_seed {
+            writeln!(
+                out,
+                "   ├─ n: {}",
+                self.mmseqs_args.prog_n.unwrap_or_default()
+            )?;
+            writeln!(
+                out,
+                "   └─ f: {}",
+                self.mmseqs_args.prog_f.unwrap_or_default()
+            )?;
+        }
         writeln!(out, " ├─ α: {}", self.pipeline_args.alpha)?;
         writeln!(out, " ├─ β: {}", self.pipeline_args.beta)?;
         writeln!(out, " ├─ γ: {}", self.pipeline_args.gamma)?;
@@ -147,7 +173,7 @@ pub struct IoArgs {
     pub seeds_output_path: Option<PathBuf>,
 
     /// The directory where intermediate files will be placed
-    #[arg(long = "tmp-dir", default_value = "tmp/", value_name = "PATH")]
+    #[arg(long = "tmp-dir", default_value = "tmp-nail/", value_name = "PATH")]
     pub temp_dir_path: PathBuf,
 
     /// Allow nail to overwrite files
@@ -280,6 +306,7 @@ pub struct MmseqsArgs {
     #[arg(
         long = "mmseqs-max-seqs",
         default_value_t = 200usize,
+        default_value_if("prog_seed", "true", "2147483647"),
         value_name = "N",
         help = "MMseqs2 parameter:\n  \
                 Maximum results per query sequence allowed to pass the prefilter"
