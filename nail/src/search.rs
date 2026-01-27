@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use crate::args::SearchArgs;
 use crate::io::{Fasta, P7Hmm, Seeds2};
+use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
     run_pipeline_profile_to_sequence, seed_max_seqs, seed_progressive, DefaultAlignStage,
     DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
@@ -118,10 +119,20 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         None => {
             let now = Instant::now();
             println!("running mmseqs...");
-            let seeds = if args.mmseqs_args.prog_seed {
-                seed_progressive(&queries, &targets, &mut stats, &args)
+
+            let db_paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
+            if args.io_args.allow_overwrite {
+                db_paths
+                    .destroy()
+                    .context("failed to remove existing mmseqs DBs")?;
             } else {
-                seed_max_seqs(&queries, &targets, &mut stats, &args)
+                db_paths.check().context("mmseqs DB check failed")?;
+            }
+
+            let seeds = if args.mmseqs_args.prog_seed {
+                seed_progressive(&queries, &targets, &db_paths, &mut stats, &args)
+            } else {
+                seed_max_seqs(&queries, &targets, &db_paths, &mut stats, &args)
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(

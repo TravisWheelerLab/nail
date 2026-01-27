@@ -1,7 +1,7 @@
 use self::consts::*;
 
 use std::{
-    fs::{self, create_dir_all, File},
+    fs::File,
     io::{BufRead, BufReader, Read, Seek, Write},
     path::{Path, PathBuf},
     process::Command,
@@ -96,7 +96,7 @@ impl PrefilterDb {
         // ---
 
         let re = Regex::new(&format!(r"^{}\.\d+$", regex::escape(name)))?;
-        let mut paths = fs::read_dir(dir)?
+        let mut paths = std::fs::read_dir(dir)?
             .filter_map(Result::ok)
             .map(|e| e.path())
             .filter(|p| {
@@ -293,24 +293,167 @@ pub struct MmseqsDbPaths {
     pub target_db: PathBuf,
     pub prefilter_db: PathBuf,
     pub align_db: PathBuf,
+    pub prog_dir: PathBuf,
 }
 
 impl MmseqsDbPaths {
     pub fn new(dir: impl AsRef<Path>) -> Self {
         let dir = dir.as_ref().to_path_buf();
         Self {
-            query_db: dir.join("queryDB"),
-            target_db: dir.join("targetDB"),
-            prefilter_db: dir.join("prefilterDB"),
-            align_db: dir.join("alignDB"),
+            query_db: dir.join("query-db/qdb"),
+            target_db: dir.join("target-db/tdb"),
+            prefilter_db: dir.join("prefilter-db/pdb"),
+            align_db: dir.join("align-db/adb"),
+            prog_dir: dir.join("prog-seed/"),
         }
     }
 
-    pub fn dir(&self) -> anyhow::Result<&Path> {
-        match self.query_db.parent() {
-            Some(path) => Ok(path),
-            None => bail!("no parent directory found in call to MmseqsDbPaths::write()"),
+    pub fn destroy(&self) -> anyhow::Result<()> {
+        Self::remove_db(&self.query_db).context("failed to remove mmseqs query DB")?;
+        Self::remove_db(&self.target_db).context("failed to remove mmseqs target DB")?;
+        Self::remove_db(&self.prefilter_db).context("failed to remove mmseqs prefilter DB")?;
+        Self::remove_db(&self.align_db).context("failed to remove mmseqs align DB")?;
+
+        let re = Regex::new(r"^\d+$")?;
+        std::fs::read_dir(&self.prog_dir)
+            .with_context(|| format!("failed to open dir: {:?}", &self.prog_dir))?
+            .try_for_each(|entry| -> anyhow::Result<()> {
+                let entry = entry.with_context(|| {
+                    format!("failed to access a file in dir: {:?}", &self.prog_dir)
+                })?;
+
+                let path = entry.path();
+
+                let ft = entry
+                    .file_type()
+                    .with_context(|| format!("failed to stat {path:?}"))?;
+
+                if ft.is_dir()
+                    && path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|s| re.is_match(s))
+                {
+                    std::fs::remove_dir_all(&path)
+                        .with_context(|| format!("failed to remove {path:?}"))?;
+                }
+
+                Ok(())
+            })?;
+
+        Ok(())
+    }
+
+    pub fn check(&self) -> anyhow::Result<()> {
+        if Self::db_exists(&self.query_db)? {
+            bail!("mmseqs query DB already exists");
+        } else if Self::db_exists(&self.target_db)? {
+            bail!("mmseqs target DB already exists");
+        } else if Self::db_exists(&self.prefilter_db)? {
+            bail!("mmseqs prefilter DB already exists");
+        } else if Self::db_exists(&self.align_db)? {
+            bail!("mmseqs align DB already exists");
         }
+        Ok(())
+    }
+
+    fn db_exists<P: AsRef<Path>>(path: P) -> anyhow::Result<bool> {
+        let path = path.as_ref();
+        let db_dir = path.parent().context("DB path has no parent dir")?;
+
+        if !db_dir
+            .try_exists()
+            .with_context(|| format!("failed to check existence of: {db_dir:?}"))?
+        {
+            return Ok(false);
+        }
+
+        let db_name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .context("failed to get db name from path")?;
+
+        let re = Regex::new(&format!(r"^{}.*", regex::escape(db_name)))?;
+
+        std::fs::read_dir(db_dir)
+            .with_context(|| format!("failed to open dir: {db_dir:?}"))?
+            .try_fold(false, |_, entry| {
+                let p = entry
+                    .with_context(|| format!("failed to access a file in dir: {db_dir:?}"))?
+                    .path();
+
+                Ok(p.file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| re.is_match(s)))
+            })
+    }
+
+    fn remove_db<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
+        let path = path.as_ref();
+        let db_dir = path.parent().context("DB path has no parent dir")?;
+
+        if !db_dir
+            .try_exists()
+            .with_context(|| format!("failed to check existence of: {db_dir:?}"))?
+        {
+            return Ok(());
+        }
+
+        if !db_dir.is_dir() {
+            bail!("DB parent is not a directory");
+        }
+
+        if !db_dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.ends_with("-db"))
+        {
+            bail!("DB parent dir name is supposed to end with -db");
+        }
+
+        let db_name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .context("failed to get db name from path")?;
+
+        if db_name.is_empty() {
+            bail!("empty DB prefix")
+        }
+
+        let re = Regex::new(&format!(
+            r"^{}(\.\d+|\.index|\.dbtype|_h|_h\.index|_h\.dbtype)?$",
+            regex::escape(db_name)
+        ))?;
+
+        std::fs::read_dir(db_dir)
+            .with_context(|| format!("failed to open dir: {db_dir:?}"))?
+            .try_for_each(|entry| -> anyhow::Result<()> {
+                let entry =
+                    entry.with_context(|| format!("failed to access a file in dir: {db_dir:?}"))?;
+
+                let path = entry.path();
+
+                let ft = entry
+                    .file_type()
+                    .with_context(|| format!("failed to stat {path:?}"))?;
+
+                if ft.is_dir() {
+                    return Ok(());
+                }
+
+                if path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| re.is_match(s))
+                {
+                    std::fs::remove_file(&path)
+                        .with_context(|| format!("failed to remove {path:?}"))?;
+                }
+
+                Ok(())
+            })?;
+
+        Ok(())
     }
 }
 
@@ -328,7 +471,7 @@ pub fn write_mmseqs_sequence_database(
     let header_dbtype_path = db_path.with_file_name(format!("{db_name}_h.dbtype"));
 
     let dir = db_path.parent().unwrap();
-    create_dir_all(dir)?;
+    std::fs::create_dir_all(dir)?;
 
     db_dbtype_path.open(true)?.write_all(AMINO_DBTYPE)?;
     header_dbtype_path.open(true)?.write_all(GENERIC_DBTYPE)?;
@@ -379,7 +522,7 @@ pub fn write_mmseqs_profile_database(
     let header_dbtype_path = db_path.with_file_name(format!("{db_name}_h.dbtype"));
 
     let dir = db_path.parent().unwrap();
-    create_dir_all(dir)?;
+    std::fs::create_dir_all(dir)?;
 
     db_dbtype_path.open(true)?.write_all(PROFILE_DBTYPE)?;
     header_dbtype_path.open(true)?.write_all(GENERIC_DBTYPE)?;
@@ -450,41 +593,6 @@ pub fn write_mmseqs_profile_database(
     Ok(())
 }
 
-pub fn run_mmseqs_search<P: AsRef<Path>>(
-    paths: &MmseqsDbPaths,
-    align_tsv: P,
-    args: &SearchArgs,
-    score_model: MmseqsScoreModel,
-) -> anyhow::Result<()> {
-    let score_mx_path = score_model.write(paths.dir()?)?;
-
-    run_mmseqs_prefilter(
-        &paths.query_db,
-        &paths.target_db,
-        &paths.prefilter_db,
-        score_mx_path,
-        args,
-    )?;
-
-    let score_mx_path = score_model.write(paths.dir()?)?;
-    run_mmseqs_align(
-        &paths.query_db,
-        &paths.target_db,
-        &paths.prefilter_db,
-        &paths.align_db,
-        score_mx_path,
-        args,
-    )?;
-
-    run_mmseqs_convertalis(
-        &paths.query_db,
-        &paths.target_db,
-        &paths.align_db,
-        align_tsv,
-        args,
-    )
-}
-
 pub fn run_mmseqs_prefilter(
     query_db_path: impl AsRef<Path>,
     target_db_path: impl AsRef<Path>,
@@ -495,15 +603,31 @@ pub fn run_mmseqs_prefilter(
 ) -> anyhow::Result<()> {
     let mut prefilter = Command::new("mmseqs");
 
-    let query_db = query_db_path.as_ref();
-    let target_db = target_db_path.as_ref();
-    let prefilter_db = prefilter_db_path.as_ref();
+    let qdb = query_db_path.as_ref();
+    let tdb = target_db_path.as_ref();
+    let pdb = prefilter_db_path.as_ref();
+
+    let pdb_dir = pdb
+        .parent()
+        .context("failed to produce mmseqs prefilter DB directory path")?;
+
+    if !pdb_dir
+        .try_exists()
+        .with_context(|| format!("failed to check existence of: {pdb_dir:?}"))?
+    {
+        std::fs::create_dir(pdb_dir).context("failed to create mmseqs prefilter DB directory")?;
+    }
+
+    match pdb.parent() {
+        Some(dir) => std::fs::create_dir_all(dir)?,
+        None => bail!("failed to create mmseqs prefilter DB directory"),
+    }
 
     prefilter
         .arg("prefilter")
-        .arg(query_db)
-        .arg(target_db)
-        .arg(prefilter_db)
+        .arg(qdb)
+        .arg(tdb)
+        .arg(pdb)
         .args(["--threads", &args.num_threads.to_string()])
         .args(["-k", &args.mmseqs_args.k.to_string()])
         .args(["-s", &args.mmseqs_args.s.to_string()])
@@ -538,22 +662,29 @@ pub fn run_mmseqs_align(
             .target_database_size
             .ok_or(anyhow!("no target database size"))? as f64;
 
-    let query_db = query_db_path.as_ref();
-    let target_db = target_db_path.as_ref();
-    let prefilter_db = prefilter_db_path.as_ref();
-    let align_db = align_db_path.as_ref().to_path_buf();
+    let qdb = query_db_path.as_ref();
+    let tdb = target_db_path.as_ref();
+    let pdb = prefilter_db_path.as_ref();
+    let adb = align_db_path.as_ref().to_path_buf();
 
-    let _ = align_db.remove();
-    let _ = align_db.with_extension("dbtype").remove();
-    let _ = align_db.with_extension("index").remove();
+    let adb_dir = adb
+        .parent()
+        .context("failed to produce mmseqs align DB directory path")?;
+
+    if !adb_dir
+        .try_exists()
+        .with_context(|| format!("failed to check existence of: {adb_dir:?}"))?
+    {
+        std::fs::create_dir(adb_dir).context("failed to create mmseqs align DB directory")?;
+    }
 
     let mut align = Command::new("mmseqs");
     align
         .arg("align")
-        .arg(query_db)
-        .arg(target_db)
-        .arg(prefilter_db)
-        .arg(&align_db)
+        .arg(qdb)
+        .arg(tdb)
+        .arg(pdb)
+        .arg(&adb)
         .args(["--threads", &args.num_threads.to_string()])
         .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
@@ -581,16 +712,16 @@ pub fn run_mmseqs_convertalis(
     align_tsv_path: impl AsRef<Path>,
     args: &SearchArgs,
 ) -> anyhow::Result<()> {
-    let query_db = query_db_path.as_ref();
-    let target_db = target_db_path.as_ref();
-    let align_db = align_db_path.as_ref().to_path_buf();
+    let qdb = query_db_path.as_ref();
+    let tdb = target_db_path.as_ref();
+    let adb = align_db_path.as_ref().to_path_buf();
     let align_tsv = align_tsv_path.as_ref();
 
     Command::new("mmseqs")
         .arg("convertalis")
-        .arg(query_db)
-        .arg(target_db)
-        .arg(align_db)
+        .arg(qdb)
+        .arg(tdb)
+        .arg(adb)
         .arg(align_tsv)
         .args(["--threads", &args.num_threads.to_string()])
         .args([

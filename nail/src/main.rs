@@ -18,7 +18,7 @@ static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("{RED}error:{RESET} {e}");
+        eprintln!("\n{RED}error:{RESET} {e:?}\n");
         std::process::exit(1);
     }
 }
