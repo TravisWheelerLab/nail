@@ -64,6 +64,15 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     {
         // quickly make sure we can write to all of the results paths
+        if !args.io_args.temp_dir_path.try_exists().with_context(|| {
+            format!(
+                "failed to check existence of: {:?}",
+                &args.io_args.temp_dir_path
+            )
+        })? {
+            std::fs::create_dir(&args.io_args.temp_dir_path).context("failed to create tmp dir")?;
+        }
+
         if let Some(path) = &args.io_args.tbl_results_path {
             path.open(args.io_args.allow_overwrite)?;
         }

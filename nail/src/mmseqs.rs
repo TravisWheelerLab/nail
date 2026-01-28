@@ -314,32 +314,38 @@ impl MmseqsDbPaths {
         Self::remove_db(&self.prefilter_db).context("failed to remove mmseqs prefilter DB")?;
         Self::remove_db(&self.align_db).context("failed to remove mmseqs align DB")?;
 
-        let re = Regex::new(r"^\d+$")?;
-        std::fs::read_dir(&self.prog_dir)
-            .with_context(|| format!("failed to open dir: {:?}", &self.prog_dir))?
-            .try_for_each(|entry| -> anyhow::Result<()> {
-                let entry = entry.with_context(|| {
-                    format!("failed to access a file in dir: {:?}", &self.prog_dir)
+        if self
+            .prog_dir
+            .try_exists()
+            .with_context(|| format!("failed to check existence of: {:?}", self.prog_dir))?
+        {
+            let re = Regex::new(r"^\d+$")?;
+            std::fs::read_dir(&self.prog_dir)
+                .with_context(|| format!("failed to open dir: {:?}", &self.prog_dir))?
+                .try_for_each(|entry| -> anyhow::Result<()> {
+                    let entry = entry.with_context(|| {
+                        format!("failed to access a file in dir: {:?}", &self.prog_dir)
+                    })?;
+
+                    let path = entry.path();
+
+                    let ft = entry
+                        .file_type()
+                        .with_context(|| format!("failed to stat {path:?}"))?;
+
+                    if ft.is_dir()
+                        && path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .is_some_and(|s| re.is_match(s))
+                    {
+                        std::fs::remove_dir_all(&path)
+                            .with_context(|| format!("failed to remove {path:?}"))?;
+                    }
+
+                    Ok(())
                 })?;
-
-                let path = entry.path();
-
-                let ft = entry
-                    .file_type()
-                    .with_context(|| format!("failed to stat {path:?}"))?;
-
-                if ft.is_dir()
-                    && path
-                        .file_name()
-                        .and_then(|s| s.to_str())
-                        .is_some_and(|s| re.is_match(s))
-                {
-                    std::fs::remove_dir_all(&path)
-                        .with_context(|| format!("failed to remove {path:?}"))?;
-                }
-
-                Ok(())
-            })?;
+        }
 
         Ok(())
     }
@@ -471,7 +477,7 @@ pub fn write_mmseqs_sequence_database(
     let header_dbtype_path = db_path.with_file_name(format!("{db_name}_h.dbtype"));
 
     let dir = db_path.parent().unwrap();
-    std::fs::create_dir_all(dir)?;
+    std::fs::create_dir(dir)?;
 
     db_dbtype_path.open(true)?.write_all(AMINO_DBTYPE)?;
     header_dbtype_path.open(true)?.write_all(GENERIC_DBTYPE)?;
@@ -522,7 +528,7 @@ pub fn write_mmseqs_profile_database(
     let header_dbtype_path = db_path.with_file_name(format!("{db_name}_h.dbtype"));
 
     let dir = db_path.parent().unwrap();
-    std::fs::create_dir_all(dir)?;
+    std::fs::create_dir(dir)?;
 
     db_dbtype_path.open(true)?.write_all(PROFILE_DBTYPE)?;
     header_dbtype_path.open(true)?.write_all(GENERIC_DBTYPE)?;
@@ -616,11 +622,6 @@ pub fn run_mmseqs_prefilter(
         .with_context(|| format!("failed to check existence of: {pdb_dir:?}"))?
     {
         std::fs::create_dir(pdb_dir).context("failed to create mmseqs prefilter DB directory")?;
-    }
-
-    match pdb.parent() {
-        Some(dir) => std::fs::create_dir_all(dir)?,
-        None => bail!("failed to create mmseqs prefilter DB directory"),
     }
 
     prefilter

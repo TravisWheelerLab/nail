@@ -133,7 +133,8 @@ pub fn seed_progressive(
         &db_paths.prefilter_db,
         None,
         args,
-    )?;
+    )
+    .context("mmseqs prefilter failed")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Prefilter, now.elapsed());
 
