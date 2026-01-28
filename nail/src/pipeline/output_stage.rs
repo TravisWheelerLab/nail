@@ -11,7 +11,7 @@ use libnail::{
     output::output_tabular::{Field, TableFormat},
 };
 
-use crate::{args::SearchArgs, util::PathBufExt};
+use crate::{args::SearchArgs, util::PathExt};
 
 use super::PipelineResult;
 

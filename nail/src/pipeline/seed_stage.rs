@@ -15,7 +15,7 @@ use crate::{
     pipeline::StageResult,
     search::Queries,
     stats::Stats,
-    util::PathBufExt,
+    util::PathExt,
 };
 
 pub type SeedStageResult = StageResult<Seed, SeedStageStats>;
@@ -39,10 +39,13 @@ pub fn seed_max_seqs(
 
     // ---
 
-    write_mmseqs_sequence_database(seqs, &db_paths.target_db)?;
+    write_mmseqs_sequence_database(seqs, &db_paths.target_db)
+        .context("failed to write mmseqs target DB")?;
     match queries {
-        Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)?,
-        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm.values(), &db_paths.query_db)?,
+        Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
+            .context("failed to write mmseqs query DB")?,
+        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm.values(), &db_paths.query_db)
+            .context("failed to write mmseqs query DB")?,
     }
 
     let now = Instant::now();
@@ -111,22 +114,17 @@ pub fn seed_progressive(
 ) -> anyhow::Result<Seeds2> {
     let time_start = Instant::now();
 
-    if !&db_paths
-        .prog_dir
-        .try_exists()
-        .with_context(|| format!("failed to check existence of: {:?}", db_paths.prog_dir))?
-    {
-        std::fs::create_dir(&db_paths.prog_dir).with_context(|| {
-            format!("failed to create prog directory: {:?}", &db_paths.prog_dir)
-        })?;
-    }
+    db_paths.prog_dir.create_dir()?;
 
     // ---
 
-    write_mmseqs_sequence_database(seqs, &db_paths.target_db)?;
+    write_mmseqs_sequence_database(seqs, &db_paths.target_db)
+        .context("failed to write mmseqs target DB")?;
     match queries {
-        Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)?,
-        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm.values(), &db_paths.query_db)?,
+        Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
+            .context("failed to write mmseqs query DB")?,
+        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm.values(), &db_paths.query_db)
+            .context("failed to write mmseqs query DB")?,
     }
 
     let now = Instant::now();
@@ -163,9 +161,7 @@ pub fn seed_progressive(
         let prog_iter_dir = &db_paths.prog_dir.join(i.to_string());
         let prog_pdb_path = prog_iter_dir.join("pdb");
 
-        std::fs::create_dir(prog_iter_dir).with_context(|| {
-            format!("failed to create prog iteration directory: {prog_iter_dir:?}")
-        })?;
+        prog_iter_dir.create_dir()?;
 
         {
             // note: scoped to drop file handles and force a write
@@ -266,12 +262,7 @@ pub fn seed_progressive(
             .parent()
             .context("failed to produce mmseqs align DB directory path")?;
 
-        if !adb_dir
-            .try_exists()
-            .with_context(|| format!("failed to check existence of: {adb_dir:?}"))?
-        {
-            std::fs::create_dir(adb_dir).context("failed to create mmseqs align DB directory")?;
-        }
+        adb_dir.create_dir()?;
 
         let mut adb = db_paths
             .align_db

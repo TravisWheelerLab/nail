@@ -13,7 +13,7 @@ use crate::pipeline::{
     DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats};
-use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
+use crate::util::{guess_query_format_from_query_file, FileFormat, PathExt};
 
 use anyhow::Context;
 use libnail::structs::Profile;
@@ -64,14 +64,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     {
         // quickly make sure we can write to all of the results paths
-        if !args.io_args.temp_dir_path.try_exists().with_context(|| {
-            format!(
-                "failed to check existence of: {:?}",
-                &args.io_args.temp_dir_path
-            )
-        })? {
-            std::fs::create_dir(&args.io_args.temp_dir_path).context("failed to create tmp dir")?;
-        }
+        args.io_args.temp_dir_path.create_dir()?;
 
         if let Some(path) = &args.io_args.tbl_results_path {
             path.open(args.io_args.allow_overwrite)?;

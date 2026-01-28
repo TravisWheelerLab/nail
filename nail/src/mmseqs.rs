@@ -12,7 +12,7 @@ use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
 use crate::{
     args::SearchArgs,
     io::{Database, Fasta, ReadSeekExt, ReadState},
-    util::{CommandExt, PathBufExt},
+    util::{CommandExt, PathExt},
 };
 
 use anyhow::Context;
@@ -476,8 +476,11 @@ pub fn write_mmseqs_sequence_database(
     let header_index_path = db_path.with_file_name(format!("{db_name}_h.index"));
     let header_dbtype_path = db_path.with_file_name(format!("{db_name}_h.dbtype"));
 
-    let dir = db_path.parent().unwrap();
-    std::fs::create_dir(dir)?;
+    let db_dir = db_path
+        .parent()
+        .context("failed to produce mmseqs sequence DB directory path")?;
+
+    db_dir.create_dir()?;
 
     db_dbtype_path.open(true)?.write_all(AMINO_DBTYPE)?;
     header_dbtype_path.open(true)?.write_all(GENERIC_DBTYPE)?;
@@ -527,8 +530,11 @@ pub fn write_mmseqs_profile_database(
     let header_index_path = db_path.with_file_name(format!("{db_name}_h.index"));
     let header_dbtype_path = db_path.with_file_name(format!("{db_name}_h.dbtype"));
 
-    let dir = db_path.parent().unwrap();
-    std::fs::create_dir(dir)?;
+    let db_dir = db_path
+        .parent()
+        .context("failed to produce mmseqs profile DB directory path")?;
+
+    db_dir.create_dir()?;
 
     db_dbtype_path.open(true)?.write_all(PROFILE_DBTYPE)?;
     header_dbtype_path.open(true)?.write_all(GENERIC_DBTYPE)?;
@@ -617,12 +623,7 @@ pub fn run_mmseqs_prefilter(
         .parent()
         .context("failed to produce mmseqs prefilter DB directory path")?;
 
-    if !pdb_dir
-        .try_exists()
-        .with_context(|| format!("failed to check existence of: {pdb_dir:?}"))?
-    {
-        std::fs::create_dir(pdb_dir).context("failed to create mmseqs prefilter DB directory")?;
-    }
+    pdb_dir.create_dir()?;
 
     prefilter
         .arg("prefilter")
@@ -672,12 +673,7 @@ pub fn run_mmseqs_align(
         .parent()
         .context("failed to produce mmseqs align DB directory path")?;
 
-    if !adb_dir
-        .try_exists()
-        .with_context(|| format!("failed to check existence of: {adb_dir:?}"))?
-    {
-        std::fs::create_dir(adb_dir).context("failed to create mmseqs align DB directory")?;
-    }
+    adb_dir.create_dir()?;
 
     let mut align = Command::new("mmseqs");
     align
