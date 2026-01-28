@@ -52,7 +52,8 @@ pub fn seed_max_seqs(
         &db_paths.prefilter_db,
         None,
         args,
-    )?;
+    )
+    .context("mmseqs prefilter failed")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Prefilter, now.elapsed());
 
@@ -66,7 +67,8 @@ pub fn seed_max_seqs(
         &db_paths.align_db,
         None,
         args,
-    )?;
+    )
+    .context("mmseqs align failed")?;
 
     stats.add_mmseqs_time(crate::stats::MmseqsTimed::Align, now.elapsed());
 
@@ -84,7 +86,8 @@ pub fn seed_max_seqs(
         &db_paths.align_db,
         align_tsv,
         args,
-    )?;
+    )
+    .context("mmseqs convertalis failed")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Convertalis, now.elapsed());
 
@@ -213,7 +216,8 @@ pub fn seed_progressive(
             &prog_adb_path,
             None,
             args,
-        )?;
+        )
+        .context("mmseqs align failed")?;
 
         stats.add_mmseqs_time(crate::stats::MmseqsTimed::Align, now.elapsed());
 
@@ -314,7 +318,8 @@ pub fn seed_progressive(
         &db_paths.align_db,
         align_tsv,
         args,
-    )?;
+    )
+    .context("mmseqs convertalis failed")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Convertalis, now.elapsed());
 

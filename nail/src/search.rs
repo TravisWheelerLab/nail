@@ -140,8 +140,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
             let seeds = if args.mmseqs_args.prog_seed {
                 seed_progressive(&queries, &targets, &db_paths, &mut stats, &args)
+                    .context("progessive seeding failed")
             } else {
                 seed_max_seqs(&queries, &targets, &db_paths, &mut stats, &args)
+                    .context("seeding failed")
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(
