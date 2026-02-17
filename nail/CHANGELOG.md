@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added mod `io::index`
 - added mod `io::p7hmm`
 - added mod `io::seeds`
+- added `SearchArgs::{validate(), write()}`
+- added CLI params: `--prog-seed`, `--prog-n`, `--prog-f`
+- added consts `mmseqs::consts::{ALIGN_DBTYPE, PREFILTER_DBTYPE}`
+- added structs `mmseqs::PrefilterDb, Descriptor, ByteBuffer`
+- added methods `MmseqsDbPaths:{destroy(), check(), db_exists(), rmeove_db()}`
 
 ### Changed
 - changed `FastaOffset` length fields to include `_bytes` suffix
@@ -39,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - removed `--mmseqs-k-score` and `--min-ungapped-score`
     - added `--mmseqs-s`
     - changed default `--mmseqs-k` parameter to k=6
+- changed `IoArgs::temp_dir_path` default from "/tmp" to "/tmp-nail"
+- split function `run_mmseqs_search()` into `run_mmseqs_align()` and `run_mmseqs_prefilter()`
 
 ### Removed
 - removed `--double-seed` option from CLI
