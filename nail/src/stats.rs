@@ -266,6 +266,30 @@ pub enum SerialTimed {
 
 #[repr(usize)]
 #[derive(Clone, Copy, EnumIter, EnumCount)]
+pub enum MmseqsTimed {
+    Total,
+    Prefilter,
+    Align,
+    Convertalis,
+    Index,
+}
+
+impl Debug for MmseqsTimed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            MmseqsTimed::Total => "total",
+            MmseqsTimed::Prefilter => "prefilter",
+            MmseqsTimed::Align => "align",
+            MmseqsTimed::Convertalis => "convertalis",
+            MmseqsTimed::Index => "seed index",
+        };
+
+        write!(f, "{}", str)
+    }
+}
+
+#[repr(usize)]
+#[derive(Clone, Copy, EnumIter, EnumCount)]
 pub enum ThreadedTimed {
     Total,
     MemoryInit,
@@ -328,6 +352,7 @@ pub enum CountedValue {
     Seeds,
     PassedCloud,
     PassedForward,
+    PassedReport,
     SeedCells,
     CloudForwardCells,
     CloudBackwardCells,
@@ -341,6 +366,7 @@ impl Debug for CountedValue {
             CountedValue::Seeds => "passed seed filter",
             CountedValue::PassedCloud => "passed cloud filter",
             CountedValue::PassedForward => "passed forward filter",
+            CountedValue::PassedReport => "passed reporting filter",
             CountedValue::SeedCells => "total potential seed DP cells",
             CountedValue::CloudForwardCells => "cloud forward DP cells computed",
             CountedValue::CloudBackwardCells => "cloud backward DP cells computed",
@@ -355,6 +381,7 @@ impl Debug for CountedValue {
 #[derive(Clone, Default)]
 pub struct Stats {
     serial_times: [Duration; SerialTimed::COUNT],
+    mmseqs_times: [Duration; MmseqsTimed::COUNT],
     threaded_times: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     threaded_times_num_samples: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     counted_values: Arc<[AtomicU64; CountedValue::COUNT]>,
@@ -373,6 +400,14 @@ impl Stats {
         );
 
         stats
+    }
+
+    pub fn set_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
+        self.mmseqs_times[timed as usize] = time;
+    }
+
+    pub fn add_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
+        self.mmseqs_times[timed as usize] += time;
     }
 
     pub fn add_sample(
@@ -439,6 +474,7 @@ impl Stats {
                 }
             }
         });
+        self.add_count(CountedValue::PassedReport, output_stats.n_reported);
         self.add_threaded_time(ThreadedTimed::OutputWrite, output_stats.write_time);
         self.add_threaded_time(ThreadedTimed::OutputMutex, output_stats.lock_time);
     }
@@ -453,6 +489,10 @@ impl Stats {
         self.threaded_times_num_samples[timed as usize].fetch_add(1, Ordering::SeqCst);
     }
 
+    fn mmseqs_time_total(&self, timed: MmseqsTimed) -> Duration {
+        self.mmseqs_times[timed as usize]
+    }
+
     fn serial_time_total(&self, timed: SerialTimed) -> Duration {
         self.serial_times[timed as usize]
     }
@@ -462,8 +502,30 @@ impl Stats {
         Duration::from_nanos(nanos)
     }
 
+    fn mmseqs_time_pct(&self, timed: MmseqsTimed) -> f64 {
+        let total_nanos = Self::nanos(self.mmseqs_times[MmseqsTimed::Total as usize]) as f64;
+        let nanos = Self::nanos(self.mmseqs_times[timed as usize]) as f64;
+
+        nanos / total_nanos
+    }
+
+    fn mmseqs_untimed_pct(&self) -> f64 {
+        let total_nanos = Self::nanos(self.mmseqs_time_total(MmseqsTimed::Total)) as f64;
+        let untimed_nanos = Self::nanos(self.mmseqs_untimed_total()) as f64;
+
+        untimed_nanos / total_nanos
+    }
+
+    fn mmseqs_untimed_total(&self) -> Duration {
+        let total = self.mmseqs_time_total(MmseqsTimed::Total);
+
+        let timed_sum = self.mmseqs_times[1..].iter().sum();
+
+        total - timed_sum
+    }
+
     fn serial_time_pct(&self, timed: SerialTimed) -> f64 {
-        let total_nanos = Self::nanos(self.serial_times[ThreadedTimed::Total as usize]) as f64;
+        let total_nanos = Self::nanos(self.serial_times[SerialTimed::Total as usize]) as f64;
         let nanos = Self::nanos(self.serial_times[timed as usize]) as f64;
 
         nanos / total_nanos
@@ -580,11 +642,45 @@ impl Stats {
     pub fn write_runtime(&self, out: &mut impl Write) -> anyhow::Result<()> {
         writeln!(out, "runtime: {}", self.serial_string(SerialTimed::Total),)?;
 
+        // ---
+
         writeln!(
             out,
-            " ├─ seeding (mmseqs):   {}",
+            " └─ seeding (mmseqs):   {}",
             self.serial_string(SerialTimed::Seeding)
         )?;
+
+        let max_width = MmseqsTimed::iter()
+            .map(|t| format!("{t:?}: {:.2}", self.mmseqs_time_total(t).as_secs_f64()).len())
+            .max()
+            .unwrap_or(0);
+
+        MmseqsTimed::iter()
+            .skip(1)
+            .filter(|t| !self.mmseqs_time_total(*t).is_zero())
+            .try_for_each(|t| {
+                let label_width = format!("{t:?}").len();
+
+                writeln!(
+                    out,
+                    "     ├─ {t:?}: {:>w$.2}s ({:5.2}%)",
+                    self.mmseqs_time_total(t).as_secs_f64(),
+                    self.mmseqs_time_pct(t) * 100.0,
+                    w = max_width - label_width
+                )
+            })?;
+
+        let misc = "[misc.]";
+        let last_label_width = misc.len();
+        writeln!(
+            out,
+            "     └─ {misc}: {:>w$.2}s ({:5.2}%)",
+            self.mmseqs_untimed_total().as_secs_f64(),
+            self.mmseqs_untimed_pct() * 100.0,
+            w = max_width - last_label_width
+        )?;
+
+        // ---
 
         writeln!(
             out,
@@ -638,7 +734,7 @@ impl Stats {
         let len = num_str.len();
 
         for (i, ch) in num_str.chars().enumerate() {
-            if i > 0 && (len - i) % 3 == 0 {
+            if i > 0 && (len - i).is_multiple_of(3) {
                 result.push(',');
             }
             result.push(ch);

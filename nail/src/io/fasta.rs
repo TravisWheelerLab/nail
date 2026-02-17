@@ -222,14 +222,14 @@ impl Database<Sequence> for Fasta {
         self.len()
     }
 
-    fn iter(&self) -> DatabaseIter<Sequence> {
+    fn iter(&'_ self) -> DatabaseIter<'_, Sequence> {
         DatabaseIter {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
         }
     }
 
-    fn values(&self) -> DatabaseValues<Sequence> {
+    fn values(&'_ self) -> DatabaseValues<'_, Sequence> {
         DatabaseValues {
             inner: Box::new(self.clone()),
             names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),

@@ -1,12 +1,31 @@
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 
 use anyhow::Context;
 use thiserror::Error;
+
+#[allow(dead_code)]
+pub mod term {
+    pub const RESET: &str = "\x1b[0m";
+
+    pub const RED: &str = "\x1b[31m";
+    pub const GREEN: &str = "\x1b[32m";
+    pub const YELLOW: &str = "\x1b[33m";
+    pub const BLUE: &str = "\x1b[34m";
+    pub const MAGENTA: &str = "\x1b[35m";
+    pub const CYAN: &str = "\x1b[36m";
+
+    pub const BRIGHT_RED: &str = "\x1b[91m";
+    pub const BRIGHT_GREEN: &str = "\x1b[92m";
+    pub const BRIGHT_YELLOW: &str = "\x1b[93m";
+    pub const BRIGHT_BLUE: &str = "\x1b[94m";
+    pub const BRIGHT_MAGENTA: &str = "\x1b[95m";
+    pub const BRIGHT_CYAN: &str = "\x1b[96m";
+}
 
 #[allow(dead_code)]
 pub fn burn(dur: std::time::Duration) {
@@ -112,14 +131,14 @@ impl FileExt for File {
     }
 }
 
-pub trait PathBufExt {
+pub trait PathExt: AsRef<Path> {
     fn open(&self, allow_overwrite: bool) -> anyhow::Result<BufWriter<File>>;
-    fn remove(&self) -> anyhow::Result<()>;
+    fn create_dir(&self) -> anyhow::Result<()>;
 }
 
-impl PathBufExt for PathBuf {
-    // TODO: flesh this API out more
+impl<P: AsRef<Path>> PathExt for P {
     fn open(&self, allow_overwrite: bool) -> anyhow::Result<BufWriter<File>> {
+        let path = self.as_ref();
         let mut file_options = File::options();
 
         if allow_overwrite {
@@ -129,14 +148,22 @@ impl PathBufExt for PathBuf {
         };
 
         let file = file_options
-            .open(self)
-            .context(format!("failed to create file: {}", self.to_string_lossy()))?;
+            .open(path)
+            .context(format!("failed to create file: {}", path.to_string_lossy()))?;
 
         Ok(BufWriter::new(file))
     }
 
-    fn remove(&self) -> anyhow::Result<()> {
-        std::fs::remove_file(self)?;
+    fn create_dir(&self) -> anyhow::Result<()> {
+        let path = self.as_ref();
+        if !path
+            .try_exists()
+            .with_context(|| format!("failed to check existence of: {path:?}"))?
+        {
+            std::fs::create_dir(path)
+                .with_context(|| format!("failed to create directory: {path:?}"))?;
+        }
+
         Ok(())
     }
 }

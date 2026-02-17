@@ -11,7 +11,7 @@ use libnail::{
     output::output_tabular::{Field, TableFormat},
 };
 
-use crate::{args::SearchArgs, util::PathBufExt};
+use crate::{args::SearchArgs, util::PathExt};
 
 use super::PipelineResult;
 
@@ -37,6 +37,7 @@ pub enum HeaderStatus {
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct OutputStageStats {
+    pub n_reported: usize,
     pub lock_time: Duration,
     pub write_time: Duration,
 }
@@ -118,6 +119,8 @@ impl OutputStage {
 
         reported.sort_by(|a, b| a.scores.e_value.partial_cmp(&b.scores.e_value).unwrap());
 
+        stats.n_reported(reported.len());
+
         if let Some(writer) = &self.alignment_writer {
             let now = Instant::now();
             match writer.lock() {
@@ -189,7 +192,7 @@ impl OutputStage {
                     let now = Instant::now();
                     pipeline_results
                         .iter()
-                        .try_for_each(|r| writeln!(guard, "{}", r.tab_string()))?;
+                        .try_for_each(|r| writeln!(guard, "{}", r.stat_string()))?;
 
                     stats.add_write_time(now.elapsed());
                     Ok(())

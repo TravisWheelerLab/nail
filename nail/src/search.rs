@@ -1,19 +1,23 @@
+use std::collections::HashMap;
 use std::io::stdout;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::{Fasta, P7Hmm, Seeds};
+use crate::io::{Fasta, P7Hmm, Seeds2};
+use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline, SeedStage,
+    run_pipeline_profile_to_sequence, seed_max_seqs, seed_progressive, DefaultAlignStage,
+    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats};
-use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
+use crate::util::{guess_query_format_from_query_file, FileFormat, PathExt};
 
 use anyhow::Context;
+use libnail::structs::Profile;
+use rayon::iter::ParallelIterator;
 
 pub enum Queries {
     Sequence(Fasta),
@@ -60,6 +64,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     {
         // quickly make sure we can write to all of the results paths
+        args.io_args.temp_dir_path.create_dir()?;
+
         if let Some(path) = &args.io_args.tbl_results_path {
             path.open(args.io_args.allow_overwrite)?;
         }
@@ -104,7 +110,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         Some(ref path) => {
             let now = Instant::now();
             println!("reading seeds...");
-            let seeds = Seeds::from_path(path);
+            let seeds = Seeds2::from_path(path);
             println!(
                 "\x1b[Areading seeds...            done ({:.2}s)",
                 now.elapsed().as_secs_f64()
@@ -115,11 +121,22 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         None => {
             let now = Instant::now();
             println!("running mmseqs...");
-            let seeds = match queries {
-                Queries::Sequence(ref queries) => {
-                    seed_sequence_to_sequence(queries, &targets, &args)
-                }
-                Queries::Profile(ref queries) => seed_profile_to_sequence(queries, &targets, &args),
+
+            let db_paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
+            if args.io_args.allow_overwrite {
+                db_paths
+                    .destroy()
+                    .context("failed to remove existing mmseqs DBs")?;
+            } else {
+                db_paths.check().context("mmseqs DB check failed")?;
+            }
+
+            let seeds = if args.mmseqs_args.prog_seed {
+                seed_progressive(&queries, &targets, &db_paths, &mut stats, &args)
+                    .context("progessive seeding failed")
+            } else {
+                seed_max_seqs(&queries, &targets, &db_paths, &mut stats, &args)
+                    .context("seeding failed")
             };
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
             println!(
@@ -135,11 +152,23 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let seed_stage: Box<dyn SeedStage> = Box::new(DefaultSeedStage::new(seeds));
+    let profiles: Arc<HashMap<String, Profile>> = Arc::new(
+        match queries {
+            Queries::Sequence(fasta) => fasta
+                .par_iter()
+                .filter_map(|s| Profile::from_blosum_62_and_seq(&s).ok())
+                .collect::<Vec<_>>(),
+            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<Vec<_>>(),
+        }
+        .into_iter()
+        .map(|p| (p.name.clone(), p))
+        .collect(),
+    );
 
     let mut pipeline = Pipeline {
+        profiles,
+        prf: None,
         targets,
-        seed: seed_stage,
         cloud_search: match args.dev_args.full_dp {
             true => Box::<FullDpCloudSearchStage>::default(),
             false => Box::new(DefaultCloudSearchStage::new(&args)),
@@ -151,16 +180,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         stats,
     };
 
-    println!("running nail pipeline...");
     let align_timer = Instant::now();
-    match queries {
-        Queries::Sequence(queries) => {
-            run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
-        }
-        Queries::Profile(queries) => {
-            run_pipeline_profile_to_sequence(&queries, &mut pipeline);
-        }
-    }
+    println!("running nail pipeline...");
+
+    run_pipeline_profile_to_sequence(&mut pipeline, seeds);
 
     pipeline
         .stats
@@ -176,6 +199,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .set_serial_time(SerialTimed::Total, start_time.elapsed());
 
     if args.print_summary_stats {
+        args.write(&mut stdout())?;
         pipeline.stats.write(&mut stdout())?;
     }
 
