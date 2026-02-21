@@ -12,22 +12,14 @@ mod output_stage;
 pub use output_stage::*;
 
 use std::collections::HashMap;
-use std::time::Instant;
-use std::{cell::RefCell, sync::Arc};
-
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-
-use thread_local::ThreadLocal;
+use std::sync::Arc;
 
 use libnail::{
     align::{structs::Seed, Bits},
     structs::Profile,
 };
 
-use crate::{
-    io::{Fasta, Seeds2},
-    stats::{Stats, ThreadedTimed},
-};
+use crate::{io::Fasta, stats::Stats};
 
 pub enum StageResult<D, S> {
     Filtered { stats: S },
@@ -126,7 +118,7 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    fn run(&mut self, seed: &Seed) -> anyhow::Result<PipelineResult> {
+    pub fn run(&mut self, seed: &Seed) -> anyhow::Result<PipelineResult> {
         match self.prf {
             Some(ref prf) => {
                 if prf.name != seed.prf {
@@ -169,34 +161,4 @@ impl Pipeline {
             align_result,
         })
     }
-}
-
-pub fn run_pipeline_profile_to_sequence(pipeline: &mut Pipeline, seeds: Seeds2) {
-    let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
-
-    seeds
-        .seeds
-        .par_chunks(100)
-        .panic_fuse()
-        .try_for_each(|chunk| -> anyhow::Result<()> {
-            let now = Instant::now();
-            let mut pipeline = tl_pipeline
-                .get_or(|| RefCell::new(pipeline.clone()))
-                .borrow_mut();
-
-            let res = chunk
-                .iter()
-                .map(|seed| pipeline.run(seed))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let output_stats = pipeline.output.run(&res)?;
-            pipeline.stats.add_sample(&res, &output_stats);
-
-            pipeline
-                .stats
-                .add_threaded_time(ThreadedTimed::Total, now.elapsed());
-
-            Ok(())
-        })
-        .unwrap();
 }

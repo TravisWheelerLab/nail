@@ -1,17 +1,25 @@
-use std::{io::Write, path::PathBuf};
+use std::{io::Write, path::PathBuf, str::FromStr};
 
 use anyhow::bail;
 use clap::{Args, Parser, Subcommand};
 
-use crate::util::term::*;
+use crate::util::{term::*, PathExt};
 
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum NailSubCommands {
     #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
-    #[command(hide = true)]
-    Dev,
+    #[command(subcommand, hide = true)]
+    Dev(DevSubCommands),
+}
+
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
+pub enum DevSubCommands {
+    #[command()]
+    Search(SearchArgs),
+    Mx(SearchArgs),
 }
 
 #[derive(Parser)]
@@ -70,7 +78,57 @@ pub struct SearchArgs {
 }
 
 impl SearchArgs {
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&mut self) -> anyhow::Result<()> {
+        if let Some(p1) = self.dev_args.bit_p {
+            let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
+            if p1 != p2 {
+                bail!("failed to set BIT_P")
+            }
+        }
+
+        if let Some(p1) = self.dev_args.f32_p {
+            let p2 = *libnail::output::output_tabular::F32_P.get_or_init(|| p1);
+            if p1 != p2 {
+                bail!("failed to set F32_P")
+            }
+        }
+
+        if let Some(p1) = self.dev_args.f64_p {
+            let p2 = *libnail::output::output_tabular::F64_P.get_or_init(|| p1);
+            if p1 != p2 {
+                bail!("failed to set F64_P")
+            }
+        }
+
+        {
+            // quickly make sure we can write to all of the results paths
+            self.io_args.temp_dir_path.create_dir()?;
+
+            if let Some(path) = &self.io_args.tbl_results_path {
+                path.check_open(self.io_args.allow_overwrite)?;
+            }
+
+            if let Some(path) = &self.io_args.ali_results_path {
+                path.check_open(self.io_args.allow_overwrite)?;
+            }
+
+            if let Some(path) = &self.io_args.seeds_output_path {
+                path.check_open(self.io_args.allow_overwrite)?;
+            }
+
+            if let Some(path) = &self.dev_args.stats_results_path {
+                path.check_open(self.io_args.allow_overwrite)?;
+            }
+        }
+
+        if self.ali_to_stdout {
+            self.io_args.tbl_results_path = None
+        }
+
+        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
+            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
+        }
+
         if self.mmseqs_args.prog_seed {
             if self.mmseqs_args.max_seqs != 2_147_483_647 {
                 bail!(
@@ -278,6 +336,18 @@ pub struct DevArgs {
     /// Compute the full DP matrices
     #[arg(long, action, hide = true)]
     pub full_dp: bool,
+
+    /// Formatting precision for Bits
+    #[arg(long, hide = true)]
+    pub bit_p: Option<usize>,
+
+    /// Formatting precision for f32
+    #[arg(long, hide = true)]
+    pub f32_p: Option<usize>,
+
+    /// Formatting precision for f64
+    #[arg(long, hide = true)]
+    pub f64_p: Option<usize>,
 }
 
 #[derive(Args, Debug, Clone, Default)]

@@ -389,15 +389,12 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new(queries: &Queries, targets: &Fasta) -> Self {
+    pub fn new(n_queries: usize, n_targets: usize) -> Self {
         let mut stats = Self::default();
 
-        stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
-        stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
-        stats.set_computed_value(
-            ComputedValue::Alignments,
-            (queries.len() * targets.len()) as u64,
-        );
+        stats.set_computed_value(ComputedValue::Queries, n_queries as u64);
+        stats.set_computed_value(ComputedValue::Targets, n_targets as u64);
+        stats.set_computed_value(ComputedValue::Alignments, (n_queries * n_targets) as u64);
 
         stats
     }

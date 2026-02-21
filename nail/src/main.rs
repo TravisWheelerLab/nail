@@ -1,4 +1,5 @@
 mod args;
+mod dev;
 mod io;
 mod mmseqs;
 mod pipeline;
@@ -6,11 +7,14 @@ mod search;
 mod stats;
 mod util;
 
-use args::{NailCli, NailSubCommands};
-use search::search;
-use util::{check_mmseqs_installed, set_threads, term::*};
-
 use clap::Parser;
+
+use crate::{
+    args::{DevSubCommands, NailCli, NailSubCommands},
+    dev::{dev_mx, dev_search},
+    search::search,
+    util::{check_mmseqs_installed, set_threads, term::*},
+};
 
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
@@ -26,13 +30,26 @@ fn main() {
 fn run() -> anyhow::Result<()> {
     color_backtrace::install();
     match NailCli::parse().command {
-        NailSubCommands::Search(args) => {
+        NailSubCommands::Search(mut args) => {
             args.validate()?;
             check_mmseqs_installed()?;
             set_threads(args.num_threads)?;
             search(args)?;
         }
-        NailSubCommands::Dev => {}
+        NailSubCommands::Dev(cmd) => match cmd {
+            DevSubCommands::Search(mut args) => {
+                args.validate()?;
+                check_mmseqs_installed()?;
+                set_threads(args.num_threads)?;
+                dev_search(args)?;
+            }
+            DevSubCommands::Mx(mut args) => {
+                args.validate()?;
+                check_mmseqs_installed()?;
+                set_threads(args.num_threads)?;
+                dev_mx(args)?;
+            }
+        },
     }
 
     Ok(())

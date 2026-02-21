@@ -2,25 +2,31 @@ use crate::align::{structs::Alignment, Bits};
 
 use anyhow::Context;
 
+use std::sync::OnceLock;
+
+pub static BIT_P: OnceLock<usize> = OnceLock::new();
+pub static F32_P: OnceLock<usize> = OnceLock::new();
+pub static F64_P: OnceLock<usize> = OnceLock::new();
+
 trait FieldString {
     fn field_string(&self) -> String;
 }
 
 impl FieldString for f32 {
     fn field_string(&self) -> String {
-        format!("{self:.3}")
+        format!("{self:.p$}", p = F32_P.get().unwrap_or(&3usize))
     }
 }
 
 impl FieldString for f64 {
     fn field_string(&self) -> String {
-        format!("{self:.1e}")
+        format!("{self:.p$e}", p = F64_P.get().unwrap_or(&1usize))
     }
 }
 
 impl FieldString for Bits {
     fn field_string(&self) -> String {
-        format!("{:.1}", self.value())
+        format!("{:.p$}", self.value(), p = BIT_P.get().unwrap_or(&1usize))
     }
 }
 

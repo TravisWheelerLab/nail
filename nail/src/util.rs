@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use thiserror::Error;
 
 #[allow(dead_code)]
@@ -132,24 +132,54 @@ impl FileExt for File {
 }
 
 pub trait PathExt: AsRef<Path> {
+    fn check_open(&self, allow_overwrite: bool) -> anyhow::Result<()>;
     fn open(&self, allow_overwrite: bool) -> anyhow::Result<BufWriter<File>>;
     fn create_dir(&self) -> anyhow::Result<()>;
 }
 
 impl<P: AsRef<Path>> PathExt for P {
+    fn check_open(&self, allow_overwrite: bool) -> anyhow::Result<()> {
+        let path = self.as_ref();
+
+        let exists = std::fs::exists(path)
+            .with_context(|| format!("failed to check existence of {path:?}"))?;
+
+        match (exists, allow_overwrite) {
+            (true, true) => {
+                let f = File::options().write(true).open(path)?;
+                let len = f.metadata()?.len();
+                // checks if we can truncate without actually truncating
+                f.set_len(len)?;
+                Ok(())
+            }
+            (true, false) => bail!("file: {path:?} already exists"),
+            (false, true) | (false, false) => {
+                let f = File::options()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .with_context(|| format!("failed to open-check {path:?}"))?;
+                drop(f);
+                std::fs::remove_file(path)
+                    .with_context(|| format!("failed to remove-check {path:?}"))?;
+                Ok(())
+            }
+        }
+    }
+
     fn open(&self, allow_overwrite: bool) -> anyhow::Result<BufWriter<File>> {
         let path = self.as_ref();
-        let mut file_options = File::options();
+        let mut opts = File::options();
 
         if allow_overwrite {
-            file_options.write(true).truncate(true).create(true);
+            opts.write(true).truncate(true).create(true);
         } else {
-            file_options.write(true).create_new(true);
+            opts.write(true).create_new(true);
         };
 
-        let file = file_options
+        let file = opts
             .open(path)
-            .context(format!("failed to create file: {}", path.to_string_lossy()))?;
+            .with_context(|| format!("failed to create file: {path:?}"))?;
 
         Ok(BufWriter::new(file))
     }
