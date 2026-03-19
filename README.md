@@ -180,7 +180,7 @@ Checking the `results.ali` will look something like:
 
 ### nail seeds
 
-If you run `nail search --only-seed` command, nail will run MMseqs2, produce a `seeds.json` file, and terminate.
+If you run `nail search --only-seed` command, nail will run MMseqs2, produce a `seeds.tsv` file, and terminate.
 This may be useful if you would like to experiment with different nail settings using the same seeds.
 
 For example:
@@ -195,27 +195,21 @@ Seeds can be provided to `nail search` using the `--seeds <seeds.tsv>` flag, whi
 
     $ nail search --seeds seeds.tsv query.hmm target.fa
 
-In practice, these seeds may be produced from any source; the input file just needs to be a tsv with the following columns:
+In practice, these seeds may be produced from any source; the input file just needs to be a tsv of the following shape:
 
-    query    target    query_start    query_end    target_start    target_end    score    E-value
-
-For example:
-
-```
-
-query1    target1   1    259    54    302    189    3.660E-55
-query1    target2   1    259    58    305    187    1.281E-54
-query1    target3   1    259    51    315    182    7.499E-53
-query1    target4   1    259    43    325    176    8.188E-51
-query2    target5   1    250    579   838    183    2.854E-53
-query2    target6   1    250    570   829    181    9.992E-53
-query2    target7   1    250    573   832    181    9.992E-53
-query2    target8   1    250    581   840    181    9.992E-53
-query3    target9   1    130    192   324    125    1.899E-35
-query3    target10  1    130    204   336    124    3.571E-35
-query3    target11  1    130    190   322    123    1.732E-34
-
-```
+| query  | target   | query start | query end | target start | target end | score | E-value   |
+|--------|----------|-------------|-----------|--------------|------------|-------|-----------|
+| query1 | target1  | 5           | 247       | 54           | 302        | 189   | 3.660E-55 |
+| query1 | target2  | 12          | 255       | 58           | 305        | 187   | 1.281E-54 |
+| query1 | target3  | 3           | 263       | 51           | 315        | 182   | 7.499E-53 |
+| query1 | target4  | 18          | 240       | 43           | 325        | 176   | 8.188E-51 |
+| query2 | target5  | 7           | 238       | 579          | 838        | 183   | 2.854E-53 |
+| query2 | target6  | 2           | 262       | 570          | 829        | 181   | 9.992E-53 |
+| query2 | target7  | 15          | 244       | 573          | 832        | 181   | 9.992E-53 |
+| query2 | target8  | 9           | 233       | 581          | 840        | 181   | 9.992E-53 |
+| query3 | target9  | 4           | 118       | 192          | 324        | 125   | 1.899E-35 |
+| query3 | target10 | 10          | 141       | 204          | 336        | 124   | 3.571E-35 |
+| query3 | target11 | 6           | 122       | 190          | 322        | 123   | 1.732E-34 |
 
 We plan to make the use of custom seeds more robust in the future.
 
