@@ -13,7 +13,7 @@ use crate::pipeline::{
     FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
-use crate::util::{guess_query_format_from_query_file, FileFormat, PathExt};
+use crate::util::{guess_query_format_from_query_file, FileFormat};
 
 use anyhow::Context;
 use libnail::structs::Profile;

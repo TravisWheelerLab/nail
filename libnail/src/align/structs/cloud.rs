@@ -382,7 +382,7 @@ impl Cloud {
         cloud
     }
 
-    pub fn iter(&self) -> std::slice::Iter<Bound> {
+    pub fn iter(&'_ self) -> std::slice::Iter<'_, Bound> {
         self.bounds[self.ad_start..=self.ad_end].iter()
     }
 

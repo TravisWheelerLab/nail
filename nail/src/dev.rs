@@ -22,7 +22,7 @@ use crate::{
     util::PathExt,
 };
 
-pub fn dev_play(mut args: SearchArgs) -> anyhow::Result<()> {
+pub fn dev_play(mut _args: SearchArgs) -> anyhow::Result<()> {
     Ok(())
 }
 

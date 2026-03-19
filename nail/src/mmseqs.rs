@@ -25,14 +25,6 @@ pub mod consts {
     pub const ALIGN_DBTYPE: &[u8] = &[5, 0, 0, 0];
     pub const PREFILTER_DBTYPE: &[u8] = &[7, 0, 0, 0];
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
-    #[cfg(not(target_os = "windows"))]
-    pub const BLOSUM_62: &str = include_str!("../mat/blosum62.mat");
-    #[cfg(not(target_os = "windows"))]
-    pub const BLOSUM_80: &str = include_str!("../mat/blosum80.mat");
-    #[cfg(target_os = "windows")]
-    pub const BLOSUM_62: &str = include_str!("..\\mat\\blosum62.mat");
-    #[cfg(target_os = "windows")]
-    pub const BLOSUM_80: &str = include_str!("..\\mat\\blosum80.mat");
 }
 
 pub enum ByteBuffer<'a> {
@@ -257,34 +249,6 @@ impl PrefilterDb {
                 }
             }
         }
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-pub enum MmseqsScoreModel {
-    Profile,
-    Blosum62,
-    Blosum80,
-}
-
-impl MmseqsScoreModel {
-    pub fn write(&self, dir: impl AsRef<Path>) -> anyhow::Result<Option<PathBuf>> {
-        let dir = dir.as_ref();
-
-        if !dir.is_dir() {
-            bail!("path: {} is not a directory", dir.to_string_lossy());
-        }
-
-        let (mat_str, mat_path) = match self {
-            MmseqsScoreModel::Profile => return Ok(None),
-            MmseqsScoreModel::Blosum62 => (BLOSUM_62, dir.join("blosum62.out")),
-            MmseqsScoreModel::Blosum80 => (BLOSUM_80, dir.join("blosum80.out")),
-        };
-
-        mat_path.open(true)?.write_all(mat_str.as_bytes())?;
-
-        Ok(Some(mat_path))
     }
 }
 

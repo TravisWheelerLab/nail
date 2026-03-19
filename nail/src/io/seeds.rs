@@ -12,6 +12,7 @@ use anyhow::bail;
 use indexmap::IndexMap;
 use libnail::align::structs::Seed;
 
+// TODO: remove this once the Seeds struct is fixed
 pub struct Seeds2 {
     pub seeds: Vec<Seed>,
 }
@@ -166,6 +167,9 @@ impl Clone for Seeds {
     }
 }
 
+// TODO: figure out how to modify this to work with
+//       the pipeline parallelizing over seeds
+#[allow(dead_code)]
 impl Seeds {
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let index = Arc::new(Index::from_path::<15, 4>(path.as_ref())?);

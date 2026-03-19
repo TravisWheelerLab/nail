@@ -1,5 +1,5 @@
 use std::cmp::{Ordering, PartialEq, PartialOrd};
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::ops::{Add, Sub};
 
 use crate::align::structs::{DpMatrix, RowBounds};
