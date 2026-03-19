@@ -189,42 +189,32 @@ For example:
 
 You can also save the seeds from a full run of the `nail search` pipeline by supplying a `--seeds-out` argument:
 
-    $ nail search --seeds-out seeds.json query.hmm target.fa
+    $ nail search --seeds-out seeds.tsv query.hmm target.fa
 
-Seeds can be provided to `nail search` using the `--seeds <seeds.json>` flag, which will skip the seed step in the search pipeline.
+Seeds can be provided to `nail search` using the `--seeds <seeds.tsv>` flag, which will skip the seed step in the search pipeline.
 
-    $ nail search --seeds seeds.json query.hmm target.fa
+    $ nail search --seeds seeds.tsv query.hmm target.fa
 
-In practice, these seeds may be produced from any source as long as they are formatted in the following way:
+In practice, these seeds may be produced from any source; the input file just needs to be a tsv with the following columns:
+
+    query    target    query_start    query_end    target_start    target_end    score    E-value
+
+For example:
 
 ```
-{
-  "query1": {
-    "target1": {
-      "seq_start": 48, //  <-  these are the positions from which
-      "seq_end": 287,  //  <   nail will begin the cloud search
-      "prf_start": 1, //  <   
-      "prf_end": 259, //  <
-      "score": 168.0      //  <---  the score field is used to pick between
-    },                              seeds that compete with each other
-    "target2": {
-      "seq_start": 72,
-      "seq_end": 343,
-      "prf_start": 23,
-      "prf_end": 259,
-      "score": 106.0
-    },
-  "query2": {
-    "target3": {
-      "seq_start": 56,
-      "seq_end": 303,
-      "prf_start": 1,
-      "prf_end": 259,
-      "score": 125.0
-    },
-  }
-  ...
-}
+
+query1    target1   1    259    54    302    189    3.660E-55
+query1    target2   1    259    58    305    187    1.281E-54
+query1    target3   1    259    51    315    182    7.499E-53
+query1    target4   1    259    43    325    176    8.188E-51
+query2    target5   1    250    579   838    183    2.854E-53
+query2    target6   1    250    570   829    181    9.992E-53
+query2    target7   1    250    573   832    181    9.992E-53
+query2    target8   1    250    581   840    181    9.992E-53
+query3    target9   1    130    192   324    125    1.899E-35
+query3    target10  1    130    204   336    124    3.571E-35
+query3    target11  1    130    190   322    123    1.732E-34
+
 ```
 
 We plan to make the use of custom seeds more robust in the future.
