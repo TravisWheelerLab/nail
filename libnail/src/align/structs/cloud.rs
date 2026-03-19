@@ -382,7 +382,7 @@ impl Cloud {
         cloud
     }
 
-    pub fn iter(&self) -> std::slice::Iter<Bound> {
+    pub fn iter(&'_ self) -> std::slice::Iter<'_, Bound> {
         self.bounds[self.ad_start..=self.ad_end].iter()
     }
 
@@ -417,6 +417,19 @@ impl Cloud {
     pub fn append(&mut self, bound: Bound) {
         let idx = bound.idx();
         self[Ad(idx)] = bound;
+    }
+
+    pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
+        writeln!(out, "seq_len: {}", self.seq_len)?;
+        writeln!(out, "prf_len: {}", self.prf_len)?;
+        writeln!(out, "size: {}", self.size)?;
+        writeln!(out, "ad_start: {}", self.ad_start)?;
+        writeln!(out, "ad_end: {}", self.ad_end)?;
+
+        self.bounds
+            .iter()
+            .try_for_each(|bound| writeln!(out, "{bound}"))?;
+        Ok(())
     }
 
     /// Fill a Cloud with a list of hand-written bounds.

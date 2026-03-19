@@ -14,6 +14,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [Unreleased]
+
+## [0.5.0] - 2026-3-19
+
+### Added
+- added struct `AmbiguityMap`
+- added traits `AminoUtilsUtf8` and `AminoUtilsDigital`
+- added enum `Transition` 
+- added mod `profile::blosum62`
+- added struct `ProfileBuilder`
+- added function `Profile::from_blosum62_and_seq()`
+
+### Changed
+- removed transition index constants under `Profile` namespace
+- renamed `Profile.forward_tau` and `Profile.forward_lambda` to `fwd_tau` and `fwd_lambda`
+- renamed `Profile.consensus_sequence_bytes_utf8` to `consensus_seq_bytes_utf8`
+- moved `Alphabet` and`AminoAcid` to mod `alphabet`
+- split self mutating functions from trait `VecMath` into new trait `VecMathMut`
+- struct `Seed` now has `prf`, `seq`, `e_value` fields (probably temporary)
+
+### Removed
+- removed `Hmm` struct
+- removed function `Profile::new()`
+
+### Fixed
+
+- fixed boundary condition bugs in `forward()`, `backward()`, and `posterior()`
 
 ## [0.4.0] - 2025-6-18
 
@@ -28,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added structs `Emission`, `CoreToCore`, `BackgroundLoop`, `CoreEntry`
 - added traits `MinAssign`, `MaxAssign` and blanket impls
 - added macro `assert_eq_pairs!`
+
 ### Changed
 - `Profile.match_scores` and `Profile.insert_scores` vectors combined into `Profile.emission_scores`
 - structs `Sequence`, `Profile` now have an ending pad position
@@ -36,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - renamed struct `AntiDiagonalBounds` to `Cloud`
 - changed cloud search implementation to better match the Forward/Backward recurrence
 - renamed trait `VecUtils` to `VecMath`
+
 ### Removed
 - removed structs `CloudAntiDiagonal`, `CloudMatrixLinear`
 
@@ -53,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - the mean relative entropy (MRE) can now be raised or lowered
     - the algorithm for raising (MRE) has been improved
 - `util::avg_relative_entropy()` is now `mean_relative_entropy()`
-- parse_hmms_from_p7hmm_file(path) is now Hmm::from_p7hmm(buf)
+- `parse_hmms_from_p7hmm_file(path)` is now `Hmm::from_p7hmm(buf)`
 - refactored Alignment struct
     - fields are now grouped into sub-structs
     - refactored AlignmentBuilder for changes

@@ -17,36 +17,6 @@ use super::StageResult;
 
 pub type AlignStageResult = StageResult<Alignment, AlignStageStats>;
 
-impl AlignStageResult {
-    pub fn tab_string(&self) -> String {
-        match self {
-            StageResult::Filtered { stats } => {
-                format!(
-                    "F {:.2}b {:.1e} {} {}",
-                    stats.score.value(),
-                    stats.p_value,
-                    stats.forward_cells,
-                    stats.forward_time.as_nanos(),
-                )
-            }
-            StageResult::Passed { stats, data: ali } => {
-                format!(
-                    "P {:.2}b {:.1e} {} {} {} {} {} {} {:.1e}",
-                    stats.score.value(),
-                    stats.p_value,
-                    stats.forward_cells,
-                    stats.forward_time.as_nanos(),
-                    stats.backward_time.as_nanos(),
-                    stats.posterior_time.as_nanos(),
-                    stats.optimal_accuracy_time.as_nanos(),
-                    stats.null_two_time.as_nanos(),
-                    ali.scores.e_value,
-                )
-            }
-        }
-    }
-}
-
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct AlignStageStats {
@@ -134,9 +104,6 @@ impl AlignStage for DefaultAlignStage {
     ) -> StageResult<Alignment, AlignStageStats> {
         let mut stats = AlignStageStatsBuilder::default();
 
-        // configuring for the target length adjusts special state transitions
-        profile.configure_for_target_length(target.length);
-
         let now = Instant::now();
         self.forward_matrix
             .reuse(target.length, profile.length, bounds);
@@ -156,7 +123,7 @@ impl AlignStage for DefaultAlignStage {
         stats.forward_cells(bounds.num_cells);
 
         // for now we compute the P-value for filtering purposes
-        let forward_p_value = p_value(forward_score, profile.forward_lambda, profile.forward_tau);
+        let forward_p_value = p_value(forward_score, profile.fwd_lambda, profile.fwd_tau);
         stats.score(forward_score);
         stats.p_value(forward_p_value);
 

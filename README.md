@@ -180,7 +180,7 @@ Checking the `results.ali` will look something like:
 
 ### nail seeds
 
-If you run `nail search --only-seed` command, nail will run MMseqs2, produce a `seeds.json` file, and terminate.
+If you run `nail search --only-seed` command, nail will run MMseqs2, produce a `seeds.tsv` file, and terminate.
 This may be useful if you would like to experiment with different nail settings using the same seeds.
 
 For example:
@@ -189,43 +189,27 @@ For example:
 
 You can also save the seeds from a full run of the `nail search` pipeline by supplying a `--seeds-out` argument:
 
-    $ nail search --seeds-out seeds.json query.hmm target.fa
+    $ nail search --seeds-out seeds.tsv query.hmm target.fa
 
-Seeds can be provided to `nail search` using the `--seeds <seeds.json>` flag, which will skip the seed step in the search pipeline.
+Seeds can be provided to `nail search` using the `--seeds <seeds.tsv>` flag, which will skip the seed step in the search pipeline.
 
-    $ nail search --seeds seeds.json query.hmm target.fa
+    $ nail search --seeds seeds.tsv query.hmm target.fa
 
-In practice, these seeds may be produced from any source as long as they are formatted in the following way:
+In practice, these seeds may be produced from any source; the input file just needs to be a tsv of the following shape:
 
-```
-{
-  "query1": {
-    "target1": {
-      "seq_start": 48, //  <-  these are the positions from which
-      "seq_end": 287,  //  <   nail will begin the cloud search
-      "prf_start": 1, //  <   
-      "prf_end": 259, //  <
-      "score": 168.0      //  <---  the score field is used to pick between
-    },                              seeds that compete with each other
-    "target2": {
-      "seq_start": 72,
-      "seq_end": 343,
-      "prf_start": 23,
-      "prf_end": 259,
-      "score": 106.0
-    },
-  "query2": {
-    "target3": {
-      "seq_start": 56,
-      "seq_end": 303,
-      "prf_start": 1,
-      "prf_end": 259,
-      "score": 125.0
-    },
-  }
-  ...
-}
-```
+| query  | target   | query start | query end | target start | target end | score | E-value   |
+|--------|----------|-------------|-----------|--------------|------------|-------|-----------|
+| query1 | target1  | 5           | 247       | 54           | 302        | 189   | 3.660E-55 |
+| query1 | target2  | 12          | 255       | 58           | 305        | 187   | 1.281E-54 |
+| query1 | target3  | 3           | 263       | 51           | 315        | 182   | 7.499E-53 |
+| query1 | target4  | 18          | 240       | 43           | 325        | 176   | 8.188E-51 |
+| query2 | target5  | 7           | 238       | 579          | 838        | 183   | 2.854E-53 |
+| query2 | target6  | 2           | 262       | 570          | 829        | 181   | 9.992E-53 |
+| query2 | target7  | 15          | 244       | 573          | 832        | 181   | 9.992E-53 |
+| query2 | target8  | 9           | 233       | 581          | 840        | 181   | 9.992E-53 |
+| query3 | target9  | 4           | 118       | 192          | 324        | 125   | 1.899E-35 |
+| query3 | target10 | 10          | 141       | 204          | 336        | 124   | 3.571E-35 |
+| query3 | target11 | 6           | 122       | 190          | 322        | 123   | 1.732E-34 |
 
 We plan to make the use of custom seeds more robust in the future.
 

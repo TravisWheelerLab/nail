@@ -1,28 +1,29 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{stdout, BufReader, BufWriter};
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::io::stdout;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::Fasta;
+use crate::io::{Fasta, P7Hmm, Seeds2};
+use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    run_pipeline_profile_to_sequence, run_pipeline_sequence_to_sequence, seed_profile_to_sequence,
-    seed_sequence_to_sequence, DefaultAlignStage, DefaultCloudSearchStage, DefaultSeedStage,
-    FullDpCloudSearchStage, MaxSeedStage, OutputStage, Pipeline, SeedMap, SeedStage,
+    seed_max_seqs, seed_progressive, DefaultAlignStage, DefaultCloudSearchStage,
+    FullDpCloudSearchStage, OutputStage, Pipeline,
 };
-use crate::stats::{SerialTimed, Stats};
-use crate::util::{guess_query_format_from_query_file, FileFormat, PathBufExt};
-
-use libnail::structs::{Hmm, Profile};
+use crate::stats::{SerialTimed, Stats, ThreadedTimed};
+use crate::util::{guess_query_format_from_query_file, FileFormat};
 
 use anyhow::Context;
-use serde::Serialize;
+use libnail::structs::Profile;
+use rayon::iter::ParallelIterator;
+use rayon::slice::ParallelSlice;
+use thread_local::ThreadLocal;
 
 pub enum Queries {
     Sequence(Fasta),
-    Profile(Vec<Profile>),
+    Profile(P7Hmm),
 }
 
 impl Queries {
@@ -34,7 +35,7 @@ impl Queries {
     }
 }
 
-fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
+pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
     let query_format = guess_query_format_from_query_file(&path)?;
 
     match query_format {
@@ -43,13 +44,7 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let hmm_file = File::open(&path)?;
-            let queries: Vec<Profile> = Hmm::from_p7hmm(hmm_file)
-                .context("failed to read query hmm")?
-                .iter()
-                .map(Profile::new)
-                .collect();
-
+            let queries = P7Hmm::from_path(&path).context("failed to open query hmm")?;
             Ok(Queries::Profile(queries))
         }
         _ => {
@@ -58,41 +53,83 @@ fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
     }
 }
 
+pub fn seed(
+    queries: &Queries,
+    targets: &Fasta,
+    stats: &mut Stats,
+    args: &mut SearchArgs,
+) -> anyhow::Result<Seeds2> {
+    match args.io_args.seeds_input_path {
+        Some(ref path) => Seeds2::from_path(path),
+        None => {
+            let now = Instant::now();
+
+            let db_paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
+            if args.io_args.allow_overwrite {
+                db_paths
+                    .destroy()
+                    .context("failed to remove existing mmseqs DBs")?;
+            } else {
+                db_paths.check().context("mmseqs DB check failed")?;
+            }
+
+            let seeds = if args.mmseqs_args.prog_seed {
+                seed_progressive(queries, targets, &db_paths, stats, args)
+                    .context("progessive seeding failed")
+            } else {
+                seed_max_seqs(queries, targets, &db_paths, stats, args).context("seeding failed")
+            };
+
+            stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
+
+            seeds
+        }
+    }
+}
+
+pub fn build_pipeline(
+    queries: Queries,
+    targets: Fasta,
+    stats: Stats,
+    args: &mut SearchArgs,
+) -> anyhow::Result<Pipeline> {
+    let profiles: Arc<HashMap<String, Profile>> = Arc::new(
+        match queries {
+            Queries::Sequence(fasta) => fasta
+                .par_iter()
+                .filter_map(|s| Profile::from_blosum_62_and_seq(&s).ok())
+                .collect::<Vec<_>>(),
+            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<Vec<_>>(),
+        }
+        .into_iter()
+        .map(|p| (p.name.clone(), p))
+        .collect(),
+    );
+
+    Ok(Pipeline {
+        profiles,
+        prf: None,
+        targets,
+        cloud_search: match args.dev_args.full_dp {
+            true => Box::<FullDpCloudSearchStage>::default(),
+            false => Box::new(DefaultCloudSearchStage::new(args)),
+        },
+        align: Box::new(
+            DefaultAlignStage::new(args).context("failed to create DefaultAlignStage")?,
+        ),
+        output: OutputStage::new(args).context("failed to create OutputStage")?,
+        stats,
+    })
+}
+
 pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let start_time = Instant::now();
 
-    if args.ali_to_stdout {
-        args.io_args.tbl_results_path = None
-    }
-
-    if args.pipeline_args.only_seed && args.io_args.seeds_output_path.is_none() {
-        args.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.json")?);
-    }
-
-    {
-        // quickly make sure we can write to all of the results paths
-        if let Some(path) = &args.io_args.tbl_results_path {
-            path.open(args.io_args.allow_overwrite)?;
-        }
-
-        if let Some(path) = &args.io_args.ali_results_path {
-            path.open(args.io_args.allow_overwrite)?;
-        }
-
-        if let Some(path) = &args.io_args.seeds_output_path {
-            path.open(args.io_args.allow_overwrite)?;
-        }
-
-        if let Some(path) = &args.dev_args.stats_results_path {
-            path.open(args.io_args.allow_overwrite)?;
-        }
-    }
-
     let now = Instant::now();
-    println!("reading query database...");
+    println!("indexing query database...");
     let queries = read_queries(&args.query_path)?;
     println!(
-        "\x1b[Areading query database...   done ({:.2}s)",
+        "\x1b[Aindexing query database...  done ({:.2}s)",
         now.elapsed().as_secs_f64()
     );
 
@@ -104,88 +141,56 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         now.elapsed().as_secs_f64()
     );
 
-    let mut stats = Stats::new(&queries, &targets);
+    let mut stats = Stats::new(queries.len(), targets.len());
 
     match args.expert_args.target_database_size {
         Some(_) => {}
         None => args.expert_args.target_database_size = Some(targets.len()),
     }
 
-    let seeds = match args.io_args.seeds_input_path {
-        Some(ref path) => {
-            let mut seeds: SeedMap = HashMap::new();
-
-            let reader = BufReader::new(std::fs::File::open(path)?);
-            let stream = serde_json::Deserializer::from_reader(reader);
-
-            for entry in stream.into_iter::<SeedMap>() {
-                let entry = entry?;
-                seeds.extend(entry);
-            }
-
-            seeds
-        }
-        None => {
-            let now = Instant::now();
-            println!("running mmseqs...");
-            let seeds = match queries {
-                Queries::Sequence(ref queries) => {
-                    seed_sequence_to_sequence(queries, &targets, &args)?
-                }
-                Queries::Profile(ref queries) => {
-                    seed_profile_to_sequence(queries, &targets, &args)?
-                }
-            };
-            stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
-            println!(
-                "\x1b[Arunning mmseqs...           done ({:.2}s)",
-                now.elapsed().as_secs_f64()
-            );
-            seeds
-        }
-    };
-
-    if let Some(ref path) = args.io_args.seeds_output_path {
-        // TODO: don't open with allow_overwrite = true
-        //       after I've updated the open() API
-        let writer = BufWriter::new(path.open(true)?);
-        let mut serializer = serde_json::Serializer::new(writer);
-        seeds.serialize(&mut serializer)?;
-    }
+    let now = Instant::now();
+    println!("seeding...");
+    let seeds = seed(&queries, &targets, &mut stats, &mut args)?;
+    println!(
+        "\x1b[Aseeding...                  done ({:.2}s)",
+        now.elapsed().as_secs_f64()
+    );
 
     if args.pipeline_args.only_seed {
         return Ok(());
     }
 
-    let seed_stage: Box<dyn SeedStage> = match args.dev_args.max_seed {
-        true => Box::new(MaxSeedStage::new(&queries, &targets)),
-        false => Box::new(DefaultSeedStage::new(seeds)),
-    };
+    let mut pipeline = build_pipeline(queries, targets, stats, &mut args)?;
 
-    let mut pipeline = Pipeline {
-        targets,
-        seed: seed_stage,
-        cloud_search: match args.dev_args.full_dp {
-            true => Box::<FullDpCloudSearchStage>::default(),
-            false => Box::new(DefaultCloudSearchStage::new(&args)),
-        },
-        align: Box::new(
-            DefaultAlignStage::new(&args).context("failed to create DefaultAlignStage")?,
-        ),
-        output: OutputStage::new(&args).context("failed to create OutputStage")?,
-        stats,
-    };
-
-    println!("running nail pipeline...");
     let align_timer = Instant::now();
-    match queries {
-        Queries::Sequence(queries) => {
-            run_pipeline_sequence_to_sequence(&queries, &mut pipeline);
-        }
-        Queries::Profile(mut queries) => {
-            run_pipeline_profile_to_sequence(&mut queries, &mut pipeline);
-        }
-    }
+    println!("running nail pipeline...");
+
+    let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
+
+    seeds
+        .seeds
+        .par_chunks(100)
+        .panic_fuse()
+        .try_for_each(|chunk| -> anyhow::Result<()> {
+            let now = Instant::now();
+            let mut pipeline = tl_pipeline
+                .get_or(|| RefCell::new(pipeline.clone()))
+                .borrow_mut();
+
+            let res = chunk
+                .iter()
+                .map(|seed| pipeline.run(seed))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let output_stats = pipeline.output.run(&res)?;
+            pipeline.stats.add_sample(&res, &output_stats);
+
+            pipeline
+                .stats
+                .add_threaded_time(ThreadedTimed::Total, now.elapsed());
+
+            Ok(())
+        })?;
 
     pipeline
         .stats
@@ -201,6 +206,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .set_serial_time(SerialTimed::Total, start_time.elapsed());
 
     if args.print_summary_stats {
+        args.write(&mut stdout())?;
         pipeline.stats.write(&mut stdout())?;
     }
 

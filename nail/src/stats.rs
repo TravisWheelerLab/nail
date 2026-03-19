@@ -1,10 +1,3 @@
-use libnail::{
-    align::structs::{
-        Alignment, Boundaries, CellStats, DisplayStrings, DpMatrixSparse, RowBounds, Scores,
-    },
-    structs::{hmm::Alphabet, Profile, Sequence},
-};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fmt::Debug,
     io::Write,
@@ -18,16 +11,12 @@ use std::{
 use anyhow::anyhow;
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
-use crate::{
-    io::Fasta,
-    pipeline::{
-        OutputStageStats, PipelineResult,
-        StageResult::{Filtered, Passed},
-    },
-    search::Queries,
+use crate::pipeline::{
+    OutputStageStats, PipelineResult,
+    StageResult::{Filtered, Passed},
 };
 
-pub struct Bytes(usize);
+pub struct Bytes(pub usize);
 
 #[allow(dead_code)]
 impl Bytes {
@@ -52,143 +41,17 @@ impl std::ops::Add for Bytes {
     }
 }
 
+impl std::ops::Sub for Bytes {
+    type Output = Bytes;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Bytes(self.0 - rhs.0)
+    }
+}
+
 impl std::iter::Sum for Bytes {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Bytes(0), std::ops::Add::add)
-    }
-}
-
-pub trait AllocationSize {
-    fn size(&self) -> Bytes;
-}
-
-impl AllocationSize for usize {
-    fn size(&self) -> Bytes {
-        Bytes(std::mem::size_of::<usize>())
-    }
-}
-
-impl AllocationSize for u8 {
-    fn size(&self) -> Bytes {
-        Bytes(std::mem::size_of::<u8>())
-    }
-}
-
-impl AllocationSize for f32 {
-    fn size(&self) -> Bytes {
-        Bytes(std::mem::size_of::<f32>())
-    }
-}
-
-impl AllocationSize for f64 {
-    fn size(&self) -> Bytes {
-        Bytes(std::mem::size_of::<f64>())
-    }
-}
-
-impl AllocationSize for String {
-    fn size(&self) -> Bytes {
-        Bytes(std::mem::size_of::<String>() + self.capacity() * std::mem::size_of::<u8>())
-    }
-}
-
-impl<T> AllocationSize for Option<T>
-where
-    T: AllocationSize,
-{
-    fn size(&self) -> Bytes {
-        match self {
-            Some(t) => t.size(),
-            None => Bytes(std::mem::size_of::<T>()),
-        }
-    }
-}
-
-impl AllocationSize for Sequence {
-    fn size(&self) -> Bytes {
-        self.name.size()
-            + self.details.size()
-            + self.length.size()
-            + Bytes(self.digital_bytes.capacity() * std::mem::size_of::<u8>())
-            + Bytes(self.utf8_bytes.capacity() * std::mem::size_of::<u8>())
-    }
-}
-
-impl AllocationSize for Profile {
-    fn size(&self) -> Bytes {
-        self.name.size()
-            + self.accession.size()
-            + self.length.size()
-            + self.target_length.size()
-            + self.max_length.size()
-            + Bytes(self.core_transitions.capacity() * std::mem::size_of::<[f32; 8]>())
-            + Bytes(
-                self.emission_scores[Self::MATCH_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.emission_scores[Self::MATCH_IDX]
-                        .iter()
-                        .map(|s| s.capacity() * std::mem::size_of::<f32>())
-                        .sum::<usize>(),
-            )
-            + Bytes(
-                self.emission_scores[Self::INSERT_IDX].capacity() * std::mem::size_of::<Vec<f32>>()
-                    + self.emission_scores[Self::INSERT_IDX]
-                        .iter()
-                        .map(|s| s.capacity() * std::mem::size_of::<f32>())
-                        .sum::<usize>(),
-            )
-        // self.special_transitions
-        + Bytes(std::mem::size_of::<[[f32;2]; 5]>())
-        + self.expected_j_uses.size()
-        + Bytes(self.consensus_sequence_bytes_utf8.capacity() * std::mem::size_of::<u8>())
-        // self.alphabet
-        + Bytes(std::mem::size_of::<Alphabet>())
-        + self.forward_tau.size()
-        + self.forward_lambda.size()
-    }
-}
-
-impl AllocationSize for DpMatrixSparse {
-    fn size(&self) -> Bytes {
-        self.target_length.size()
-            + self.profile_length.size()
-            + self.target_start.size()
-            + self.target_end.size()
-            + Bytes(self.block_offsets.capacity() * std::mem::size_of::<usize>())
-            + Bytes(self.row_start_offsets.capacity() * std::mem::size_of::<usize>())
-            + Bytes(self.core_data.capacity() * std::mem::size_of::<f32>())
-            + Bytes(self.special_data.capacity() * std::mem::size_of::<f32>())
-    }
-}
-
-impl AllocationSize for RowBounds {
-    fn size(&self) -> Bytes {
-        self.seq_len.size()
-            + self.prf_len.size()
-            + self.seq_start.size()
-            + self.seq_end.size()
-            + self.row_capacity.size()
-            + Bytes(self.left_row_bounds.capacity() * std::mem::size_of::<usize>())
-            + Bytes(self.right_row_bounds.capacity() * std::mem::size_of::<usize>())
-            + self.num_cells.size()
-    }
-}
-
-impl AllocationSize for Alignment {
-    fn size(&self) -> Bytes {
-        self.profile_name.size()
-            + self.target_name.size()
-            + Bytes(std::mem::size_of::<Boundaries>())
-            + Bytes(std::mem::size_of::<Scores>())
-            + Bytes(std::mem::size_of::<CellStats>())
-            + match &self.display_strings {
-                Some(d) => {
-                    d.target_string.size()
-                        + d.middle_string.size()
-                        + d.profile_string.size()
-                        + d.posterior_string.size()
-                }
-                None => Bytes(std::mem::size_of::<DisplayStrings>()),
-            }
     }
 }
 
@@ -198,6 +61,30 @@ pub enum SerialTimed {
     Total,
     Seeding,
     Alignment,
+}
+
+#[repr(usize)]
+#[derive(Clone, Copy, EnumIter, EnumCount)]
+pub enum MmseqsTimed {
+    Total,
+    Prefilter,
+    Align,
+    Convertalis,
+    Index,
+}
+
+impl Debug for MmseqsTimed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            MmseqsTimed::Total => "total",
+            MmseqsTimed::Prefilter => "prefilter",
+            MmseqsTimed::Align => "align",
+            MmseqsTimed::Convertalis => "convertalis",
+            MmseqsTimed::Index => "seed index",
+        };
+
+        write!(f, "{}", str)
+    }
 }
 
 #[repr(usize)]
@@ -264,6 +151,7 @@ pub enum CountedValue {
     Seeds,
     PassedCloud,
     PassedForward,
+    PassedReport,
     SeedCells,
     CloudForwardCells,
     CloudBackwardCells,
@@ -277,6 +165,7 @@ impl Debug for CountedValue {
             CountedValue::Seeds => "passed seed filter",
             CountedValue::PassedCloud => "passed cloud filter",
             CountedValue::PassedForward => "passed forward filter",
+            CountedValue::PassedReport => "passed reporting filter",
             CountedValue::SeedCells => "total potential seed DP cells",
             CountedValue::CloudForwardCells => "cloud forward DP cells computed",
             CountedValue::CloudBackwardCells => "cloud backward DP cells computed",
@@ -291,6 +180,7 @@ impl Debug for CountedValue {
 #[derive(Clone, Default)]
 pub struct Stats {
     serial_times: [Duration; SerialTimed::COUNT],
+    mmseqs_times: [Duration; MmseqsTimed::COUNT],
     threaded_times: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     threaded_times_num_samples: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     counted_values: Arc<[AtomicU64; CountedValue::COUNT]>,
@@ -298,33 +188,22 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new(queries: &Queries, targets: &Fasta) -> Self {
+    pub fn new(n_queries: usize, n_targets: usize) -> Self {
         let mut stats = Self::default();
 
-        // TODO: doing this here is significantly wasteful
-        let target_lengths: Vec<usize> = targets.par_iter().map(|s| s.length).collect();
-
-        let query_lengths: Vec<usize> = match queries {
-            Queries::Sequence(fasta) => fasta.par_iter().map(|s| s.length).collect(),
-            Queries::Profile(vec) => vec.par_iter().map(|s| s.length).collect(),
-        };
-
-        stats.set_computed_value(
-            ComputedValue::Cells,
-            target_lengths
-                .par_iter()
-                .flat_map(|a| query_lengths.par_iter().map(move |b| a * b))
-                .sum::<usize>() as u64,
-        );
-
-        stats.set_computed_value(ComputedValue::Queries, queries.len() as u64);
-        stats.set_computed_value(ComputedValue::Targets, targets.len() as u64);
-        stats.set_computed_value(
-            ComputedValue::Alignments,
-            (queries.len() * targets.len()) as u64,
-        );
+        stats.set_computed_value(ComputedValue::Queries, n_queries as u64);
+        stats.set_computed_value(ComputedValue::Targets, n_targets as u64);
+        stats.set_computed_value(ComputedValue::Alignments, (n_queries * n_targets) as u64);
 
         stats
+    }
+
+    pub fn set_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
+        self.mmseqs_times[timed as usize] = time;
+    }
+
+    pub fn add_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
+        self.mmseqs_times[timed as usize] += time;
     }
 
     pub fn add_sample(
@@ -391,6 +270,7 @@ impl Stats {
                 }
             }
         });
+        self.add_count(CountedValue::PassedReport, output_stats.n_reported);
         self.add_threaded_time(ThreadedTimed::OutputWrite, output_stats.write_time);
         self.add_threaded_time(ThreadedTimed::OutputMutex, output_stats.lock_time);
     }
@@ -405,6 +285,10 @@ impl Stats {
         self.threaded_times_num_samples[timed as usize].fetch_add(1, Ordering::SeqCst);
     }
 
+    fn mmseqs_time_total(&self, timed: MmseqsTimed) -> Duration {
+        self.mmseqs_times[timed as usize]
+    }
+
     fn serial_time_total(&self, timed: SerialTimed) -> Duration {
         self.serial_times[timed as usize]
     }
@@ -414,8 +298,30 @@ impl Stats {
         Duration::from_nanos(nanos)
     }
 
+    fn mmseqs_time_pct(&self, timed: MmseqsTimed) -> f64 {
+        let total_nanos = Self::nanos(self.mmseqs_times[MmseqsTimed::Total as usize]) as f64;
+        let nanos = Self::nanos(self.mmseqs_times[timed as usize]) as f64;
+
+        nanos / total_nanos
+    }
+
+    fn mmseqs_untimed_pct(&self) -> f64 {
+        let total_nanos = Self::nanos(self.mmseqs_time_total(MmseqsTimed::Total)) as f64;
+        let untimed_nanos = Self::nanos(self.mmseqs_untimed_total()) as f64;
+
+        untimed_nanos / total_nanos
+    }
+
+    fn mmseqs_untimed_total(&self) -> Duration {
+        let total = self.mmseqs_time_total(MmseqsTimed::Total);
+
+        let timed_sum = self.mmseqs_times[1..].iter().sum();
+
+        total - timed_sum
+    }
+
     fn serial_time_pct(&self, timed: SerialTimed) -> f64 {
-        let total_nanos = Self::nanos(self.serial_times[ThreadedTimed::Total as usize]) as f64;
+        let total_nanos = Self::nanos(self.serial_times[SerialTimed::Total as usize]) as f64;
         let nanos = Self::nanos(self.serial_times[timed as usize]) as f64;
 
         nanos / total_nanos
@@ -500,10 +406,14 @@ impl Stats {
             .unwrap_or(0);
 
         ComputedValue::iter().try_for_each(|c| {
-            let label = format!("{c:?}");
-            let label_width = label.len();
-            let count = Self::format_num(self.computed_value(c));
-            writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
+            if self.computed_value(c) > 0 {
+                let label = format!("{c:?}");
+                let label_width = label.len();
+                let count = Self::format_num(self.computed_value(c));
+                writeln!(out, " ├─ {label}: {count:>w$}", w = max_width - label_width)
+            } else {
+                Ok(())
+            }
         })?;
 
         let values: Vec<_> = CountedValue::iter().collect();
@@ -528,11 +438,45 @@ impl Stats {
     pub fn write_runtime(&self, out: &mut impl Write) -> anyhow::Result<()> {
         writeln!(out, "runtime: {}", self.serial_string(SerialTimed::Total),)?;
 
+        // ---
+
         writeln!(
             out,
-            " ├─ seeding (mmseqs):   {}",
+            " └─ seeding (mmseqs):   {}",
             self.serial_string(SerialTimed::Seeding)
         )?;
+
+        let max_width = MmseqsTimed::iter()
+            .map(|t| format!("{t:?}: {:.2}", self.mmseqs_time_total(t).as_secs_f64()).len())
+            .max()
+            .unwrap_or(0);
+
+        MmseqsTimed::iter()
+            .skip(1)
+            .filter(|t| !self.mmseqs_time_total(*t).is_zero())
+            .try_for_each(|t| {
+                let label_width = format!("{t:?}").len();
+
+                writeln!(
+                    out,
+                    "     ├─ {t:?}: {:>w$.2}s ({:5.2}%)",
+                    self.mmseqs_time_total(t).as_secs_f64(),
+                    self.mmseqs_time_pct(t) * 100.0,
+                    w = max_width - label_width
+                )
+            })?;
+
+        let misc = "[misc.]";
+        let last_label_width = misc.len();
+        writeln!(
+            out,
+            "     └─ {misc}: {:>w$.2}s ({:5.2}%)",
+            self.mmseqs_untimed_total().as_secs_f64(),
+            self.mmseqs_untimed_pct() * 100.0,
+            w = max_width - last_label_width
+        )?;
+
+        // ---
 
         writeln!(
             out,
@@ -586,7 +530,7 @@ impl Stats {
         let len = num_str.len();
 
         for (i, ch) in num_str.chars().enumerate() {
-            if i > 0 && (len - i) % 3 == 0 {
+            if i > 0 && (len - i).is_multiple_of(3) {
                 result.push(',');
             }
             result.push(ch);

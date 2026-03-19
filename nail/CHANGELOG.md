@@ -14,6 +14,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 -->
 
+## [Unreleased]
+
+
+## [0.5.0] - 2026-3-19
+
+### Added
+- added `nail dev` command to CLI
+- added `Fasta::from_path_par`
+- added `LexicalFastaIndex::from_path`
+- added `FileExt` trait for `File` API extensions
+- added `Fasta.lengths_iter()`
+- added `write_seed_map()`
+- added `read_seed_map()`
+- added mod `io::database`
+- added mod `io::index`
+- added mod `io::p7hmm`
+- added mod `io::seeds`
+- added `SearchArgs::{validate(), write()}`
+- added CLI params: `--prog-seed`, `--prog-n`, `--prog-f`
+- added consts `mmseqs::consts::{ALIGN_DBTYPE, PREFILTER_DBTYPE}`
+- added structs `mmseqs::PrefilterDb, Descriptor, ByteBuffer`
+- added methods `MmseqsDbPaths:{destroy(), check(), db_exists(), rmeove_db()}`
+- added function `mmseqs:{run_mmseqs_convertalis()}`
+- added trait `TableDisplay`
+- added method `PipelineResult::stat_string()`
+- added enum `stats::MmseqsTimed`
+- added mod `util::term`
+- added dev CLi options to adjust formatting numeric precision
+
+### Changed
+- changed `FastaOffset` length fields to include `_bytes` suffix
+- mod `io::rayon` renamed to `io::impl_rayon`
+- `LexicalFastaIndex::new()` now also takes `start: Option<u64>` to supply a relative starting offset
+- moved `Fasta` struct & related to mod `io::fasta`
+- changed mmseqs2 CLI params:
+    - removed `--mmseqs-k-score` and `--min-ungapped-score`
+    - added `--mmseqs-s`
+    - changed default `--mmseqs-k` parameter to k=6
+- changed `IoArgs::temp_dir_path` default from "/tmp" to "/tmp-nail"
+- split function `run_mmseqs_search()` into `run_mmseqs_align()` and `run_mmseqs_prefilter()`
+- added functions `seed_max_seqs(), seed_progressive()`
+- changed search pipeline:
+    - SeedStage is no longer used (for now)
+    - added fields `Pipeline:{profiles, prf}`
+    - pipeline now parallelizes over seeds instead of profiles (better performance for unbalanced seed distributions)
+
+### Removed
+- removed `--double-seed` option from CLI
+- removed method `tab_string()` from structs `AlignStageResult`, CloudStageResult`, `PipelineResult`
+- removed unused error structs `ProfileNotFoundError`, `TargetNotFoundError`
+- removed field `Pipeline:seed`
+- removed struct `DefaultSeedStage`
+- removed functions `seed_profile_to_sequence(), seed_sequence_to_sequence()`
+
+### Fixed
+- fixed a bug in `FastaParser::offset()`
+
 ## [0.4.0] - 2025-6-18
 
 ### Added

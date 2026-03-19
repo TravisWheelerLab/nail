@@ -3,13 +3,13 @@ use std::time::{Duration, Instant};
 use derive_builder::Builder;
 use libnail::{
     align::{
-        cloud_score, cloud_search_bwd, cloud_search_fwd, null_one_score, p_value,
+        cloud_search_bwd, cloud_search_fwd, null_one_score, p_value,
         structs::{
-            AdMatrixLinear, Cloud,
+            AdMatrixLinear, BackgroundState, Cloud,
             Relationship::{Disjoint, Intersecting},
             RowBounds, Seed,
         },
-        CloudSearchParams, Nats,
+        Bits, CloudSearchParams, Nats,
     },
     structs::{Profile, Sequence},
 };
@@ -20,31 +20,12 @@ use super::StageResult;
 
 pub type CloudStageResult = StageResult<RowBounds, CloudStageStats>;
 
-impl CloudStageResult {
-    pub fn tab_string(&self) -> String {
-        let (stats, pass_str) = match self {
-            StageResult::Filtered { stats } => (stats, "F"),
-            StageResult::Passed { stats, .. } => (stats, "P"),
-        };
-        format!(
-            "{} {:.2}b {:.1e} {} {} {} {}",
-            pass_str,
-            stats.score.to_bits().value(),
-            stats.p_value,
-            stats.forward_cells,
-            stats.backward_cells,
-            stats.forward_time.as_nanos(),
-            stats.backward_time.as_nanos(),
-        )
-    }
-}
-
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct CloudStageStats {
     pub forward_cells: usize,
     pub backward_cells: usize,
-    pub score: Nats,
+    pub score: Bits,
     pub p_value: f64,
     pub memory_init_time: Duration,
     pub forward_time: Duration,
@@ -107,6 +88,8 @@ impl CloudSearchStage for DefaultCloudSearchStage {
 
         let mut fwd_results = None;
         let mut bwd_results = None;
+        let mut raw_cloud_score = None;
+
         for attempts in 0..5 {
             let now = Instant::now();
             self.mx.reuse(seq.length);
@@ -125,6 +108,11 @@ impl CloudSearchStage for DefaultCloudSearchStage {
                 &mut self.fwd_cloud,
             ));
             stats.forward_time(now.elapsed());
+
+            raw_cloud_score = Some(Nats(
+                self.mx[(BackgroundState::C, seed.seq_end)]
+                    + prf.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX),
+            ));
 
             let now = Instant::now();
             self.mx.reuse(seq.length);
@@ -153,23 +141,23 @@ impl CloudSearchStage for DefaultCloudSearchStage {
             };
         }
 
-        let (fwd_results, bwd_results) = match (fwd_results, bwd_results) {
-            (Some(f), Some(b)) => (f, b),
-            _ => unreachable!("finished cloud search without results"),
-        };
+        let (fwd_results, bwd_results, raw_cloud_score) =
+            match (fwd_results, bwd_results, raw_cloud_score) {
+                (Some(f), Some(b), Some(s)) => (f, b, s),
+                _ => unreachable!("finished cloud search without results"),
+            };
 
         stats.backward_cells(bwd_results.num_cells_computed);
         stats.forward_cells(fwd_results.num_cells_computed);
 
-        let raw_cloud_score = cloud_score(&fwd_results, &bwd_results);
+        // let raw_cloud_score = cloud_score(&fwd_results, &bwd_results);
 
         // the null one is the denominator in the probability ratio
         let null_one = null_one_score(seq.length);
 
-        let cloud_score = raw_cloud_score - null_one;
+        let cloud_score = (raw_cloud_score - null_one).to_bits();
 
-        let cloud_p_value = p_value(cloud_score, prf.forward_lambda, prf.forward_tau);
-
+        let cloud_p_value = p_value(cloud_score, prf.fwd_lambda, prf.fwd_tau);
         stats.score(cloud_score);
         stats.p_value(cloud_p_value);
 
