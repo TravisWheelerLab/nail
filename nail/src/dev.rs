@@ -22,6 +22,10 @@ use crate::{
     util::PathExt,
 };
 
+pub fn dev_play(mut args: SearchArgs) -> anyhow::Result<()> {
+    Ok(())
+}
+
 pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
     let queries = read_queries(&args.query_path)?;
     let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;

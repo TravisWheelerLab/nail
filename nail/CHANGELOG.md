@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added method `PipelineResult::stat_string()`
 - added enum `stats::MmseqsTimed`
 - added mod `util::term`
+- added dev CLi options to adjust formatting numeric precision
 
 ### Changed
 - changed `FastaOffset` length fields to include `_bytes` suffix
@@ -64,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed field `Pipeline:seed`
 - removed struct `DefaultSeedStage`
 - removed functions `seed_profile_to_sequence(), seed_sequence_to_sequence()`
+
+### Fixed
+- fixed a bug in `FastaParser::offset()`
 
 ## [0.4.0] - 2025-6-18
 

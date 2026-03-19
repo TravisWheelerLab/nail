@@ -34,7 +34,7 @@ impl ByteBufferExt for &[u8] {
     fn first_word(&self) -> anyhow::Result<&str> {
         self.word_from(
             self.first_non_whitespace_pos()
-                .ok_or(anyhow!("no words found"))?,
+                .ok_or(anyhow!("no words found in buffer"))?,
         )
     }
 

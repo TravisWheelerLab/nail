@@ -18,6 +18,7 @@ pub enum NailSubCommands {
 #[allow(clippy::large_enum_variant)]
 pub enum DevSubCommands {
     #[command()]
+    Play(SearchArgs),
     Search(SearchArgs),
     Mx(SearchArgs),
 }

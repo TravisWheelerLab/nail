@@ -11,7 +11,7 @@ use clap::Parser;
 
 use crate::{
     args::{DevSubCommands, NailCli, NailSubCommands},
-    dev::{dev_mx, dev_search},
+    dev::{dev_mx, dev_play, dev_search},
     search::search,
     util::{check_mmseqs_installed, set_threads, term::*},
 };
@@ -37,6 +37,12 @@ fn run() -> anyhow::Result<()> {
             search(args)?;
         }
         NailSubCommands::Dev(cmd) => match cmd {
+            DevSubCommands::Play(mut args) => {
+                args.validate()?;
+                check_mmseqs_installed()?;
+                set_threads(args.num_threads)?;
+                dev_play(args)?;
+            }
             DevSubCommands::Search(mut args) => {
                 args.validate()?;
                 check_mmseqs_installed()?;

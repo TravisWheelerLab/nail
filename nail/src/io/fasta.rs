@@ -29,13 +29,7 @@ impl std::fmt::Debug for FastaOffset {
     }
 }
 
-enum FastaParserState {
-    Name,
-    Delim,
-}
-
 pub struct FastaParser {
-    state: FastaParserState,
     name: String,
     offset: FastaOffset,
 }
@@ -48,35 +42,29 @@ impl RecordParser for FastaParser {
 
     fn new(_: u64) -> Self {
         Self {
-            state: FastaParserState::Delim,
             name: String::new(),
             offset: FastaOffset::default(),
         }
     }
 
     fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Self::Offset)> {
-        use FastaParserState::*;
-
         let mut ret = None;
-        for pos in 0..line.len() {
-            let byte = line[pos];
-            match &self.state {
-                Name => {
-                    self.name.push_str(line.word_from(pos).unwrap());
-                    self.state = Delim;
-                }
-                Delim => {
-                    if byte == Self::DELIM[0] {
-                        ret = Some((self.name.as_str().to_owned(), self.offset.clone()));
-                        self.state = Name;
-                        self.name.clear();
-                        self.offset.start = pos + line_start as usize;
-                        self.offset.n_bytes = 0;
-                    }
-                }
-            }
-            self.offset.n_bytes += 1;
+
+        if line[0] == Self::DELIM[0] {
+            // this means we've hit a new record, so we're going to:
+            //   1. return the last offset we built, and
+            //   2. start building the next offset
+
+            ret = Some((self.name.as_str().to_owned(), self.offset.clone()));
+
+            self.name.clear();
+            self.name
+                .push_str((&line[1..]).first_word().unwrap_or_default());
+            self.offset.start = line_start as usize;
+            self.offset.n_bytes = 0;
         }
+
+        self.offset.n_bytes += line.len();
 
         ret
     }
@@ -204,7 +192,7 @@ impl Fasta {
             .expect("failed to read in Fasta::get()");
 
         Some(FastaParser::parse(&self.buffer).unwrap_or_else(|e| {
-            panic!("failed to produce Sequence in Fasta::get()\nError: {e}");
+            panic!("failed to produce Sequence in Fasta::get()\nName: {name}\nError: {e}");
         }))
     }
 
