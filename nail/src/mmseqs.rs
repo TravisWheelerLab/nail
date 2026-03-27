@@ -577,7 +577,7 @@ pub fn run_mmseqs_prefilter(
     score_mx_path: Option<PathBuf>,
     args: &SearchArgs,
 ) -> anyhow::Result<()> {
-    let mut prefilter = Command::new("mmseqs");
+    let mut prefilter = Command::new(&args.mmseqs_path);
 
     let qdb = query_db_path.as_ref();
     let tdb = target_db_path.as_ref();
@@ -639,7 +639,7 @@ pub fn run_mmseqs_align(
 
     adb_dir.create_dir()?;
 
-    let mut align = Command::new("mmseqs");
+    let mut align = Command::new(&args.mmseqs_path);
     align
         .arg("align")
         .arg(qdb)
@@ -678,7 +678,7 @@ pub fn run_mmseqs_convertalis(
     let adb = align_db_path.as_ref().to_path_buf();
     let align_tsv = align_tsv_path.as_ref();
 
-    Command::new("mmseqs")
+    Command::new(&args.mmseqs_path)
         .arg("convertalis")
         .arg(qdb)
         .arg(tdb)

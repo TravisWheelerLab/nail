@@ -198,8 +198,8 @@ impl<P: AsRef<Path>> PathExt for P {
     }
 }
 
-pub fn check_mmseqs_installed() -> anyhow::Result<()> {
-    Command::new("mmseqs")
+pub fn check_mmseqs_installed<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
+    Command::new(path.as_ref())
         .arg("-h")
         .run()
         .context("mmseqs2 does not appear to be in the system path")

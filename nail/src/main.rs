@@ -32,26 +32,26 @@ fn run() -> anyhow::Result<()> {
     match NailCli::parse().command {
         NailSubCommands::Search(mut args) => {
             args.validate()?;
-            check_mmseqs_installed()?;
+            check_mmseqs_installed(&args.mmseqs_path)?;
             set_threads(args.num_threads)?;
             search(args)?;
         }
         NailSubCommands::Dev(cmd) => match cmd {
             DevSubCommands::Play(mut args) => {
                 args.validate()?;
-                check_mmseqs_installed()?;
+                check_mmseqs_installed(&args.mmseqs_path)?;
                 set_threads(args.num_threads)?;
                 dev_play(args)?;
             }
             DevSubCommands::Search(mut args) => {
                 args.validate()?;
-                check_mmseqs_installed()?;
+                check_mmseqs_installed(&args.mmseqs_path)?;
                 set_threads(args.num_threads)?;
                 dev_search(args)?;
             }
             DevSubCommands::Mx(mut args) => {
                 args.validate()?;
-                check_mmseqs_installed()?;
+                check_mmseqs_installed(&args.mmseqs_path)?;
                 set_threads(args.num_threads)?;
                 dev_mx(args)?;
             }

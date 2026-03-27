@@ -56,6 +56,10 @@ pub struct SearchArgs {
     #[arg(short = 'x', action)]
     pub ali_to_stdout: bool,
 
+    /// The path to the MMseqs2 binary that nail will use for seeding
+    #[arg(long, value_name = "/path/to/mmseqs", default_value = "mmseqs")]
+    pub mmseqs_path: PathBuf,
+
     #[command(flatten)]
     #[clap(next_help_heading = "File I/O options")]
     pub io_args: IoArgs,
@@ -236,7 +240,7 @@ pub struct IoArgs {
     pub temp_dir_path: PathBuf,
 
     /// Allow nail to overwrite files
-    #[arg(long = "allow-overwrite", default_value_t = false)]
+    #[arg(short = 'X', long = "allow-overwrite", default_value_t = false)]
     pub allow_overwrite: bool,
 }
 
