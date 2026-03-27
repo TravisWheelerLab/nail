@@ -32,7 +32,7 @@ To run the `nail search` pipeline, `mmseqs search` must be available in your sys
 
 ## Installation
 
-You can find precompiled binaries for various platforms on the [latest release page](https://github.com/TravisWheelerLab/nail/releases/tag/nail-v0.4.0).
+You can find precompiled binaries for various platforms on the [latest release page](https://github.com/TravisWheelerLab/nail/releases/).
 
 ### Building from source
 
