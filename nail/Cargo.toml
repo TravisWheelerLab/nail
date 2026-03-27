@@ -1,6 +1,6 @@
 [package]
 name = "nail"
-version = "0.5.0"
+version = "0.4.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
 license = "BSD-3-Clause"
@@ -20,7 +20,7 @@ jemalloc = ["jemallocator"]
 [dependencies]
 jemallocator = { version = "0.3", optional = true }
 clap = { version = "4.5.23", features = ["derive", "wrap_help"] }
-libnail = { path = "../libnail", version = "0.5.0" }
+libnail = { path = "../libnail", version = "0.4.0" }
 anyhow = "1.0.66"
 thiserror = "1.0.37"
 rayon = "1.7.0"

@@ -788,12 +788,24 @@ impl Profile {
             })
             .sum::<f32>();
 
-        prf.fwd_tau(0.0);
+        // note: we could get also get a pretty good approximation for
+        //       lambda by simply using the product of the length of the
+        //       sequence and the mean relative entropy of blosum62
         prf.fwd_lambda(std::f32::consts::LN_2 + 1.44 / total_entropy);
 
-        let mut prf = prf.build()?;
-        prf.calibrate_tau(200, 100, 0.04);
-        Ok(prf)
+        // tau
+        // note: this all comes from some experimentation fitting ~200k
+        //       sequences to learn a closed form solution for tau
+        const KL_BLOSUM62: f32 = 0.589;
+        const MAGIC_TAU_1: f32 = 0.662;
+        const MAGIC_TAU_2: f32 = 1.317;
+        const MAGIC_TAU_3: f32 = 2.147;
+        let tau = -((-MAGIC_TAU_1 * KL_BLOSUM62) + (MAGIC_TAU_2 * (seq.length as f32).ln())
+            - MAGIC_TAU_3);
+
+        prf.fwd_tau(tau);
+
+        prf.build()
     }
 
     pub fn relative_entropy(&self) -> f32 {
