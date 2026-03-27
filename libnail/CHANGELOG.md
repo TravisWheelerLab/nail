@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added function `Profile::from_blosum62_and_seq()`
 
 ### Changed
-- removed transition index constants under `Profile` namespace
+- Profile::from_blosum_62_and_seq() now estimates tau with a closed-form solution
 - renamed `Profile.forward_tau` and `Profile.forward_lambda` to `fwd_tau` and `fwd_lambda`
 - renamed `Profile.consensus_sequence_bytes_utf8` to `consensus_seq_bytes_utf8`
 - moved `Alphabet` and`AminoAcid` to mod `alphabet`
@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - struct `Seed` now has `prf`, `seq`, `e_value` fields (probably temporary)
 
 ### Removed
+- removed transition index constants under `Profile` namespace
 - removed `Hmm` struct
 - removed function `Profile::new()`
 
