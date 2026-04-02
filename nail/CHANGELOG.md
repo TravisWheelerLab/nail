@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - added CLI param `--mmseqs-path` 
+- added trait `io::index::Offset`
+- added error Struct `io::index::IndexCollisionError<O>`
 
+### Changed
+- `IndexInner::extend()` now returns an error on key collisions
 
 ## [0.5.0] - 2026-3-19
 

@@ -39,7 +39,7 @@ pub trait RecordParser: Send + Sync + 'static {
     const DELIM_LEN: usize = Self::DELIM.len();
     const DELIM_TAIL_LEN: usize = Self::DELIM_TAIL.len();
     const DELIM_TYPE: Delimiter;
-    type Offset;
+    type Offset: Offset;
     type Record;
 
     fn new(start_pos: u64) -> Self;
@@ -61,18 +61,49 @@ pub trait RecordParser: Send + Sync + 'static {
     }
 }
 
-pub trait IndexInner<O>: Send + Sync + 'static {
+pub trait Offset: Send + Sync + Clone + 'static {}
+
+pub trait IndexInner<O>: Send + Sync {
     fn new() -> Self;
     fn len(&self) -> usize;
     fn get(&self, name: &str) -> Option<&O>;
-    fn extend<T>(&mut self, iter: T)
+    fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
         T: IntoIterator<Item = (String, O)>;
 }
 
+struct IndexCollisionError<O>
+where
+    O: Offset,
+{
+    key: String,
+    first: O,
+    second: O,
+}
+
+impl<O> std::fmt::Debug for IndexCollisionError<O>
+where
+    O: Offset,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+impl<O> std::fmt::Display for IndexCollisionError<O>
+where
+    O: Offset,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+impl<O> std::error::Error for IndexCollisionError<O> where O: Offset {}
+
 impl<O> IndexInner<O> for IndexMap<String, O>
 where
-    O: Send + Sync + 'static,
+    O: Offset,
 {
     fn new() -> Self {
         Self::new()
@@ -86,13 +117,41 @@ where
         self.get(name)
     }
 
-    fn extend<T>(&mut self, iter: T)
+    fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
         T: IntoIterator<Item = (String, O)>,
     {
-        // automatic delegation fails here since
-        // Extend is actually a trait in std::iter
-        std::iter::Extend::extend(self, iter);
+        let iter = iter.into_iter();
+
+        // note: this resize logic is copied and
+        //       modifed from hashbrown in std
+        let reserve = if self.is_empty() {
+            iter.size_hint().0
+        } else {
+            iter.size_hint().0.div_ceil(2)
+        };
+
+        self.reserve(reserve);
+
+        for (key, offset) in iter {
+            use indexmap::map::Entry;
+
+            match self.entry(key) {
+                Entry::Vacant(e) => {
+                    e.insert(offset);
+                }
+                Entry::Occupied(e) => {
+                    return Err(IndexCollisionError {
+                        key: e.key().clone(),
+                        first: e.get().clone(),
+                        second: offset,
+                    }
+                    .into());
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -125,11 +184,11 @@ where
         self.inner.get(name)
     }
 
-    fn extend<T>(&mut self, iter: T)
+    fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
         T: IntoIterator<Item = (String, P::Offset)>,
     {
-        self.inner.extend(iter);
+        self.inner.extend(iter)
     }
 
     pub fn from_path<const B: usize, const N: usize>(
@@ -246,22 +305,36 @@ where
         start: Option<u64>,
     ) -> anyhow::Result<()> {
         let process_fn = |recs: &mut Vec<(String, P::Offset)>, done: bool| {
-            match index.try_lock() {
-                Ok(mut guard) => {
-                    guard.extend(recs.drain(..));
-                }
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    if recs.len() == N || done {
-                        index
-                            .lock()
-                            .map_err(|_| anyhow!("mutex poisoned"))?
-                            .extend(recs.drain(..));
-                    }
-                }
-                Err(_) => bail!("mutex poisoned"),
-            }
+            let full = recs.len() == N;
 
-            Ok(())
+            let guard = if full || done {
+                match index.lock() {
+                    Ok(guard) => Some(guard),
+                    Err(_) => bail!("mutex poisoned"),
+                }
+            } else {
+                match index.try_lock() {
+                    Ok(guard) => Some(guard),
+                    Err(std::sync::TryLockError::WouldBlock) => None,
+                    Err(std::sync::TryLockError::Poisoned(_)) => bail!("mutex poisoned"),
+                }
+            };
+
+            match guard {
+                Some(mut guard) => match guard.extend(recs.drain(..)) {
+                    Ok(_) => Ok(()),
+                    Err(e) => match e.downcast::<IndexCollisionError<P::Offset>>() {
+                        Ok(e) => {
+                            // TODO: figure out a way to dispatch the
+                            //       error into a routine that will print
+                            //       the line numbers of the collisions
+                            Ok(())
+                        }
+                        Err(_) => bail!("failed to downcast to concrete IndexCollisionError<O>"),
+                    },
+                },
+                None => Ok(()),
+            }
         };
 
         use ReadState::*;
@@ -326,6 +399,10 @@ where
 mod tests {
     use super::*;
 
+    #[derive(Clone)]
+    struct DummyOffset {}
+    impl Offset for DummyOffset {}
+
     macro_rules! dummy_parser {
         ($name:ident, $delim:expr) => {
             #[derive(Debug)]
@@ -334,7 +411,7 @@ mod tests {
             impl RecordParser for $name {
                 const DELIM: &'static [u8] = $delim;
                 const DELIM_TYPE: Delimiter = Delimiter::Initiating;
-                type Offset = ();
+                type Offset = DummyOffset;
                 type Record = ();
 
                 fn new(_: u64) -> Self {

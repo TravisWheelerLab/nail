@@ -12,7 +12,7 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use crate::io::{ByteBufferExt, DatabaseIter};
+use crate::io::{ByteBufferExt, DatabaseIter, Offset};
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
@@ -22,6 +22,8 @@ pub struct FastaOffset {
     start: usize,
     n_bytes: usize,
 }
+
+impl Offset for FastaOffset {}
 
 impl std::fmt::Debug for FastaOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

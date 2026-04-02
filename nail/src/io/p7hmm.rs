@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::io::{util::ByteBufferExt, DatabaseIter};
+use crate::io::{util::ByteBufferExt, DatabaseIter, Offset};
 
 use libnail::structs::{
     profile::{ProfileBuilder, Transition},
@@ -24,6 +24,8 @@ pub struct P7HmmOffset {
     start: usize,
     n_bytes: usize,
 }
+
+impl Offset for P7HmmOffset {}
 
 impl std::fmt::Debug for P7HmmOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

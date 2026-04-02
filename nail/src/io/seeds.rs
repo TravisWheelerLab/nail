@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
-use crate::io::{ByteBufferExt, DatabaseIter, IndexInner};
+use crate::io::{ByteBufferExt, DatabaseIter, IndexInner, Offset};
 
 use anyhow::bail;
 use indexmap::IndexMap;
@@ -45,6 +45,8 @@ pub struct SeedOffset {
     start: u64,
     n_bytes: usize,
 }
+
+impl Offset for SeedOffset {}
 
 pub struct SeedParser;
 
@@ -119,7 +121,7 @@ impl IndexInner<SeedOffset> for SeedsIndexInner {
         self.index.get(name)
     }
 
-    fn extend<T>(&mut self, iter: T)
+    fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
         T: IntoIterator<Item = (String, SeedOffset)>,
     {
@@ -135,6 +137,8 @@ impl IndexInner<SeedOffset> for SeedsIndexInner {
                 })
                 .or_insert(offset);
         });
+
+        Ok(())
     }
 }
 
