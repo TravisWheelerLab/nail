@@ -40,11 +40,11 @@ pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
 
     match query_format {
         FileFormat::Fasta => {
-            let queries = Fasta::from_path(&path).context("failed to read query fasta")?;
+            let queries = Fasta::from_path(&path).context("failed to index query fasta")?;
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries = P7Hmm::from_path(&path).context("failed to open query hmm")?;
+            let queries = P7Hmm::from_path(&path).context("failed to index query hmm")?;
             Ok(Queries::Profile(queries))
         }
         _ => {
@@ -135,7 +135,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let now = Instant::now();
     println!("indexing target database...");
-    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
+    let targets = Fasta::from_path(&args.target_path).context("failed to index target fasta")?;
     println!(
         "\x1b[Aindexing target database... done ({:.2}s)",
         now.elapsed().as_secs_f64()

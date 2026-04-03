@@ -18,21 +18,6 @@ use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
-#[derive(Clone, Default)]
-pub struct P7HmmOffset {
-    // points to the 'H' byte in the 'HMMER3/f ...' line
-    start: usize,
-    n_bytes: usize,
-}
-
-impl Offset for P7HmmOffset {}
-
-impl std::fmt::Debug for P7HmmOffset {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}->+{}", self.start, self.n_bytes)
-    }
-}
-
 enum P7HmmParserState {
     Name,
     Delim,
@@ -41,27 +26,26 @@ enum P7HmmParserState {
 pub struct P7HmmParser {
     state: P7HmmParserState,
     name: String,
-    offset: P7HmmOffset,
+    offset: Offset,
 }
 
 impl RecordParser for P7HmmParser {
     const DELIM: &'static [u8] = b"//";
     const DELIM_TYPE: Delimiter = Delimiter::Terminating;
-    type Offset = P7HmmOffset;
     type Record = Profile;
 
     fn new(start_pos: u64) -> Self {
         Self {
             state: P7HmmParserState::Name,
             name: String::new(),
-            offset: P7HmmOffset {
-                start: start_pos as usize,
+            offset: Offset {
+                start: start_pos,
                 n_bytes: 0,
             },
         }
     }
 
-    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Self::Offset)> {
+    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Offset)> {
         use P7HmmParserState::*;
 
         self.offset.n_bytes += line.len();
@@ -93,8 +77,8 @@ impl RecordParser for P7HmmParser {
                 self.state = Name;
                 self.name.clear();
                 // if the line has a newline at the end, we want to add one
-                let maybe_one = (line[line.len() - 1] != b'\n') as usize;
-                self.offset.start = line_start as usize + line.len() + maybe_one;
+                let maybe_one = (line[line.len() - 1] != b'\n') as u64;
+                self.offset.start = line_start + line.len() as u64 + maybe_one;
                 self.offset.n_bytes = 0;
             }
             _ => {}
@@ -332,7 +316,7 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
         })
 }
 
-pub type P7HmmIndex = Index<IndexMap<String, P7HmmOffset>, P7HmmParser>;
+pub type P7HmmIndex = Index<IndexMap<String, Offset>, P7HmmParser>;
 pub struct P7Hmm {
     path: PathBuf,
     file: File,

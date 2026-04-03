@@ -16,40 +16,24 @@ use crate::io::{ByteBufferExt, DatabaseIter, Offset};
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
-#[derive(Default, Clone)]
-pub struct FastaOffset {
-    // this points to the '>' byte that starts the fasta record
-    start: usize,
-    n_bytes: usize,
-}
-
-impl Offset for FastaOffset {}
-
-impl std::fmt::Debug for FastaOffset {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}->+{}", self.start, self.n_bytes)
-    }
-}
-
 pub struct FastaParser {
     name: String,
-    offset: FastaOffset,
+    offset: Offset,
 }
 
 impl RecordParser for FastaParser {
     const DELIM: &'static [u8] = b">";
     const DELIM_TYPE: Delimiter = Delimiter::Initiating;
-    type Offset = FastaOffset;
     type Record = Sequence;
 
     fn new(_: u64) -> Self {
         Self {
             name: String::new(),
-            offset: FastaOffset::default(),
+            offset: Offset::default(),
         }
     }
 
-    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Self::Offset)> {
+    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Offset)> {
         let mut ret = None;
 
         if line[0] == Self::DELIM[0] {
@@ -62,7 +46,7 @@ impl RecordParser for FastaParser {
             self.name.clear();
             self.name
                 .push_str((&line[1..]).first_word().unwrap_or_default());
-            self.offset.start = line_start as usize;
+            self.offset.start = line_start;
             self.offset.n_bytes = 0;
         }
 
@@ -130,7 +114,7 @@ impl RecordParser for FastaParser {
     }
 }
 
-pub type FastaIndex = Index<IndexMap<String, FastaOffset>, FastaParser>;
+pub type FastaIndex = Index<IndexMap<String, Offset>, FastaParser>;
 pub struct Fasta {
     path: PathBuf,
     file: File,
@@ -253,31 +237,31 @@ mod tests {
         let index = FastaIndex::from_path::<15, 1>(&path)?;
         starts.iter().zip(names.iter()).for_each(|(s, n)| {
             let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
+            assert_eq!(o.start, *s as u64);
         });
 
         let index = FastaIndex::from_path::<15, 2>(&path)?;
         starts.iter().zip(names.iter()).for_each(|(s, n)| {
             let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
+            assert_eq!(o.start, *s as u64);
         });
 
         let index = FastaIndex::from_path::<15, 3>(&path)?;
         starts.iter().zip(names.iter()).for_each(|(s, n)| {
             let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
+            assert_eq!(o.start, *s as u64);
         });
 
         let index = FastaIndex::from_path::<15, 4>(&path)?;
         starts.iter().zip(names.iter()).for_each(|(s, n)| {
             let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
+            assert_eq!(o.start, *s as u64);
         });
 
         let index = FastaIndex::from_path::<15, 20>(&path)?;
         starts.iter().zip(names.iter()).for_each(|(s, n)| {
             let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
+            assert_eq!(o.start, *s as u64);
         });
 
         Ok(())

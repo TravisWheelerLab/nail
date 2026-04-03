@@ -40,32 +40,23 @@ impl Seeds2 {
     }
 }
 
-#[derive(Default, Clone, Debug, PartialEq)]
-pub struct SeedOffset {
-    start: u64,
-    n_bytes: usize,
-}
-
-impl Offset for SeedOffset {}
-
 pub struct SeedParser;
 
 impl RecordParser for SeedParser {
     const DELIM: &'static [u8] = b"\n";
     const DELIM_TYPE: Delimiter = Delimiter::Terminating;
-    type Offset = SeedOffset;
     type Record = SeedList;
 
     fn new(_: u64) -> Self {
         Self
     }
 
-    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Self::Offset)> {
+    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Offset)> {
         let name = line.first_word().ok()?.to_string();
 
         Some((
             name,
-            SeedOffset {
+            Offset {
                 start: line_start,
                 n_bytes: line.len(),
             },
@@ -103,10 +94,10 @@ impl RecordParser for SeedParser {
 }
 
 pub struct SeedsIndexInner {
-    index: IndexMap<String, SeedOffset>,
+    index: IndexMap<String, Offset>,
 }
 
-impl IndexInner<SeedOffset> for SeedsIndexInner {
+impl IndexInner for SeedsIndexInner {
     fn new() -> Self {
         Self {
             index: IndexMap::new(),
@@ -117,13 +108,13 @@ impl IndexInner<SeedOffset> for SeedsIndexInner {
         self.index.len()
     }
 
-    fn get(&self, name: &str) -> Option<&SeedOffset> {
+    fn get(&self, name: &str) -> Option<&Offset> {
         self.index.get(name)
     }
 
     fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
-        T: IntoIterator<Item = (String, SeedOffset)>,
+        T: IntoIterator<Item = (String, Offset)>,
     {
         iter.into_iter().for_each(|(name, offset)| {
             self.index
@@ -269,7 +260,7 @@ mod tests {
                     let e = ends.get(n).unwrap();
                     (
                         n.to_string(),
-                        SeedOffset {
+                        Offset {
                             start: *s as u64,
                             n_bytes: e - s,
                         },

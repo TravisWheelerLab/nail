@@ -39,11 +39,10 @@ pub trait RecordParser: Send + Sync + 'static {
     const DELIM_LEN: usize = Self::DELIM.len();
     const DELIM_TAIL_LEN: usize = Self::DELIM_TAIL.len();
     const DELIM_TYPE: Delimiter;
-    type Offset: Offset;
     type Record;
 
     fn new(start_pos: u64) -> Self;
-    fn offset(&mut self, line: &[u8], start: u64) -> Option<(String, Self::Offset)>;
+    fn offset(&mut self, line: &[u8], start: u64) -> Option<(String, Offset)>;
     fn parse(buf: &[u8]) -> anyhow::Result<Self::Record>;
 
     fn delimiter_location(buf: &[u8]) -> DelimiterLocation {
@@ -61,50 +60,41 @@ pub trait RecordParser: Send + Sync + 'static {
     }
 }
 
-pub trait Offset: Send + Sync + Clone + 'static {}
-
-pub trait IndexInner<O>: Send + Sync {
+pub trait IndexInner: Send + Sync {
     fn new() -> Self;
     fn len(&self) -> usize;
-    fn get(&self, name: &str) -> Option<&O>;
+    fn get(&self, name: &str) -> Option<&Offset>;
     fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
-        T: IntoIterator<Item = (String, O)>;
+        T: IntoIterator<Item = (String, Offset)>;
 }
 
-struct IndexCollisionError<O>
-where
-    O: Offset,
-{
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct Offset {
+    pub start: u64,
+    pub n_bytes: usize,
+}
+
+#[derive(Debug, Clone)]
+struct IndexCollisionError {
     key: String,
-    first: O,
-    second: O,
+    first: Offset,
+    second: Offset,
 }
 
-impl<O> std::fmt::Debug for IndexCollisionError<O>
-where
-    O: Offset,
-{
+impl std::fmt::Display for IndexCollisionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        write!(
+            f,
+            "collision of index key: {}\nfirst: {}->{} bytes\nsecond: {}->{} bytes",
+            self.key, self.first.start, self.first.n_bytes, self.second.start, self.second.n_bytes
+        )
     }
 }
 
-impl<O> std::fmt::Display for IndexCollisionError<O>
-where
-    O: Offset,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
+impl std::error::Error for IndexCollisionError {}
 
-impl<O> std::error::Error for IndexCollisionError<O> where O: Offset {}
-
-impl<O> IndexInner<O> for IndexMap<String, O>
-where
-    O: Offset,
-{
+impl IndexInner for IndexMap<String, Offset> {
     fn new() -> Self {
         Self::new()
     }
@@ -113,13 +103,13 @@ where
         self.len()
     }
 
-    fn get(&self, name: &str) -> Option<&O> {
+    fn get(&self, name: &str) -> Option<&Offset> {
         self.get(name)
     }
 
     fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
-        T: IntoIterator<Item = (String, O)>,
+        T: IntoIterator<Item = (String, Offset)>,
     {
         let iter = iter.into_iter();
 
@@ -157,7 +147,7 @@ where
 
 pub struct Index<I, P>
 where
-    I: IndexInner<P::Offset>,
+    I: IndexInner,
     P: RecordParser,
 {
     pub(crate) inner: I,
@@ -167,7 +157,7 @@ where
 impl<I, P> Index<I, P>
 where
     P: RecordParser,
-    I: IndexInner<P::Offset>,
+    I: IndexInner,
 {
     fn new() -> Self {
         Self {
@@ -180,13 +170,13 @@ where
         self.inner.len()
     }
 
-    pub fn get(&self, name: &str) -> Option<&P::Offset> {
+    pub fn get(&self, name: &str) -> Option<&Offset> {
         self.inner.get(name)
     }
 
     fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
     where
-        T: IntoIterator<Item = (String, P::Offset)>,
+        T: IntoIterator<Item = (String, Offset)>,
     {
         self.inner.extend(iter)
     }
@@ -286,11 +276,87 @@ where
 
         let index = Arc::new(Mutex::new(Self::new()));
 
-        files_and_starts
+        if let Err(e) = files_and_starts
             .par_iter_mut()
             .try_for_each(|(file, start)| {
                 Self::build_chunk::<_, 5_000, 20>(file, index.clone(), Some(*start))
-            })?;
+            })
+        {
+            match e.downcast_ref::<IndexCollisionError>() {
+                Some(e) => {
+                    use ReadState::*;
+                    let mut buf = vec![0; 2 << (B - 1)];
+
+                    fn search<R>(
+                        file: &mut R,
+                        buf: &mut [u8],
+                        start: u64,
+                        target: u64,
+                    ) -> anyhow::Result<u64>
+                    where
+                        R: ReadSeekExt,
+                    {
+                        let mut pos = start;
+                        let mut line_cnt = 0;
+                        file.seek(SeekFrom::Start(start))?;
+                        while pos <= target {
+                            let buf_slice = match file.read_with_state(buf)? {
+                                Reading(_) => buf,
+                                Final(n) => &buf[0..n],
+                                Done => {
+                                    break;
+                                }
+                            };
+
+                            for &byte in buf_slice {
+                                if byte == b'\n' {
+                                    line_cnt += 1;
+                                }
+
+                                if pos == target {
+                                    return Ok(line_cnt);
+                                }
+
+                                pos += 1;
+                            }
+                        }
+
+                        Err(anyhow!(
+                            "{}\n{}{}\n{}{}\n{}{}\n{}{}",
+                            "search failed",
+                            "started at byte: ",
+                            start,
+                            "targeted byte:   ",
+                            target,
+                            "bytes read:      ",
+                            pos,
+                            "newline count:   ",
+                            line_cnt,
+                        ))
+                    }
+
+                    let first_line = search(&mut file, &mut buf, 0, e.first.start)
+                        .context("failed to recover first record--this probably means there's a bug in nail")
+                        .context(e.to_owned())?;
+
+                    let second_line = search(&mut file, &mut buf, e.first.start, e.second.start)
+                        .context("failed to recover second record--this probably means there's a bug in nail")
+                        .context(e.to_owned())?;
+
+                    use crate::util::term::*;
+                    return Err(anyhow!(
+                        "{}{RED}\"{}\"{RESET}\n{}{RED}line {}{RESET}\n{}{RED}line {}{RESET}",
+                        "the file contains two records that share the identifier ",
+                        e.key,
+                        "  the first record appears on  ",
+                        first_line,
+                        "  the second record appears on ",
+                        second_line,
+                    ));
+                }
+                None => return Err(e),
+            }
+        }
 
         Arc::into_inner(index)
             .ok_or(anyhow!("no index"))?
@@ -304,7 +370,7 @@ where
         index: Arc<Mutex<Self>>,
         start: Option<u64>,
     ) -> anyhow::Result<()> {
-        let process_fn = |recs: &mut Vec<(String, P::Offset)>, done: bool| {
+        let process_fn = |recs: &mut Vec<(String, Offset)>, done: bool| {
             let full = recs.len() == N;
 
             let guard = if full || done {
@@ -313,26 +379,16 @@ where
                     Err(_) => bail!("mutex poisoned"),
                 }
             } else {
+                use std::sync::TryLockError::*;
                 match index.try_lock() {
                     Ok(guard) => Some(guard),
-                    Err(std::sync::TryLockError::WouldBlock) => None,
-                    Err(std::sync::TryLockError::Poisoned(_)) => bail!("mutex poisoned"),
+                    Err(WouldBlock) => None,
+                    Err(Poisoned(_)) => bail!("mutex poisoned"),
                 }
             };
 
             match guard {
-                Some(mut guard) => match guard.extend(recs.drain(..)) {
-                    Ok(_) => Ok(()),
-                    Err(e) => match e.downcast::<IndexCollisionError<P::Offset>>() {
-                        Ok(e) => {
-                            // TODO: figure out a way to dispatch the
-                            //       error into a routine that will print
-                            //       the line numbers of the collisions
-                            Ok(())
-                        }
-                        Err(_) => bail!("failed to downcast to concrete IndexCollisionError<O>"),
-                    },
-                },
+                Some(mut guard) => guard.extend(recs.drain(..)),
                 None => Ok(()),
             }
         };
@@ -342,7 +398,7 @@ where
         let mut parser = P::new(pos);
         let mut on_first_record = true;
         let mut buf = vec![0; 2 << (B - 1)];
-        let mut names_and_offsets: Vec<(String, P::Offset)> = Vec::with_capacity(N);
+        let mut names_and_offsets: Vec<(String, Offset)> = Vec::with_capacity(N);
 
         while let Ok(read_state) = data_chunk.read_with_state(&mut buf) {
             let buf_slice = match read_state {
@@ -399,10 +455,6 @@ where
 mod tests {
     use super::*;
 
-    #[derive(Clone)]
-    struct DummyOffset {}
-    impl Offset for DummyOffset {}
-
     macro_rules! dummy_parser {
         ($name:ident, $delim:expr) => {
             #[derive(Debug)]
@@ -411,13 +463,12 @@ mod tests {
             impl RecordParser for $name {
                 const DELIM: &'static [u8] = $delim;
                 const DELIM_TYPE: Delimiter = Delimiter::Initiating;
-                type Offset = DummyOffset;
                 type Record = ();
 
                 fn new(_: u64) -> Self {
                     $name
                 }
-                fn offset(&mut self, _: &[u8], _: u64) -> Option<(String, Self::Offset)> {
+                fn offset(&mut self, _: &[u8], _: u64) -> Option<(String, Offset)> {
                     None
                 }
                 fn parse(_: &[u8]) -> anyhow::Result<Self::Record> {

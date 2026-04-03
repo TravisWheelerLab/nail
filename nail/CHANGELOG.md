@@ -18,11 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - added CLI param `--mmseqs-path` 
-- added trait `io::index::Offset`
-- added error Struct `io::index::IndexCollisionError<O>`
+- added error Structs `io::index::{Offset, IndexCollisionError}`
 
 ### Changed
-- `IndexInner::extend()` now returns an error on key collisions
+- trait `IndexInner` is no longer generic over offset type
+- trait method `IndexInner::extend()` now returns an error on key collisions
+- method `Index::build_chunk()` now panics on key collisions
+
+### Removed
+- removed `io::fasta::FastaOffset`
+- removed `io::p7hmm::P7HmmOffset`
+- removed `io::seeds::SeedOffset`
 
 ## [0.5.0] - 2026-3-19
 
