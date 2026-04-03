@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
-use crate::io::{ByteBufferExt, DatabaseIter, IndexInner, Offset};
+use crate::io::{ByteBufferExt, DatabaseIter, Offset};
 
 use anyhow::bail;
 use indexmap::IndexMap;
@@ -93,47 +93,7 @@ impl RecordParser for SeedParser {
     }
 }
 
-pub struct SeedsIndexInner {
-    index: IndexMap<String, Offset>,
-}
-
-impl IndexInner for SeedsIndexInner {
-    fn new() -> Self {
-        Self {
-            index: IndexMap::new(),
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.index.len()
-    }
-
-    fn get(&self, name: &str) -> Option<&Offset> {
-        self.index.get(name)
-    }
-
-    fn extend<T>(&mut self, iter: T) -> anyhow::Result<()>
-    where
-        T: IntoIterator<Item = (String, Offset)>,
-    {
-        iter.into_iter().for_each(|(name, offset)| {
-            self.index
-                .entry(name)
-                .and_modify(|existing| {
-                    let (s1, e1) = (existing.start, existing.start + existing.n_bytes as u64);
-                    let (s2, e2) = (offset.start, offset.start + offset.n_bytes as u64);
-
-                    existing.start = s1.min(s2);
-                    existing.n_bytes = (e1.max(e2) - existing.start) as usize;
-                })
-                .or_insert(offset);
-        });
-
-        Ok(())
-    }
-}
-
-pub type SeedsIndex = Index<SeedsIndexInner, SeedParser>;
+pub type SeedsIndex = Index<IndexMap<String, Offset>, SeedParser>;
 pub type SeedList = Vec<(String, Seed)>;
 
 pub struct Seeds {
@@ -201,7 +161,7 @@ impl Seeds {
     }
 
     pub fn names_iter(&self) -> impl DoubleEndedIterator<Item = &str> {
-        self.index.inner.index.keys().map(|k| k.as_str())
+        self.index.inner.keys().map(|k| k.as_str())
     }
 }
 

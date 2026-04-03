@@ -26,9 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - method `Index::build_chunk()` now panics on key collisions
 
 ### Removed
-- removed `io::fasta::FastaOffset`
-- removed `io::p7hmm::P7HmmOffset`
-- removed `io::seeds::SeedOffset`
+- removed structs `io::fasta::FastaOffset`, `io::p7hmm::P7HmmOffset`, `io::seeds::SeedOffset`
+- removed struct `io::seeds::SeedsIndexInner`
 
 ## [0.5.0] - 2026-3-19
 
