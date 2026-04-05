@@ -120,21 +120,6 @@ impl CloudSearchStage for DefaultCloudSearchStage {
                     + prf.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX),
             ));
 
-            // DEBUG: print seed coordinates and C-state scores
-            if attempts == 0 {
-                eprintln!(
-                    "DEBUG seed: seq={}..{} prf={}..{} seq_len={}",
-                    seed.seq_start, seed.seq_end, seed.prf_start, seed.prf_end, seq.length
-                );
-                for pos in seed.seq_start..=seed.seq_end {
-                    eprintln!(
-                        "DEBUG C[{}] = {:.4}",
-                        pos,
-                        self.mx[(BgC, pos)]
-                    );
-                }
-            }
-
             let now = Instant::now();
             self.mx.reuse(seq.length);
             stats.memory_init_time(now.elapsed());
@@ -151,15 +136,6 @@ impl CloudSearchStage for DefaultCloudSearchStage {
             stats.backward_time(now.elapsed());
 
             raw_bwd_cloud_score = Some(Nats(self.mx[(BgN, seed.seq_start)]));
-
-            // DEBUG: print backward N-state score
-            if attempts == 0 {
-                eprintln!(
-                    "DEBUG N[{}] = {:.4}",
-                    seed.seq_start,
-                    self.mx[(BgN, seed.seq_start)]
-                );
-            }
 
             match self.fwd_cloud.anti_diagonal_relationship(&self.bwd_cloud) {
                 Disjoint(_) => {
