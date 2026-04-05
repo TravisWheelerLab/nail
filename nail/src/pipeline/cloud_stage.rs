@@ -5,7 +5,9 @@ use libnail::{
     align::{
         cloud_search_bwd, cloud_search_fwd, null_one_score, p_value,
         structs::{
-            AdMatrixLinear, BackgroundState, Cloud,
+            AdMatrixLinear,
+            BackgroundState::{C as BgC, N as BgN},
+            Cloud,
             Relationship::{Disjoint, Intersecting},
             RowBounds, Seed,
         },
@@ -89,6 +91,10 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         let mut fwd_results = None;
         let mut bwd_results = None;
         let mut raw_cloud_score = None;
+        let mut raw_bwd_cloud_score = None;
+        let mut clouds_intersected = false;
+
+        let null_one = null_one_score(seq.length);
 
         for attempts in 0..5 {
             let now = Instant::now();
@@ -110,9 +116,24 @@ impl CloudSearchStage for DefaultCloudSearchStage {
             stats.forward_time(now.elapsed());
 
             raw_cloud_score = Some(Nats(
-                self.mx[(BackgroundState::C, seed.seq_end)]
+                self.mx[(BgC, seed.seq_end)]
                     + prf.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX),
             ));
+
+            // DEBUG: print seed coordinates and C-state scores
+            if attempts == 0 {
+                eprintln!(
+                    "DEBUG seed: seq={}..{} prf={}..{} seq_len={}",
+                    seed.seq_start, seed.seq_end, seed.prf_start, seed.prf_end, seq.length
+                );
+                for pos in seed.seq_start..=seed.seq_end {
+                    eprintln!(
+                        "DEBUG C[{}] = {:.4}",
+                        pos,
+                        self.mx[(BgC, pos)]
+                    );
+                }
+            }
 
             let now = Instant::now();
             self.mx.reuse(seq.length);
@@ -129,33 +150,58 @@ impl CloudSearchStage for DefaultCloudSearchStage {
             ));
             stats.backward_time(now.elapsed());
 
+            raw_bwd_cloud_score = Some(Nats(self.mx[(BgN, seed.seq_start)]));
+
+            // DEBUG: print backward N-state score
+            if attempts == 0 {
+                eprintln!(
+                    "DEBUG N[{}] = {:.4}",
+                    seed.seq_start,
+                    self.mx[(BgN, seed.seq_start)]
+                );
+            }
+
             match self.fwd_cloud.anti_diagonal_relationship(&self.bwd_cloud) {
                 Disjoint(_) => {
                     if attempts >= 4 {
+                        // clouds never intersected; check backward score before giving up
+                        let bwd_score =
+                            (raw_bwd_cloud_score.unwrap() - null_one).to_bits();
+                        let bwd_p_value =
+                            p_value(bwd_score, prf.fwd_lambda, prf.fwd_tau);
+                        if bwd_p_value < self.p_value_threshold {
+                            // backward pass found real signal; proceed with seed-based bounds
+                            break;
+                        }
                         return StageResult::Filtered {
                             stats: stats.build().unwrap(),
                         };
                     }
                 }
-                Intersecting(_) => break,
+                Intersecting(_) => {
+                    clouds_intersected = true;
+                    break;
+                }
             };
         }
 
-        let (fwd_results, bwd_results, raw_cloud_score) =
-            match (fwd_results, bwd_results, raw_cloud_score) {
-                (Some(f), Some(b), Some(s)) => (f, b, s),
+        let (fwd_results, bwd_results, raw_cloud_score, raw_bwd_cloud_score) =
+            match (fwd_results, bwd_results, raw_cloud_score, raw_bwd_cloud_score) {
+                (Some(f), Some(b), Some(s), Some(t)) => (f, b, s, t),
                 _ => unreachable!("finished cloud search without results"),
             };
 
         stats.backward_cells(bwd_results.num_cells_computed);
         stats.forward_cells(fwd_results.num_cells_computed);
 
-        // let raw_cloud_score = cloud_score(&fwd_results, &bwd_results);
+        // use the better of forward C-state or backward N-state score
+        let best_raw_score = if raw_bwd_cloud_score > raw_cloud_score {
+            raw_bwd_cloud_score
+        } else {
+            raw_cloud_score
+        };
 
-        // the null one is the denominator in the probability ratio
-        let null_one = null_one_score(seq.length);
-
-        let cloud_score = (raw_cloud_score - null_one).to_bits();
+        let cloud_score = (best_raw_score - null_one).to_bits();
 
         let cloud_p_value = p_value(cloud_score, prf.fwd_lambda, prf.fwd_tau);
         stats.score(cloud_score);
@@ -167,31 +213,41 @@ impl CloudSearchStage for DefaultCloudSearchStage {
             };
         }
 
-        let now = Instant::now();
-        self.fwd_cloud.merge(&self.bwd_cloud);
-        stats.merge_time(now.elapsed());
+        if clouds_intersected {
+            let now = Instant::now();
+            self.fwd_cloud.merge(&self.bwd_cloud);
+            stats.merge_time(now.elapsed());
 
-        self.fwd_cloud.square_corners();
+            self.fwd_cloud.square_corners();
 
-        let now = Instant::now();
-        let trim_result = self.fwd_cloud.trim_wings();
-        stats.trim_time(now.elapsed());
+            let now = Instant::now();
+            let trim_result = self.fwd_cloud.trim_wings();
+            stats.trim_time(now.elapsed());
 
-        match trim_result {
-            Ok(_) => {
-                let now = Instant::now();
-                row_bounds.fill_from_cloud(&self.fwd_cloud);
-                stats.reorient_time(now.elapsed());
+            match trim_result {
+                Ok(_) => {
+                    let now = Instant::now();
+                    row_bounds.fill_from_cloud(&self.fwd_cloud);
+                    stats.reorient_time(now.elapsed());
+                }
+                // TODO: probably want to do something else/extra here
+                Err(_) => {
+                    row_bounds.fill_rectangle(
+                        seed.seq_start,
+                        seed.prf_start,
+                        seed.seq_end,
+                        seed.prf_end,
+                    );
+                }
             }
-            // TODO: probably want to do something else/extra here
-            Err(_) => {
-                row_bounds.fill_rectangle(
-                    seed.seq_start,
-                    seed.prf_start,
-                    seed.seq_end,
-                    seed.prf_end,
-                );
-            }
+        } else {
+            // clouds were disjoint but backward score passed — use seed bounds directly
+            row_bounds.fill_rectangle(
+                seed.seq_start,
+                seed.prf_start,
+                seed.seq_end,
+                seed.prf_end,
+            );
         }
 
         StageResult::Passed {
