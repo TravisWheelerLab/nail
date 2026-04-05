@@ -330,7 +330,7 @@ mod serialize {
                 mat_emissions.push(row);
             }
 
-            Ok(Self {
+            let mut prf = Self {
                 alphabet: alphabet[0].into(),
                 length,
                 name: String::from_utf8(name).unwrap(),
@@ -341,7 +341,9 @@ mod serialize {
                 core_transitions,
                 emission_scores: [mat_emissions, vec![]],
                 ..Default::default()
-            })
+            };
+            prf.recompute_prob_arrays();
+            Ok(prf)
         }
     }
 }
@@ -374,6 +376,15 @@ pub struct Profile {
     pub alphabet: Alphabet,
     pub fwd_tau: f32,
     pub fwd_lambda: f32,
+    /// Probability-space core transitions: exp(core_transitions)
+    #[data_size(skip)]
+    pub prob_core_transitions: Vec<[f32; 8]>,
+    /// Probability-space emission scores: exp(emission_scores)
+    #[data_size(skip)]
+    pub prob_emission_scores: [Vec<[f32; Profile::MAX_DEGENERATE_ALPHABET_SIZE]>; 2],
+    /// Probability-space special transitions: exp(special_transitions)
+    #[data_size(skip)]
+    pub prob_special_transitions: [[f32; 2]; 5],
 }
 
 impl Display for Profile {
@@ -565,6 +576,9 @@ impl ProfileBuilder {
             alphabet: Alphabet::Amino,
             fwd_tau,
             fwd_lambda,
+            prob_core_transitions: Vec::new(),
+            prob_emission_scores: [Vec::new(), Vec::new()],
+            prob_special_transitions: [[0.0; 2]; 5],
         };
 
         for state in 0..Profile::NUM_STATE_TRANSITIONS {
@@ -693,6 +707,7 @@ impl ProfileBuilder {
             //    ** because ln(P/P) = ln(1) = 0
             .for_each(|scores| scores.iter_mut().for_each(|s| *s = 0.0));
 
+        prf.recompute_prob_arrays();
         Ok(prf)
     }
 }
@@ -1037,7 +1052,7 @@ impl Profile {
 
         let mut row_bounds = RowBounds::new(target_length);
         row_bounds.fill_rectangle(1, 1, target_length, self.length);
-        let mut forward_matrix = DpMatrixSparse::new(target_length, self.length, &row_bounds);
+        let mut forward_matrix = DpMatrixSparse::new_prob(target_length, self.length, &row_bounds);
 
         // first we are going to generate n random
         // sequences drawn from the background
@@ -1162,6 +1177,26 @@ impl Profile {
         self.core_transitions[profile_idx][transition_idx]
     }
 
+    #[inline(always)]
+    pub fn match_prob(&self, alphabet_idx: usize, profile_idx: usize) -> f32 {
+        self.prob_emission_scores[Self::MATCH_IDX][profile_idx][alphabet_idx]
+    }
+
+    #[inline(always)]
+    pub fn insert_prob(&self, alphabet_idx: usize, profile_idx: usize) -> f32 {
+        self.prob_emission_scores[Self::INSERT_IDX][profile_idx][alphabet_idx]
+    }
+
+    #[inline(always)]
+    pub fn transition_prob(&self, transition_idx: usize, profile_idx: usize) -> f32 {
+        self.prob_core_transitions[profile_idx][transition_idx]
+    }
+
+    #[inline(always)]
+    pub fn special_transition_prob(&self, state_idx: usize, transition_idx: usize) -> f32 {
+        self.prob_special_transitions[state_idx][transition_idx]
+    }
+
     /// This is essentially a Kronecker delta function that returns 1.0 when the transition
     /// score is finite and f32::MIN when the transition score is -f32::INFINITY.
     ///
@@ -1190,6 +1225,39 @@ impl Profile {
             f32::MIN_POSITIVE
         } else {
             1.0
+        }
+    }
+
+    /// Recompute probability-space arrays from the log-space arrays.
+    /// Must be called after building or deserializing a profile,
+    /// and after any modification to emission_scores or core_transitions.
+    pub fn recompute_prob_arrays(&mut self) {
+        self.prob_core_transitions = self.core_transitions.iter()
+            .map(|row| {
+                let mut p = [0.0f32; 8];
+                for (i, &s) in row.iter().enumerate() {
+                    p[i] = if s.is_finite() { s.exp() } else { 0.0 };
+                }
+                p
+            })
+            .collect();
+
+        for state in 0..2 {
+            self.prob_emission_scores[state] = self.emission_scores[state].iter()
+                .map(|row| {
+                    let mut p = [0.0f32; 29];
+                    for (i, &s) in row.iter().enumerate() {
+                        p[i] = if s.is_finite() { s.exp() } else { 0.0 };
+                    }
+                    p
+                })
+                .collect();
+        }
+
+        for (i, row) in self.special_transitions.iter().enumerate() {
+            for (j, &s) in row.iter().enumerate() {
+                self.prob_special_transitions[i][j] = if s.is_finite() { s.exp() } else { 0.0 };
+            }
         }
     }
 
@@ -1294,6 +1362,12 @@ impl Profile {
             // skip position 0
             .skip(1)
             .for_each(|(a, b)| *a = b[Transition::BM as usize] + move_score);
+
+        // Update prob-space special transitions
+        for &s in &[Profile::N_IDX, Profile::J_IDX, Profile::C_IDX] {
+            self.prob_special_transitions[s][Profile::SPECIAL_LOOP_IDX] = loop_probability;
+            self.prob_special_transitions[s][Profile::SPECIAL_MOVE_IDX] = move_probability;
+        }
     }
 }
 

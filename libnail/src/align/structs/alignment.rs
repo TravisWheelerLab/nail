@@ -88,8 +88,8 @@ impl AsRef<Alignment> for &Alignment {
 ///
 /// 0.95 - 1.00 -> "*"
 fn map_posterior_probability_to_bin_byte(probability: f32) -> u8 {
-    let bin = (probability * 10.0).round();
-    UTF8_NUMERIC[bin as usize]
+    let bin = (probability.clamp(0.0, 1.0) * 10.0).round() as usize;
+    UTF8_NUMERIC[bin.min(UTF8_NUMERIC.len() - 1)]
 }
 
 #[derive(Default, Clone)]

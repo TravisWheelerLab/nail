@@ -1,186 +1,190 @@
 use crate::align::structs::{DpMatrix, RowBounds};
-use crate::log_sum;
 use crate::structs::profile::Transition;
 use crate::structs::{Profile, Sequence};
-use crate::util::log_add;
 
 use super::Nats;
 
+/// Probability-space Forward algorithm with per-row scaling.
+///
+/// All DP values are stored as probabilities (not log-probabilities).
+/// Per-row scaling prevents underflow: after computing each row, all values
+/// are divided by the row's maximum value, and log(max) is accumulated in `xsc`.
+///
+/// The final score in nats is: ln(C_stored[T]) + xsc + background_correction + C->T.
 pub fn forward(
     profile: &Profile,
     target: &Sequence,
     dp_matrix: &mut impl DpMatrix,
     bounds: &RowBounds,
 ) -> Nats {
-    let end_score: f32 = 0.0;
-
-    dp_matrix.set_special(bounds.seq_start - 1, Profile::N_IDX, 0.0);
-
+    // Initial conditions in probability space
+    // N[seq_start - 1] = 1.0 (we start in the N state with probability 1)
+    dp_matrix.set_special(bounds.seq_start - 1, Profile::N_IDX, 1.0);
     dp_matrix.set_special(
         bounds.seq_start - 1,
         Profile::B_IDX,
-        profile.special_transition_score(Profile::N_IDX, Profile::SPECIAL_MOVE_IDX),
+        profile.special_transition_prob(Profile::N_IDX, Profile::SPECIAL_MOVE_IDX),
     );
-    dp_matrix.set_special(bounds.seq_start - 1, Profile::E_IDX, -f32::INFINITY);
-    dp_matrix.set_special(bounds.seq_start - 1, Profile::C_IDX, -f32::INFINITY);
+    dp_matrix.set_special(bounds.seq_start - 1, Profile::E_IDX, 0.0);
+    dp_matrix.set_special(bounds.seq_start - 1, Profile::C_IDX, 0.0);
+
+    let mut xsc = 0.0f32; // accumulated log-scale
 
     for target_idx in bounds.seq_start..=bounds.seq_end {
-        let current_target_character = target.digital_bytes[target_idx];
+        let residue = target.digital_bytes[target_idx] as usize;
+        let b_prev = dp_matrix.get_special(target_idx - 1, Profile::B_IDX);
 
-        for profile_idx in bounds.left_row_bounds[target_idx]..bounds.right_row_bounds[target_idx] {
+        for profile_idx in bounds.left_row_bounds[target_idx]..bounds.right_row_bounds[target_idx]
+        {
             // match state
-            dp_matrix.set_match(
-                target_idx,
-                profile_idx,
-                log_sum!(
-                    dp_matrix.get_match(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(Transition::MM as usize, profile_idx - 1),
-                    dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(Transition::IM as usize, profile_idx - 1),
-                    dp_matrix.get_special(target_idx - 1, Profile::B_IDX)
-                        + profile.transition_score(Transition::BM as usize, profile_idx - 1),
-                    dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
-                        + profile.transition_score(Transition::DM as usize, profile_idx - 1)
-                ) + profile.match_score(current_target_character as usize, profile_idx),
-            );
+            let m_val = (dp_matrix.get_match(target_idx - 1, profile_idx - 1)
+                * profile.transition_prob(Transition::MM as usize, profile_idx - 1)
+                + dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
+                    * profile.transition_prob(Transition::IM as usize, profile_idx - 1)
+                + b_prev * profile.transition_prob(Transition::BM as usize, profile_idx - 1)
+                + dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
+                    * profile.transition_prob(Transition::DM as usize, profile_idx - 1))
+                * profile.match_prob(residue, profile_idx);
+            dp_matrix.set_match(target_idx, profile_idx, m_val);
 
             // insert state
-            dp_matrix.set_insert(
-                target_idx,
-                profile_idx,
-                log_sum!(
-                    dp_matrix.get_match(target_idx - 1, profile_idx)
-                        + profile.transition_score(Transition::MI as usize, profile_idx),
-                    dp_matrix.get_insert(target_idx - 1, profile_idx)
-                        + profile.transition_score(Transition::II as usize, profile_idx)
-                ) + profile.insert_score(current_target_character as usize, profile_idx),
-            );
+            let i_val = (dp_matrix.get_match(target_idx - 1, profile_idx)
+                * profile.transition_prob(Transition::MI as usize, profile_idx)
+                + dp_matrix.get_insert(target_idx - 1, profile_idx)
+                    * profile.transition_prob(Transition::II as usize, profile_idx))
+                * profile.insert_prob(residue, profile_idx);
+            dp_matrix.set_insert(target_idx, profile_idx, i_val);
 
             // delete state
-            dp_matrix.set_delete(
-                target_idx,
-                profile_idx,
-                log_sum!(
-                    dp_matrix.get_match(target_idx, profile_idx - 1)
-                        + profile.transition_score(Transition::MD as usize, profile_idx - 1),
-                    dp_matrix.get_delete(target_idx, profile_idx - 1)
-                        + profile.transition_score(Transition::DD as usize, profile_idx - 1)
-                ),
-            );
+            let d_val = dp_matrix.get_match(target_idx, profile_idx - 1)
+                * profile.transition_prob(Transition::MD as usize, profile_idx - 1)
+                + dp_matrix.get_delete(target_idx, profile_idx - 1)
+                    * profile.transition_prob(Transition::DD as usize, profile_idx - 1);
+            dp_matrix.set_delete(target_idx, profile_idx, d_val);
 
-            // E state
-            dp_matrix.set_special(
-                target_idx,
-                Profile::E_IDX,
-                log_sum!(
-                    dp_matrix.get_match(target_idx, profile_idx) + end_score,
-                    dp_matrix.get_delete(target_idx, profile_idx) + end_score,
-                    dp_matrix.get_special(target_idx, Profile::E_IDX)
-                ),
-            );
+            // E state (accumulate)
+            let e_prev = dp_matrix.get_special(target_idx, Profile::E_IDX);
+            dp_matrix.set_special(target_idx, Profile::E_IDX, e_prev + m_val + d_val);
         }
 
+        // --- unrolled last column: profile_idx = right_row_bounds[target_idx] ---
         let profile_idx = bounds.right_row_bounds[target_idx];
 
-        // unrolled match state match[M]
-        dp_matrix.set_match(
-            target_idx,
-            profile_idx,
-            log_sum!(
-                dp_matrix.get_match(target_idx - 1, profile_idx - 1)
-                    + profile.transition_score(Transition::MM as usize, profile_idx - 1),
-                dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
-                    + profile.transition_score(Transition::IM as usize, profile_idx - 1),
-                dp_matrix.get_special(target_idx - 1, Profile::B_IDX)
-                    + profile.transition_score(Transition::BM as usize, profile_idx - 1),
-                dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
-                    + profile.transition_score(Transition::DM as usize, profile_idx - 1)
-            ) + profile.match_score(current_target_character as usize, profile_idx),
-        );
+        let m_val = (dp_matrix.get_match(target_idx - 1, profile_idx - 1)
+            * profile.transition_prob(Transition::MM as usize, profile_idx - 1)
+            + dp_matrix.get_insert(target_idx - 1, profile_idx - 1)
+                * profile.transition_prob(Transition::IM as usize, profile_idx - 1)
+            + b_prev * profile.transition_prob(Transition::BM as usize, profile_idx - 1)
+            + dp_matrix.get_delete(target_idx - 1, profile_idx - 1)
+                * profile.transition_prob(Transition::DM as usize, profile_idx - 1))
+            * profile.match_prob(residue, profile_idx);
+        dp_matrix.set_match(target_idx, profile_idx, m_val);
 
-        // unrolled insert state insert[M]
-        // **note:
-        //   here, we either use the normal dependency OR
-        //   if we're at the end of the model, we force -inf
-        let ins_score = if profile_idx == profile.length {
-            -f32::INFINITY
+        // insert at last model position is impossible (insert_prob = 0 at M)
+        let i_val = if profile_idx == profile.length {
+            0.0
         } else {
-            log_sum!(
-                dp_matrix.get_match(target_idx - 1, profile_idx)
-                    + profile.transition_score(Transition::MI as usize, profile_idx),
-                dp_matrix.get_insert(target_idx - 1, profile_idx)
-                    + profile.transition_score(Transition::II as usize, profile_idx)
-            ) + profile.insert_score(current_target_character as usize, profile_idx)
+            (dp_matrix.get_match(target_idx - 1, profile_idx)
+                * profile.transition_prob(Transition::MI as usize, profile_idx)
+                + dp_matrix.get_insert(target_idx - 1, profile_idx)
+                    * profile.transition_prob(Transition::II as usize, profile_idx))
+                * profile.insert_prob(residue, profile_idx)
         };
+        dp_matrix.set_insert(target_idx, profile_idx, i_val);
 
-        dp_matrix.set_insert(target_idx, profile_idx, ins_score);
-
-        // unrolled delete state delete[M]
-        dp_matrix.set_delete(
-            target_idx,
-            profile_idx,
-            log_sum!(
-                dp_matrix.get_match(target_idx, profile_idx - 1)
-                    + profile.transition_score(Transition::MD as usize, profile_idx - 1),
-                dp_matrix.get_delete(target_idx, profile_idx - 1)
-                    + profile.transition_score(Transition::DD as usize, profile_idx - 1)
-            ),
-        );
+        let d_val = dp_matrix.get_match(target_idx, profile_idx - 1)
+            * profile.transition_prob(Transition::MD as usize, profile_idx - 1)
+            + dp_matrix.get_delete(target_idx, profile_idx - 1)
+                * profile.transition_prob(Transition::DD as usize, profile_idx - 1);
+        dp_matrix.set_delete(target_idx, profile_idx, d_val);
 
         // unrolled E state
-        dp_matrix.set_special(
-            target_idx,
-            Profile::E_IDX,
-            log_sum!(
-                dp_matrix.get_match(target_idx, profile_idx),
-                dp_matrix.get_delete(target_idx, profile_idx),
-                dp_matrix.get_special(target_idx, Profile::E_IDX)
-            ),
-        );
+        let e_prev = dp_matrix.get_special(target_idx, Profile::E_IDX);
+        dp_matrix.set_special(target_idx, Profile::E_IDX, e_prev + m_val + d_val);
 
-        // unrolled C state
-        dp_matrix.set_special(
-            target_idx,
-            Profile::C_IDX,
-            log_sum!(
-                dp_matrix.get_special(target_idx - 1, Profile::C_IDX)
-                    + profile.special_transition_score(Profile::C_IDX, Profile::SPECIAL_LOOP_IDX),
-                dp_matrix.get_special(target_idx, Profile::E_IDX)
-                    + profile.special_transition_score(Profile::E_IDX, Profile::SPECIAL_MOVE_IDX)
-            ),
-        );
+        // C state
+        let c_val = dp_matrix.get_special(target_idx - 1, Profile::C_IDX)
+            * profile.special_transition_prob(Profile::C_IDX, Profile::SPECIAL_LOOP_IDX)
+            + dp_matrix.get_special(target_idx, Profile::E_IDX)
+                * profile.special_transition_prob(Profile::E_IDX, Profile::SPECIAL_MOVE_IDX);
+        dp_matrix.set_special(target_idx, Profile::C_IDX, c_val);
 
-        // unrolled N state
-        dp_matrix.set_special(
-            target_idx,
-            Profile::N_IDX,
-            dp_matrix.get_special(target_idx - 1, Profile::N_IDX)
-                + profile.special_transition_score(Profile::N_IDX, Profile::SPECIAL_LOOP_IDX),
-        );
+        // N state
+        let n_val = dp_matrix.get_special(target_idx - 1, Profile::N_IDX)
+            * profile.special_transition_prob(Profile::N_IDX, Profile::SPECIAL_LOOP_IDX);
+        dp_matrix.set_special(target_idx, Profile::N_IDX, n_val);
 
-        // unrolled B state
+        // B state
         dp_matrix.set_special(
             target_idx,
             Profile::B_IDX,
-            log_sum!(
-                dp_matrix.get_special(target_idx, Profile::N_IDX)
-                    + profile.special_transition_score(Profile::N_IDX, Profile::SPECIAL_MOVE_IDX)
-            ),
+            n_val * profile.special_transition_prob(Profile::N_IDX, Profile::SPECIAL_MOVE_IDX),
         );
+
+        // --- per-row scaling to prevent underflow ---
+        let mut max_val = 0.0f32;
+        for p in bounds.left_row_bounds[target_idx]..=bounds.right_row_bounds[target_idx] {
+            max_val = max_val.max(dp_matrix.get_match(target_idx, p));
+            max_val = max_val.max(dp_matrix.get_insert(target_idx, p));
+        }
+        max_val = max_val.max(dp_matrix.get_special(target_idx, Profile::C_IDX));
+        max_val = max_val.max(dp_matrix.get_special(target_idx, Profile::N_IDX));
+
+        if max_val > 0.0 {
+            let inv = 1.0 / max_val;
+            for p in bounds.left_row_bounds[target_idx]..=bounds.right_row_bounds[target_idx] {
+                dp_matrix.set_match(
+                    target_idx,
+                    p,
+                    dp_matrix.get_match(target_idx, p) * inv,
+                );
+                dp_matrix.set_insert(
+                    target_idx,
+                    p,
+                    dp_matrix.get_insert(target_idx, p) * inv,
+                );
+                dp_matrix.set_delete(
+                    target_idx,
+                    p,
+                    dp_matrix.get_delete(target_idx, p) * inv,
+                );
+            }
+            dp_matrix.set_special(
+                target_idx,
+                Profile::N_IDX,
+                dp_matrix.get_special(target_idx, Profile::N_IDX) * inv,
+            );
+            dp_matrix.set_special(
+                target_idx,
+                Profile::B_IDX,
+                dp_matrix.get_special(target_idx, Profile::B_IDX) * inv,
+            );
+            dp_matrix.set_special(
+                target_idx,
+                Profile::E_IDX,
+                dp_matrix.get_special(target_idx, Profile::E_IDX) * inv,
+            );
+            dp_matrix.set_special(
+                target_idx,
+                Profile::C_IDX,
+                dp_matrix.get_special(target_idx, Profile::C_IDX) * inv,
+            );
+            xsc += max_val.ln();
+        }
+
+        // Store the per-row scale factor for use in posterior
+        dp_matrix.set_row_scale(target_idx, max_val);
     }
 
-    // what: sum up the loop transitions to the N and/or C states
-    //       once for every position in the target sequence that
-    //       isn't included in the cloud
-    // why: we want the best approximation of the full Forward score
+    // Background correction for positions outside the cloud
     let aligned_target_length = bounds.seq_end - bounds.seq_start + 1;
     let unaligned_target_length = target.length - aligned_target_length;
     let background_correction = unaligned_target_length as f32
         * profile.special_transition_score(Profile::N_IDX, Profile::SPECIAL_LOOP_IDX);
 
-    let final_c_state_score = dp_matrix.get_special(bounds.seq_end, Profile::C_IDX);
+    let final_c = dp_matrix.get_special(bounds.seq_end, Profile::C_IDX);
     let c_to_exit_score =
         profile.special_transition_score(Profile::C_IDX, Profile::SPECIAL_MOVE_IDX);
 
-    Nats(final_c_state_score + background_correction + c_to_exit_score)
+    Nats(final_c.ln() + xsc + background_correction + c_to_exit_score)
 }

@@ -360,9 +360,9 @@ pub trait CloudMatrix: NewDpMatrix {
         let trim_fn = |mx: &mut Self, c: &Cell| {
             let max = max_f32!(mx[c.m_cell()], mx[c.i_cell()], mx[c.d_cell()]);
             if max < trim_thresh {
-                mx[c.m_cell()] = -f32::INFINITY;
-                mx[c.i_cell()] = -f32::INFINITY;
-                mx[c.d_cell()] = -f32::INFINITY;
+                mx[c.m_cell()] = 0.0;
+                mx[c.i_cell()] = 0.0;
+                mx[c.d_cell()] = 0.0;
                 true
             } else {
                 false
@@ -434,6 +434,10 @@ pub trait DpMatrix {
     fn set_delete(&mut self, target_idx: usize, profile_idx: usize, value: f32);
     fn get_special(&self, target_idx: usize, special_idx: usize) -> f32;
     fn set_special(&mut self, target_idx: usize, special_idx: usize, value: f32);
+    /// Get the per-row scale factor used in probability-space DP.
+    fn get_row_scale(&self, _target_idx: usize) -> f32 { 1.0 }
+    /// Set the per-row scale factor used in probability-space DP.
+    fn set_row_scale(&mut self, _target_idx: usize, _scale: f32) {}
     fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
         let target_idx_width = self.target_length().to_string().len();
         let first_column_width = target_idx_width + 3;
@@ -697,7 +701,7 @@ impl DpMatrix for DpMatrixFlat {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DpMatrixSparse {
     pub target_length: usize,
     pub profile_length: usize,
@@ -710,23 +714,57 @@ pub struct DpMatrixSparse {
     pub row_start_offsets: Vec<usize>,
     pub core_data: Vec<f32>,
     pub special_data: Vec<f32>,
+    /// Fill value for uninitialized cells: -inf for log-space, 0.0 for prob-space
+    pub fill_value: f32,
+    /// Per-row scale factors for probability-space DP (stores the raw s_t, not log)
+    pub row_scale_factors: Vec<f32>,
+}
+
+impl Default for DpMatrixSparse {
+    fn default() -> Self {
+        Self {
+            target_length: 0,
+            profile_length: 0,
+            target_start: 0,
+            target_end: 0,
+            block_offsets: Vec::new(),
+            row_start_offsets: Vec::new(),
+            core_data: Vec::new(),
+            special_data: Vec::new(),
+            fill_value: 0.0,
+            row_scale_factors: Vec::new(),
+        }
+    }
 }
 
 impl DpMatrixSparse {
+    /// Create a new log-space matrix (fill = -inf).
     pub fn new(target_length: usize, profile_length: usize, row_bounds: &RowBounds) -> Self {
+        let mut matrix = DpMatrixSparse {
+            fill_value: -f32::INFINITY,
+            ..Default::default()
+        };
+        matrix.reuse(target_length, profile_length, row_bounds);
+        matrix
+    }
+
+    /// Create a new probability-space matrix (fill = 0.0).
+    pub fn new_prob(target_length: usize, profile_length: usize, row_bounds: &RowBounds) -> Self {
         let mut matrix = DpMatrixSparse::default();
         matrix.reuse(target_length, profile_length, row_bounds);
         matrix
     }
 
     pub fn reset(&mut self) {
-        // TODO: this resets more memory than is necessary
+        let fill = self.fill_value;
         for value in self.core_data.iter_mut() {
-            *value = -f32::INFINITY;
+            *value = fill;
         }
-
         for value in self.special_data.iter_mut() {
-            *value = -f32::INFINITY;
+            *value = fill;
+        }
+        for value in self.row_scale_factors.iter_mut() {
+            *value = 1.0;
         }
     }
 
@@ -808,9 +846,11 @@ impl DpMatrixSparse {
         }
 
         let new_special_length = 5 * (new_target_length + 1);
+        let fill = self.fill_value;
 
-        self.core_data.resize(core_length, -f32::INFINITY);
-        self.special_data.resize(new_special_length, -f32::INFINITY);
+        self.core_data.resize(core_length, fill);
+        self.special_data.resize(new_special_length, fill);
+        self.row_scale_factors.resize(new_target_length + 1, 1.0);
 
         self.core_data.shrink_to_fit();
         self.special_data.shrink_to_fit();
@@ -829,7 +869,10 @@ impl DpMatrixSparse {
     #[inline]
     fn match_idx(&self, target_idx: usize, profile_idx: usize) -> usize {
         debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
+        // Note: profile_idx may legally equal profile_length + 1 in the backward
+        // algorithm's inner loop (it reads the pad column one past the right bound).
+        // The .min(next_block_offset) clamp below makes this safe; the pad cell
+        // holds the fill_value (-inf for log-space, 0.0 for prob-space).
 
         let block_offset = self.block_offsets[target_idx];
         let next_block_offset = self.block_offsets[target_idx + 1];
@@ -909,6 +952,16 @@ impl DpMatrix for DpMatrixSparse {
         debug_assert!(special_idx < Profile::NUM_SPECIAL_STATES);
         self.special_data[target_idx * 5 + special_idx] = value;
     }
+
+    #[inline]
+    fn get_row_scale(&self, target_idx: usize) -> f32 {
+        self.row_scale_factors[target_idx]
+    }
+
+    #[inline]
+    fn set_row_scale(&mut self, target_idx: usize, scale: f32) {
+        self.row_scale_factors[target_idx] = scale;
+    }
 }
 
 #[derive(Default, Clone)]
@@ -936,12 +989,12 @@ impl AdMatrixQuadratic {
 
         self.core_data.iter_mut().for_each(|ad| {
             ad.iter_mut()
-                .for_each(|core_vec| core_vec.resize_and_reset(ad_len, -f32::INFINITY))
+                .for_each(|core_vec| core_vec.resize_and_reset(ad_len, 0.0))
         });
 
         self.background_data
             .iter_mut()
-            .for_each(|v| v.resize_and_reset(ad_len, -f32::INFINITY));
+            .for_each(|v| v.resize_and_reset(ad_len, 0.0));
 
         self.profile_len = new_prf_len;
         self.seq_len = new_seq_len;
@@ -1032,12 +1085,12 @@ impl AdMatrixLinear {
     pub fn reuse(&mut self, new_seq_len: usize) {
         self.core_data.iter_mut().for_each(|ad| {
             ad.iter_mut()
-                .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, -f32::INFINITY))
+                .for_each(|core_vec| core_vec.resize_and_reset(new_seq_len + 2, 0.0))
         });
 
         self.background_data
             .iter_mut()
-            .for_each(|v| v.resize_and_reset(new_seq_len + 2, -f32::INFINITY));
+            .for_each(|v| v.resize_and_reset(new_seq_len + 2, 0.0));
 
         self.seq_len = new_seq_len;
     }
@@ -1118,9 +1171,9 @@ impl CloudMatrix for AdMatrixLinear {
 
     fn reset_ad(&mut self, bound: &Bound) {
         bound.iter().for_each(|c| {
-            self[c.m_cell()] = -f32::INFINITY;
-            self[c.i_cell()] = -f32::INFINITY;
-            self[c.d_cell()] = -f32::INFINITY;
+            self[c.m_cell()] = 0.0;
+            self[c.i_cell()] = 0.0;
+            self[c.d_cell()] = 0.0;
         });
     }
 }

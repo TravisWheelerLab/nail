@@ -1,5 +1,7 @@
 pub mod structs;
 
+mod tests;
+
 mod cloud_search;
 pub use cloud_search::*;
 
