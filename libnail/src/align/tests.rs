@@ -199,6 +199,7 @@ mod tests {
             score: 0.0,
             e_value: 1.0,
             cigar: Vec::new(),
+            trace_bounds: Default::default(),
         };
 
         let params = CloudSearchParams::default();

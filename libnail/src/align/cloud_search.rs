@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    align::structs::{Cloud, Seed, TraceCursor},
+    align::structs::{Cloud, Seed},
     alphabet::AminoAcid,
     max_f32,
     structs::{
@@ -142,7 +142,7 @@ where
     let ad_start = prf_end + seq_end;
     let seed_ad_start = seed.seq_start + seed.prf_start;
     let min_ad = 2usize;
-    let mut gamma_ad = (ad_start - params.gamma).max(min_ad);
+    let gamma_ad = (ad_start - params.gamma).max(min_ad);
 
     cloud.reuse(seq.length, prf.length);
     let cell_start = Cell {
@@ -168,7 +168,7 @@ where
 
     let mut cumulative_log_scale = 0.0f32;
     let mut bg_scale = 1.0f32;
-    let mut trace = TraceCursor::new_backward(&seed.cigar, prf_end, seq_end);
+    let tb = &seed.trace_bounds;
 
     for idx in (min_ad..=cell_start.idx()).rev() {
         let co_located_bound = &cloud[Ad((idx + 3).min(seq.length + prf.length))];
@@ -203,60 +203,34 @@ where
             -f32::INFINITY
         };
 
-        let trace_on_ad = trace.active && trace.ad() == idx;
-        if trace_on_ad {
-            if idx <= gamma_ad {
-                let prob_thresh = (max_log_in_ad - params.alpha - cumulative_log_scale).exp();
-                mx.trim_ad(bound, prob_thresh);
-            }
+        if idx <= gamma_ad {
+            let thresh_log = params.trim_thresh(max_log_in_ad, max_log_score);
+            let prob_thresh = (thresh_log - cumulative_log_scale).exp();
+            mx.trim_ad(bound, prob_thresh);
+        }
 
-            let tp = trace.prf_idx;
-            let ts = trace.seq_idx;
-            if tp >= 1 && tp <= prf.length && ts >= 1 && ts <= seq.length {
-                let band = 3usize;
-                let left_prf = (tp + band).min(prf.length);
-                let left_seq = idx.saturating_sub(left_prf).max(1);
-                let left_prf = idx - left_seq;
-                let right_seq = (ts + band).min(seq.length);
-                let right_prf = idx.saturating_sub(right_seq).max(1);
-                let right_seq = idx - right_prf;
-
-                if bound.is_empty() {
-                    bound.0 = Cell { prf_idx: left_prf, seq_idx: left_seq };
-                    bound.1 = Cell { prf_idx: right_prf, seq_idx: right_seq };
-                } else {
-                    if left_prf > bound.0.prf_idx {
-                        bound.0 = Cell { prf_idx: left_prf, seq_idx: left_seq };
-                    }
-                    if right_seq > bound.1.seq_idx {
-                        bound.1 = Cell { prf_idx: right_prf, seq_idx: right_seq };
-                    }
+        if let Some((prf_lo, prf_hi)) = tb.get(idx) {
+            let seq_lo = idx.saturating_sub(prf_hi).max(1);
+            let seq_hi = idx.saturating_sub(prf_lo).max(1);
+            if bound.is_empty() {
+                bound.0 = Cell { prf_idx: prf_hi, seq_idx: seq_lo };
+                bound.1 = Cell { prf_idx: prf_lo, seq_idx: seq_hi };
+            } else {
+                if prf_hi > bound.0.prf_idx {
+                    bound.0 = Cell { prf_idx: prf_hi, seq_idx: seq_lo };
+                }
+                if seq_hi > bound.1.seq_idx {
+                    bound.1 = Cell { prf_idx: prf_lo, seq_idx: seq_hi };
                 }
             }
-
             max_log_score = max_log_in_ad;
-            if idx > seed_ad_start {
-                max_log_score_within.max_assign(max_log_score);
-            }
-            let was_active = trace.active;
-            trace.advance_backward();
-            if was_active && !trace.active {
-                gamma_ad = idx.saturating_sub(prf.length).max(min_ad);
-                max_log_score = max_log_in_ad;
-            }
-        } else {
-            max_log_score.max_assign(max_log_in_ad);
-            if idx > seed_ad_start {
-                max_log_score_within.max_assign(max_log_score);
-            }
-            if idx <= gamma_ad {
-                let thresh_log = params.trim_thresh(max_log_in_ad, max_log_score);
-                let prob_thresh = (thresh_log - cumulative_log_scale).exp();
-                mx.trim_ad(bound, prob_thresh);
-                if bound.is_empty() {
-                    break;
-                }
-            }
+        } else if bound.is_empty() {
+            break;
+        }
+
+        max_log_score.max_assign(max_log_in_ad);
+        if idx > seed_ad_start {
+            max_log_score_within.max_assign(max_log_score);
         }
 
         cloud.advance_reverse();
@@ -349,7 +323,7 @@ where
 
     let ad_start = seed.seq_start + seed.prf_start;
     let seed_ad_end = seed.seq_end + seed.prf_end;
-    let mut gamma_ad = ad_start + params.gamma;
+    let gamma_ad = ad_start + params.gamma;
     let max_ad = seq.length + prf.length;
 
     let cell_start = Cell {
@@ -374,7 +348,7 @@ where
 
     let mut cumulative_log_scale = 0.0f32;
     let mut bg_scale = 1.0f32;
-    let mut trace = TraceCursor::new_forward(&seed.cigar, seed.prf_start, seed.seq_start);
+    let tb = &seed.trace_bounds;
 
     for idx in ad_start..=max_ad {
         let co_located_bound = &cloud[Ad(idx.saturating_sub(3))];
@@ -409,64 +383,41 @@ where
             -f32::INFINITY
         };
 
-        let trace_on_ad = trace.active && trace.ad() == idx;
-        if trace_on_ad {
-            // While the trace covers this AD: only alpha-prune (no beta),
-            // enforce a minimum ±3 band around the trace, and reset max_score.
-            if idx >= gamma_ad {
-                let prob_thresh = (max_log_in_ad - params.alpha - cumulative_log_scale).exp();
-                mx.trim_ad(bound, prob_thresh);
-            }
-
-            let tp = trace.prf_idx;
-            let ts = trace.seq_idx;
-            if tp >= 1 && tp <= prf.length && ts >= 1 && ts <= seq.length {
-                let band = 3usize;
-                let left_prf = (tp + band).min(prf.length);
-                let left_seq = idx.saturating_sub(left_prf).max(1);
-                let left_prf = idx - left_seq;
-                let right_seq = (ts + band).min(seq.length);
-                let right_prf = idx.saturating_sub(right_seq).max(1);
-                let right_seq = idx - right_prf;
-
-                if bound.is_empty() {
-                    bound.0 = Cell { prf_idx: left_prf, seq_idx: left_seq };
-                    bound.1 = Cell { prf_idx: right_prf, seq_idx: right_seq };
-                } else {
-                    if left_prf > bound.0.prf_idx {
-                        bound.0 = Cell { prf_idx: left_prf, seq_idx: left_seq };
-                    }
-                    if right_seq > bound.1.seq_idx {
-                        bound.1 = Cell { prf_idx: right_prf, seq_idx: right_seq };
-                    }
-                }
-            }
-
-            max_log_score = max_log_in_ad;
-            if idx < seed_ad_end {
-                max_log_score_within.max_assign(max_log_score);
-            }
-            let was_active = trace.active;
-            trace.advance_forward();
-            if was_active && !trace.active {
-                gamma_ad = idx + prf.length;
-                max_log_score = max_log_in_ad;
-            }
-        } else {
-            max_log_score.max_assign(max_log_in_ad);
-            if idx < seed_ad_end {
-                max_log_score_within.max_assign(max_log_score);
-            }
-            if idx >= gamma_ad {
-                let thresh_log = params.trim_thresh(max_log_in_ad, max_log_score);
-                let prob_thresh = (thresh_log - cumulative_log_scale).exp();
-                mx.trim_ad(bound, prob_thresh);
-                if bound.is_empty() {
-                    break;
-                }
-            }
+        if idx >= gamma_ad {
+            let thresh_log = params.trim_thresh(max_log_in_ad, max_log_score);
+            let prob_thresh = (thresh_log - cumulative_log_scale).exp();
+            mx.trim_ad(bound, prob_thresh);
         }
 
+        // If the trace covers this AD, ensure the bound includes the
+        // trace range and reset max_score so beta tracks current level.
+        if let Some((prf_lo, prf_hi)) = tb.get(idx) {
+            let seq_lo = idx.saturating_sub(prf_hi).max(1);
+            let seq_hi = idx.saturating_sub(prf_lo).max(1);
+            if bound.is_empty() {
+                bound.0 = Cell { prf_idx: prf_hi, seq_idx: seq_lo };
+                bound.1 = Cell { prf_idx: prf_lo, seq_idx: seq_hi };
+            } else {
+                if prf_hi > bound.0.prf_idx {
+                    bound.0 = Cell { prf_idx: prf_hi, seq_idx: seq_lo };
+                }
+                if seq_hi > bound.1.seq_idx {
+                    bound.1 = Cell { prf_idx: prf_lo, seq_idx: seq_hi };
+                }
+            }
+            max_log_score = max_log_in_ad;
+        } else if bound.is_empty() {
+            break;
+        }
+
+        max_log_score.max_assign(max_log_in_ad);
+        if idx < seed_ad_end {
+            max_log_score_within.max_assign(max_log_score);
+        }
+
+        if cloud.ad_end + 1 >= cloud.bounds.len() {
+            break;
+        }
         cloud.advance_forward();
     }
 

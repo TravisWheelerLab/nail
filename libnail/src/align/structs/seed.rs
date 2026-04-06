@@ -28,97 +28,104 @@ pub fn parse_cigar(cigar: &str) -> Vec<CigarOp> {
     ops
 }
 
-/// A cursor that walks along a CIGAR trace one anti-diagonal at a time.
-/// Each CIGAR step advances the AD by 1. Call `advance_forward()` or
-/// `advance_backward()` to step through the trace.
-#[derive(Clone, Debug)]
-pub struct TraceCursor {
-    cigar: Vec<CigarOp>,
-    op_idx: usize,
-    op_offset: usize,
-    pub prf_idx: usize,
-    pub seq_idx: usize,
-    pub active: bool,
+/// Precomputed per-AD bounds from the mmseqs alignment trace.
+///
+/// For each anti-diagonal that the trace crosses, stores the minimum
+/// profile range (prf_lo..prf_hi) that must be included in the cloud
+/// bound, expanded by ±BAND cells around the trace position.
+///
+/// Built once from the CIGAR at seed parse time. Indexed by AD number.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TraceBounds {
+    /// prf_lo[ad] = minimum profile index that must be in the bound (0 = no constraint)
+    pub prf_lo: Vec<usize>,
+    /// prf_hi[ad] = maximum profile index that must be in the bound (0 = no constraint)
+    pub prf_hi: Vec<usize>,
 }
 
-impl TraceCursor {
-    pub fn new_forward(cigar: &[CigarOp], prf_start: usize, seq_start: usize) -> Self {
-        Self {
-            cigar: cigar.to_vec(),
-            op_idx: 0,
-            op_offset: 0,
-            prf_idx: prf_start,
-            seq_idx: seq_start,
-            active: !cigar.is_empty(),
-        }
-    }
+impl TraceBounds {
+    const BAND: usize = 3;
 
-    pub fn new_backward(cigar: &[CigarOp], prf_end: usize, seq_end: usize) -> Self {
+    pub fn from_cigar(
+        cigar: &[CigarOp],
+        prf_start: usize,
+        seq_start: usize,
+        prf_len: usize,
+        seq_len: usize,
+    ) -> Self {
         if cigar.is_empty() {
-            return Self {
-                cigar: Vec::new(), op_idx: 0, op_offset: 0,
-                prf_idx: prf_end, seq_idx: seq_end, active: false,
+            return Self::default();
+        }
+
+        let max_ad = prf_len + seq_len;
+        let mut prf_lo = vec![0usize; max_ad + 1];
+        let mut prf_hi = vec![0usize; max_ad + 1];
+
+        let mut prf = prf_start;
+        let mut seq = seq_start;
+
+        // Clamp bounds to leave room for DP lookups at +1 offsets
+        let prf_max = prf_len.saturating_sub(1);
+        let seq_max = seq_len.saturating_sub(1);
+
+        let mut set_bounds = |prf: usize, seq: usize, prf_lo: &mut Vec<usize>, prf_hi: &mut Vec<usize>| {
+            let ad = prf + seq;
+            if ad <= max_ad && ad < prf_lo.len() {
+                // Clamp so that the bound doesn't push seq or prf past safe limits
+                let lo = prf.saturating_sub(Self::BAND).max(1);
+                let hi = (prf + Self::BAND).min(prf_max);
+                // Also ensure seq stays in range: seq = ad - prf, so prf_lo >= ad - seq_max
+                let lo = lo.max(ad.saturating_sub(seq_max));
+                prf_lo[ad] = lo;
+                prf_hi[ad] = hi;
+            }
+        };
+
+        set_bounds(prf, seq, &mut prf_lo, &mut prf_hi);
+
+        for op in cigar {
+            let (count, dp, ds) = match op {
+                CigarOp::Match(n) => (*n, 1usize, 1usize),
+                CigarOp::Insertion(n) => (*n, 1, 0),
+                CigarOp::Deletion(n) => (*n, 0, 1),
             };
-        }
-        let last_op = cigar.len() - 1;
-        let last_offset = match cigar[last_op] {
-            CigarOp::Match(n) | CigarOp::Insertion(n) | CigarOp::Deletion(n) => n.saturating_sub(1),
-        };
-        Self {
-            cigar: cigar.to_vec(),
-            op_idx: last_op,
-            op_offset: last_offset,
-            prf_idx: prf_end,
-            seq_idx: seq_end,
-            active: true,
-        }
-    }
-
-    pub fn ad(&self) -> usize {
-        self.prf_idx + self.seq_idx
-    }
-
-    pub fn advance_forward(&mut self) -> bool {
-        if !self.active { return false; }
-        let op_len = match self.cigar[self.op_idx] {
-            CigarOp::Match(n) | CigarOp::Insertion(n) | CigarOp::Deletion(n) => n,
-        };
-        self.op_offset += 1;
-        if self.op_offset >= op_len {
-            self.op_idx += 1;
-            self.op_offset = 0;
-            if self.op_idx >= self.cigar.len() {
-                self.active = false;
-                return false;
+            for _ in 0..count {
+                prf += dp;
+                seq += ds;
+                set_bounds(prf, seq, &mut prf_lo, &mut prf_hi);
             }
         }
-        match self.cigar[self.op_idx] {
-            CigarOp::Match(_) => { self.prf_idx += 1; self.seq_idx += 1; }
-            CigarOp::Insertion(_) => { self.prf_idx += 1; }
-            CigarOp::Deletion(_) => { self.seq_idx += 1; }
+
+        // Fill gaps: Match ops advance AD by 2, leaving odd ADs empty.
+        // Interpolate from neighbors so there are no holes in coverage.
+        for ad in 1..max_ad {
+            if prf_hi[ad] == 0 {
+                let has_prev = prf_hi[ad.saturating_sub(1)] > 0;
+                let has_next = ad + 1 <= max_ad && prf_hi[ad + 1] > 0;
+                if has_prev && has_next {
+                    prf_lo[ad] = prf_lo[ad - 1].min(prf_lo[ad + 1]);
+                    prf_hi[ad] = prf_hi[ad - 1].max(prf_hi[ad + 1]);
+                }
+            }
         }
-        true
+
+        Self { prf_lo, prf_hi }
     }
 
-    pub fn advance_backward(&mut self) -> bool {
-        if !self.active { return false; }
-        match self.cigar[self.op_idx] {
-            CigarOp::Match(_) => { self.prf_idx = self.prf_idx.saturating_sub(1); self.seq_idx = self.seq_idx.saturating_sub(1); }
-            CigarOp::Insertion(_) => { self.prf_idx = self.prf_idx.saturating_sub(1); }
-            CigarOp::Deletion(_) => { self.seq_idx = self.seq_idx.saturating_sub(1); }
-        }
-        if self.op_offset > 0 {
-            self.op_offset -= 1;
-        } else if self.op_idx > 0 {
-            self.op_idx -= 1;
-            let prev_len = match self.cigar[self.op_idx] {
-                CigarOp::Match(n) | CigarOp::Insertion(n) | CigarOp::Deletion(n) => n,
-            };
-            self.op_offset = prev_len.saturating_sub(1);
+    /// Returns true if the trace covers this anti-diagonal.
+    #[inline]
+    pub fn has(&self, ad: usize) -> bool {
+        ad < self.prf_hi.len() && self.prf_hi[ad] > 0
+    }
+
+    /// Get the required profile range for this AD, or None.
+    #[inline]
+    pub fn get(&self, ad: usize) -> Option<(usize, usize)> {
+        if self.has(ad) {
+            Some((self.prf_lo[ad], self.prf_hi[ad]))
         } else {
-            self.active = false;
+            None
         }
-        true
     }
 }
 
@@ -133,6 +140,7 @@ pub struct Seed {
     pub score: f32,
     pub e_value: f64,
     pub cigar: Vec<CigarOp>,
+    pub trace_bounds: TraceBounds,
 }
 
 impl Display for Seed {

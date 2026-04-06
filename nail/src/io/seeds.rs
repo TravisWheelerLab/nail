@@ -10,7 +10,7 @@ use crate::io::{ByteBufferExt, DatabaseIter, IndexInner};
 
 use anyhow::bail;
 use indexmap::IndexMap;
-use libnail::align::structs::{Seed, parse_cigar};
+use libnail::align::structs::{Seed, parse_cigar, TraceBounds};
 
 // TODO: remove this once the Seeds struct is fixed
 pub struct Seeds2 {
@@ -25,17 +25,23 @@ impl Seeds2 {
         for line in file.lines() {
             let line = line?;
             let tokens = line.split_whitespace().collect::<Vec<_>>();
+            let prf_start: usize = tokens[2].parse()?;
+            let prf_end: usize = tokens[3].parse()?;
+            let seq_start: usize = tokens[4].parse()?;
+            let seq_end: usize = tokens[5].parse()?;
             let cigar = if tokens.len() > 8 { parse_cigar(tokens[8]) } else { Vec::new() };
+            let trace_bounds = TraceBounds::from_cigar(&cigar, prf_start, seq_start, prf_end, seq_end);
             seeds.push(Seed {
                 prf: tokens[0].to_string(),
                 seq: tokens[1].to_string(),
-                seq_start: tokens[4].parse()?,
-                seq_end: tokens[5].parse()?,
-                prf_start: tokens[2].parse()?,
-                prf_end: tokens[3].parse()?,
+                seq_start,
+                seq_end,
+                prf_start,
+                prf_end,
                 score: tokens[6].parse()?,
                 e_value: tokens[7].parse()?,
                 cigar,
+                trace_bounds,
             })
         }
         Ok(Self { seeds })
@@ -84,19 +90,25 @@ impl RecordParser for SeedParser {
         for line in buf.split(|b| *b == b'\n') {
             let line = line.as_str()?;
             let tokens = line.split_whitespace().collect::<Vec<_>>();
+            let prf_start: usize = tokens[2].parse()?;
+            let prf_end: usize = tokens[3].parse()?;
+            let seq_start: usize = tokens[4].parse()?;
+            let seq_end: usize = tokens[5].parse()?;
             let cigar = if tokens.len() > 8 { parse_cigar(tokens[8]) } else { Vec::new() };
+            let trace_bounds = TraceBounds::from_cigar(&cigar, prf_start, seq_start, prf_end, seq_end);
             seeds.push((
                 tokens[1].into(),
                 Seed {
                     prf: tokens[0].to_string(),
                     seq: tokens[1].to_string(),
-                    seq_start: tokens[4].parse()?,
-                    seq_end: tokens[5].parse()?,
-                    prf_start: tokens[2].parse()?,
-                    prf_end: tokens[3].parse()?,
+                    seq_start,
+                    seq_end,
+                    prf_start,
+                    prf_end,
                     score: tokens[6].parse()?,
                     e_value: tokens[7].parse()?,
                     cigar,
+                    trace_bounds,
                 },
             ))
         }
