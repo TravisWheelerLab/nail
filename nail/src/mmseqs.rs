@@ -687,7 +687,7 @@ pub fn run_mmseqs_convertalis(
         .args(["--threads", &args.num_threads.to_string()])
         .args([
             "--format-output",
-            "qheader,theader,qstart,qend,tstart,tend,bits,evalue",
+            "qheader,theader,qstart,qend,tstart,tend,bits,evalue,cigar",
         ])
         .run()?;
 

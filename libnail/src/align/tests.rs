@@ -198,6 +198,7 @@ mod tests {
             seq_end: 3 * seq.length / 4,
             score: 0.0,
             e_value: 1.0,
+            cigar: Vec::new(),
         };
 
         let params = CloudSearchParams::default();

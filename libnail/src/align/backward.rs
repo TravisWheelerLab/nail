@@ -67,11 +67,17 @@ pub fn backward(
 
     // Scale the last row
     {
-        let mut max_val = 0.0f32;
+        let mut core_max = 0.0f32;
         for p in profile_start_on_last_row..=profile_end_on_last_row {
-            max_val = max_val.max(dp_matrix.get_match(row_bounds.seq_end, p));
+            core_max = core_max.max(dp_matrix.get_match(row_bounds.seq_end, p));
         }
-        max_val = max_val.max(dp_matrix.get_special(row_bounds.seq_end, Profile::C_IDX));
+        let special_max = dp_matrix.get_special(row_bounds.seq_end, Profile::C_IDX)
+            .max(dp_matrix.get_special(row_bounds.seq_end, Profile::N_IDX));
+        let max_val = if core_max > 0.0 && special_max / core_max < 1e30 {
+            core_max
+        } else {
+            core_max.max(special_max)
+        };
         if max_val > 0.0 {
             let inv = 1.0 / max_val;
             for p in profile_start_on_last_row..=profile_end_on_last_row {
@@ -201,15 +207,19 @@ pub fn backward(
             );
         }
 
-        // Scale this row
-        let mut max_val = 0.0f32;
+        // Scale this row — see forward.rs for rationale on core-only scaling
+        let mut core_max = 0.0f32;
         for p in profile_start_on_current_row..=profile_end_on_current_row {
-            max_val = max_val.max(dp_matrix.get_match(target_idx, p));
-            max_val = max_val.max(dp_matrix.get_insert(target_idx, p));
+            core_max = core_max.max(dp_matrix.get_match(target_idx, p));
+            core_max = core_max.max(dp_matrix.get_insert(target_idx, p));
         }
-        max_val = max_val.max(dp_matrix.get_special(target_idx, Profile::C_IDX));
-        max_val = max_val.max(dp_matrix.get_special(target_idx, Profile::N_IDX));
-
+        let special_max = dp_matrix.get_special(target_idx, Profile::C_IDX)
+            .max(dp_matrix.get_special(target_idx, Profile::N_IDX));
+        let max_val = if core_max > 0.0 && special_max / core_max < 1e30 {
+            core_max
+        } else {
+            core_max.max(special_max)
+        };
         if max_val > 0.0 {
             let inv = 1.0 / max_val;
             for p in profile_start_on_current_row..=profile_end_on_current_row {

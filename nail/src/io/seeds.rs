@@ -10,7 +10,7 @@ use crate::io::{ByteBufferExt, DatabaseIter, IndexInner};
 
 use anyhow::bail;
 use indexmap::IndexMap;
-use libnail::align::structs::Seed;
+use libnail::align::structs::{Seed, parse_cigar};
 
 // TODO: remove this once the Seeds struct is fixed
 pub struct Seeds2 {
@@ -25,6 +25,7 @@ impl Seeds2 {
         for line in file.lines() {
             let line = line?;
             let tokens = line.split_whitespace().collect::<Vec<_>>();
+            let cigar = if tokens.len() > 8 { parse_cigar(tokens[8]) } else { Vec::new() };
             seeds.push(Seed {
                 prf: tokens[0].to_string(),
                 seq: tokens[1].to_string(),
@@ -34,6 +35,7 @@ impl Seeds2 {
                 prf_end: tokens[3].parse()?,
                 score: tokens[6].parse()?,
                 e_value: tokens[7].parse()?,
+                cigar,
             })
         }
         Ok(Self { seeds })
@@ -82,6 +84,7 @@ impl RecordParser for SeedParser {
         for line in buf.split(|b| *b == b'\n') {
             let line = line.as_str()?;
             let tokens = line.split_whitespace().collect::<Vec<_>>();
+            let cigar = if tokens.len() > 8 { parse_cigar(tokens[8]) } else { Vec::new() };
             seeds.push((
                 tokens[1].into(),
                 Seed {
@@ -93,6 +96,7 @@ impl RecordParser for SeedParser {
                     prf_end: tokens[3].parse()?,
                     score: tokens[6].parse()?,
                     e_value: tokens[7].parse()?,
+                    cigar,
                 },
             ))
         }
