@@ -230,21 +230,23 @@ pub struct NullTwoScratch {
 
 impl NullTwoScratch {
     fn prepare(&mut self, profile_length: usize, target_length: usize) {
-        let ratio_len = Profile::MAX_DEGENERATE_ALPHABET_SIZE;
-        let profile_len = profile_length + 1;
-        let target_len = target_length + 1;
+        // Grow each buffer if the current call needs more capacity than we've
+        // seen before; otherwise reuse the existing allocation.  Either way,
+        // zero only the prefix that this call will actually read/write —
+        // leaving stale values beyond the active range is intentional.
+        Self::zero_prefix(&mut self.expected_prob_ratios, Profile::MAX_DEGENERATE_ALPHABET_SIZE);
+        Self::zero_prefix(&mut self.match_sums, profile_length + 1);
+        Self::zero_prefix(&mut self.insert_sums, profile_length + 1);
+        Self::zero_prefix(&mut self.core_posteriors, target_length + 1);
+    }
 
-        self.expected_prob_ratios.clear();
-        self.expected_prob_ratios.resize(ratio_len, 0.0);
-
-        self.match_sums.clear();
-        self.match_sums.resize(profile_len, 0.0);
-
-        self.insert_sums.clear();
-        self.insert_sums.resize(profile_len, 0.0);
-
-        self.core_posteriors.clear();
-        self.core_posteriors.resize(target_len, 0.0);
+    #[inline]
+    fn zero_prefix(v: &mut Vec<f32>, n: usize) {
+        if v.len() < n {
+            v.resize(n, 0.0); // allocates only when a new high-water mark is reached
+        } else {
+            v[..n].fill(0.0); // only touches the n elements this call will use
+        }
     }
 }
 
