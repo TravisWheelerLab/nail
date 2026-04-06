@@ -217,18 +217,50 @@ pub fn null_one_score(target_length: usize) -> Nats {
     Nats(target_length as f32 * p_null_loop.ln() + p_null_exit.ln())
 }
 
+/// Reusable scratch buffers for `null_two_score`. Allocate once per thread via
+/// `NullTwoScratch::default()` and pass `&mut scratch` on every call to avoid
+/// per-call heap allocation.
+#[derive(Default, Clone)]
+pub struct NullTwoScratch {
+    pub expected_prob_ratios: Vec<f32>,
+    pub match_sums: Vec<f32>,
+    pub insert_sums: Vec<f32>,
+    pub core_posteriors: Vec<f32>,
+}
+
+impl NullTwoScratch {
+    fn prepare(&mut self, profile_length: usize, target_length: usize) {
+        let ratio_len = Profile::MAX_DEGENERATE_ALPHABET_SIZE;
+        let profile_len = profile_length + 1;
+        let target_len = target_length + 1;
+
+        self.expected_prob_ratios.clear();
+        self.expected_prob_ratios.resize(ratio_len, 0.0);
+
+        self.match_sums.clear();
+        self.match_sums.resize(profile_len, 0.0);
+
+        self.insert_sums.clear();
+        self.insert_sums.resize(profile_len, 0.0);
+
+        self.core_posteriors.clear();
+        self.core_posteriors.resize(target_len, 0.0);
+    }
+}
+
 /// Compute the null two score adjustment: the composition bias.
 pub fn null_two_score(
     posterior_matrix: &impl DpMatrix,
     profile: &Profile,
     target: &Sequence,
     row_bounds: &RowBounds,
+    scratch: &mut NullTwoScratch,
 ) -> Nats {
-    // TODO: prevent these allocations?
-    let mut expected_prob_ratios: Vec<f32> = vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
-    let mut match_sums: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut insert_sums: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut core_posteriors: Vec<f32> = vec![0.0; target.length + 1];
+    scratch.prepare(profile.length, target.length);
+    let expected_prob_ratios = &mut scratch.expected_prob_ratios;
+    let match_sums = &mut scratch.match_sums;
+    let insert_sums = &mut scratch.insert_sums;
+    let core_posteriors = &mut scratch.core_posteriors;
     let mut core_state_sum: f32 = 0.0;
 
     // what: for each position in the model, take the sum of

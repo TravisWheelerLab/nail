@@ -6,7 +6,7 @@ use libnail::{
     align::{
         backward, forward, null_one_score, null_two_score, optimal_accuracy, p_value, posterior,
         structs::{Alignment, AlignmentBuilder, DpMatrixSparse, RowBounds, Trace},
-        traceback, Bits,
+        traceback, Bits, NullTwoScratch,
     },
     structs::{Profile, Sequence},
 };
@@ -72,6 +72,7 @@ pub struct DefaultAlignStage {
     backward_matrix: DpMatrixSparse,
     posterior_matrix: DpMatrixSparse,
     optimal_matrix: DpMatrixSparse,
+    null_two_scratch: NullTwoScratch,
     forward_p_value_threshold: f64,
     target_count: usize,
     config: AlignConfig,
@@ -184,6 +185,7 @@ impl AlignStage for DefaultAlignStage {
                 profile,
                 target,
                 bounds,
+                &mut self.null_two_scratch,
             ));
             stats.null_two_time(now.elapsed());
             score
