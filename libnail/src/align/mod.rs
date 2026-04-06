@@ -17,7 +17,8 @@ pub use optimal_accuracy::optimal_accuracy;
 
 mod scoring;
 pub use scoring::{
-    cloud_score, e_value, null_one_score, null_two_score, p_value, Bits, Nats, Score,
+    cloud_score, e_value, null_one_score, null_two_score, p_value, Bits, Nats, NullTwoScratch,
+    Score,
 };
 
 mod traceback;

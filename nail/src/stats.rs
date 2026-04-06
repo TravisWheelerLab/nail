@@ -97,6 +97,7 @@ pub enum ThreadedTimed {
     Forward,
     Backward,
     Posterior,
+    OptimalAccuracy,
     Traceback,
     NullTwo,
     OutputWrite,
@@ -115,6 +116,7 @@ impl Debug for ThreadedTimed {
             ThreadedTimed::Forward => "forward",
             ThreadedTimed::Backward => "backward",
             ThreadedTimed::Posterior => "posterior",
+            ThreadedTimed::OptimalAccuracy => "optimal accuracy",
             ThreadedTimed::Traceback => "traceback",
             ThreadedTimed::NullTwo => "null two",
         };
@@ -264,6 +266,7 @@ impl Stats {
 
                         self.add_threaded_time(ThreadedTimed::Backward, stats.backward_time);
                         self.add_threaded_time(ThreadedTimed::Posterior, stats.posterior_time);
+                        self.add_threaded_time(ThreadedTimed::OptimalAccuracy, stats.optimal_accuracy_time);
                         self.add_threaded_time(ThreadedTimed::Traceback, stats.traceback_time);
                         self.add_threaded_time(ThreadedTimed::NullTwo, stats.null_two_time);
                     }

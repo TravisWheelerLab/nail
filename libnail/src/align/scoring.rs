@@ -217,18 +217,52 @@ pub fn null_one_score(target_length: usize) -> Nats {
     Nats(target_length as f32 * p_null_loop.ln() + p_null_exit.ln())
 }
 
+/// Reusable scratch buffers for `null_two_score`. Allocate once per thread via
+/// `NullTwoScratch::default()` and pass `&mut scratch` on every call to avoid
+/// per-call heap allocation.
+#[derive(Default, Clone)]
+pub struct NullTwoScratch {
+    pub expected_prob_ratios: Vec<f32>,
+    pub match_sums: Vec<f32>,
+    pub insert_sums: Vec<f32>,
+    pub core_posteriors: Vec<f32>,
+}
+
+impl NullTwoScratch {
+    fn prepare(&mut self, profile_length: usize, target_length: usize) {
+        // Grow each buffer if the current call needs more capacity than we've
+        // seen before; otherwise reuse the existing allocation.  Either way,
+        // zero only the prefix that this call will actually read/write —
+        // leaving stale values beyond the active range is intentional.
+        Self::zero_prefix(&mut self.expected_prob_ratios, Profile::MAX_DEGENERATE_ALPHABET_SIZE);
+        Self::zero_prefix(&mut self.match_sums, profile_length + 1);
+        Self::zero_prefix(&mut self.insert_sums, profile_length + 1);
+        Self::zero_prefix(&mut self.core_posteriors, target_length + 1);
+    }
+
+    #[inline]
+    fn zero_prefix(v: &mut Vec<f32>, n: usize) {
+        if v.len() < n {
+            v.resize(n, 0.0); // allocates only when a new high-water mark is reached
+        } else {
+            v[..n].fill(0.0); // only touches the n elements this call will use
+        }
+    }
+}
+
 /// Compute the null two score adjustment: the composition bias.
 pub fn null_two_score(
     posterior_matrix: &impl DpMatrix,
     profile: &Profile,
     target: &Sequence,
     row_bounds: &RowBounds,
+    scratch: &mut NullTwoScratch,
 ) -> Nats {
-    // TODO: prevent these allocations?
-    let mut expected_prob_ratios: Vec<f32> = vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
-    let mut match_sums: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut insert_sums: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut core_posteriors: Vec<f32> = vec![0.0; target.length + 1];
+    scratch.prepare(profile.length, target.length);
+    let expected_prob_ratios = &mut scratch.expected_prob_ratios;
+    let match_sums = &mut scratch.match_sums;
+    let insert_sums = &mut scratch.insert_sums;
+    let core_posteriors = &mut scratch.core_posteriors;
     let mut core_state_sum: f32 = 0.0;
 
     // what: for each position in the model, take the sum of
