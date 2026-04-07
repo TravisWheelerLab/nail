@@ -1259,6 +1259,7 @@ impl Profile {
                 self.prob_special_transitions[i][j] = if s.is_finite() { s.exp() } else { 0.0 };
             }
         }
+
     }
 
     pub fn generic_transition_score(

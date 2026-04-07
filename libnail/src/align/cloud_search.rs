@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    structs::{Ad, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix},
+    structs::{Ad, AdMatrixLinear, BackgroundState::*, Bound, Cell, CloudMatrix, CoreState::*, NewDpMatrix},
     Nats,
 };
 
@@ -65,16 +65,14 @@ pub struct CloudSearchResults {
 /// `bg_scale` converts precomputed background states (absolute probabilities)
 /// to the same scale as the per-AD-scaled core states.
 #[inline]
-pub fn compute_backward_cells<M>(
+pub fn compute_backward_cells(
     prf: &Profile,
     seq: &Sequence,
-    mx: &mut M,
+    mx: &mut AdMatrixLinear,
     prf_idx: usize,
     seq_idx: usize,
     bg_scale: f32,
-) where
-    M: NewDpMatrix,
-{
+) {
     let residue = seq.digital_bytes[seq_idx + 1] as usize;
 
     // Cache emission probabilities (one lookup each, reused across states)
@@ -121,16 +119,14 @@ pub fn compute_backward_cells<M>(
         * m_emit;
 }
 
-pub fn cloud_search_bwd<M>(
+pub fn cloud_search_bwd(
     prf: &Profile,
     seq: &Sequence,
     seed: &Seed,
-    mx: &mut M,
+    mx: &mut AdMatrixLinear,
     params: &CloudSearchParams,
     cloud: &mut Cloud,
 ) -> CloudSearchResults
-where
-    M: CloudMatrix,
 {
     let mut num_cells = 0usize;
     let mut max_log_score = -f32::INFINITY;
@@ -171,8 +167,17 @@ where
     let tb = &seed.trace_bounds;
 
     for idx in (min_ad..=cell_start.idx()).rev() {
-        let co_located_bound = &cloud[Ad((idx + 3).min(seq.length + prf.length))];
-        mx.reset_ad(co_located_bound);
+        let co_located_idx = (idx + 3).min(seq.length + prf.length);
+        {
+            let co_located_bound = &cloud[Ad(co_located_idx)];
+            if !co_located_bound.is_empty() {
+                let (ss, se) = (co_located_bound.0.seq_idx, co_located_bound.1.seq_idx);
+                let (m, i, d) = mx.core_slices_mut(co_located_idx, ss, se);
+                m.fill(0.0);
+                i.fill(0.0);
+                d.fill(0.0);
+            }
+        }
 
         let bound = &mut cloud[Ad(idx)];
         let mut max_stored_in_ad = 0.0f32;
@@ -188,11 +193,12 @@ where
         // Per-AD scaling of core cells
         if max_stored_in_ad > 0.0 {
             let inv = 1.0 / max_stored_in_ad;
-            bound.iter().for_each(|c| {
-                mx[c.m_cell()] *= inv;
-                mx[c.i_cell()] *= inv;
-                mx[c.d_cell()] *= inv;
-            });
+            let seq_start = bound.0.seq_idx;
+            let seq_end = bound.1.seq_idx;
+            let (m, i, d) = mx.core_slices_mut(idx, seq_start, seq_end);
+            m.iter_mut().for_each(|v| *v *= inv);
+            i.iter_mut().for_each(|v| *v *= inv);
+            d.iter_mut().for_each(|v| *v *= inv);
             cumulative_log_scale += max_stored_in_ad.ln();
             bg_scale = (-cumulative_log_scale).exp();
         }
@@ -258,16 +264,14 @@ where
 /// `bg_scale` converts precomputed background states (absolute probabilities)
 /// to the same scale as the per-AD-scaled core states.
 #[inline]
-pub fn compute_forward_cells<M>(
+pub fn compute_forward_cells(
     prf: &Profile,
     seq: &Sequence,
-    mx: &mut M,
+    mx: &mut AdMatrixLinear,
     prf_idx: usize,
     seq_idx: usize,
     bg_scale: f32,
-) where
-    M: NewDpMatrix,
-{
+) {
     let residue = seq.digital_bytes[seq_idx] as usize;
 
     // Cache source cell values
@@ -306,16 +310,14 @@ pub fn compute_forward_cells<M>(
     mx[(E, seq_idx)] += mx[m_cell] + mx[d_cell];
 }
 
-pub fn cloud_search_fwd<M>(
+pub fn cloud_search_fwd(
     prf: &Profile,
     seq: &Sequence,
     seed: &Seed,
-    mx: &mut M,
+    mx: &mut AdMatrixLinear,
     params: &CloudSearchParams,
     cloud: &mut Cloud,
 ) -> CloudSearchResults
-where
-    M: CloudMatrix,
 {
     let mut num_cells = 0usize;
     let mut max_log_score = -f32::INFINITY;
@@ -351,8 +353,17 @@ where
     let tb = &seed.trace_bounds;
 
     for idx in ad_start..=max_ad {
-        let co_located_bound = &cloud[Ad(idx.saturating_sub(3))];
-        mx.reset_ad(co_located_bound);
+        let co_located_idx = idx.saturating_sub(3);
+        {
+            let co_located_bound = &cloud[Ad(co_located_idx)];
+            if !co_located_bound.is_empty() {
+                let (ss, se) = (co_located_bound.0.seq_idx, co_located_bound.1.seq_idx);
+                let (m, i, d) = mx.core_slices_mut(co_located_idx, ss, se);
+                m.fill(0.0);
+                i.fill(0.0);
+                d.fill(0.0);
+            }
+        }
 
         let bound = &mut cloud[Ad(idx)];
         let mut max_stored_in_ad = 0.0f32;
@@ -368,11 +379,12 @@ where
         // Per-AD scaling of core cells
         if max_stored_in_ad > 0.0 {
             let inv = 1.0 / max_stored_in_ad;
-            bound.iter().for_each(|c| {
-                mx[c.m_cell()] *= inv;
-                mx[c.i_cell()] *= inv;
-                mx[c.d_cell()] *= inv;
-            });
+            let seq_start = bound.0.seq_idx;
+            let seq_end = bound.1.seq_idx;
+            let (m, i, d) = mx.core_slices_mut(idx, seq_start, seq_end);
+            m.iter_mut().for_each(|v| *v *= inv);
+            i.iter_mut().for_each(|v| *v *= inv);
+            d.iter_mut().for_each(|v| *v *= inv);
             cumulative_log_scale += max_stored_in_ad.ln();
             bg_scale = (-cumulative_log_scale).exp();
         }

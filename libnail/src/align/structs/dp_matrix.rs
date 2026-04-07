@@ -1095,6 +1095,43 @@ impl AdMatrixLinear {
         self.seq_len = new_seq_len;
     }
 
+    /// Return a contiguous slice of M values for `ad_idx` over `seq_start..=seq_end`.
+    #[inline]
+    pub fn m_slice(&self, ad_idx: usize, seq_start: usize, seq_end: usize) -> &[f32] {
+        &self.core_data[ad_idx % 3][0][seq_start..=seq_end]
+    }
+
+    /// Return a contiguous slice of I values for `ad_idx` over `seq_start..=seq_end`.
+    #[inline]
+    pub fn i_slice(&self, ad_idx: usize, seq_start: usize, seq_end: usize) -> &[f32] {
+        &self.core_data[ad_idx % 3][1][seq_start..=seq_end]
+    }
+
+    /// Return a contiguous slice of D values for `ad_idx` over `seq_start..=seq_end`.
+    #[inline]
+    pub fn d_slice(&self, ad_idx: usize, seq_start: usize, seq_end: usize) -> &[f32] {
+        &self.core_data[ad_idx % 3][2][seq_start..=seq_end]
+    }
+
+    /// Return mutable slices of (M, I, D) for `ad_idx` over `seq_start..=seq_end`.
+    ///
+    /// All three are returned together so the caller holds a single mutable borrow,
+    /// avoiding conflicts when simultaneously holding immutable borrows on other ADs.
+    #[inline]
+    pub fn core_slices_mut(
+        &mut self,
+        ad_idx: usize,
+        seq_start: usize,
+        seq_end: usize,
+    ) -> (&mut [f32], &mut [f32], &mut [f32]) {
+        let [m, i, d] = &mut self.core_data[ad_idx % 3];
+        (
+            &mut m[seq_start..=seq_end],
+            &mut i[seq_start..=seq_end],
+            &mut d[seq_start..=seq_end],
+        )
+    }
+
     pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
         writeln!(out, "seq_len: {}", self.seq_len)?;
 
