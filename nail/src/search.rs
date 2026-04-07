@@ -17,7 +17,7 @@ use crate::util::{guess_query_format_from_query_file, FileFormat};
 
 use anyhow::Context;
 use libnail::structs::Profile;
-use rayon::iter::ParallelIterator;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::slice::ParallelSlice;
 use thread_local::ThreadLocal;
 
@@ -78,11 +78,18 @@ pub fn seed(
                     .context("progessive seeding failed")
             } else {
                 seed_max_seqs(queries, targets, &db_paths, stats, args).context("seeding failed")
-            };
+            }?;
 
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
 
-            seeds
+            let mut counts: HashMap<String, u64> = HashMap::new();
+            for seed in &seeds.seeds {
+                *counts.entry(seed.prf.clone()).or_insert(0) += 1;
+            }
+
+            stats.set_seed_counts(counts);
+
+            Ok(seeds)
         }
     }
 }
@@ -209,6 +216,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         args.write(&mut stdout())?;
         pipeline.stats.write(&mut stdout())?;
     }
+
+    pipeline.stats.write_max_seqs_report(&args)?;
 
     Ok(())
 }

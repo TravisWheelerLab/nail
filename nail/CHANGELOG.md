@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - added CLI param `--mmseqs-path` 
 - added error Structs `io::index::{Offset, IndexCollisionError}`
+- added warning for `--mmseqs-max-seqs` saturation
 
 ### Changed
 - trait `IndexInner` is no longer generic over offset type

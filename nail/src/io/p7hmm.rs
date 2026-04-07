@@ -366,7 +366,7 @@ impl P7Hmm {
         self.buffer.resize(offset.n_bytes, 0u8);
 
         self.file
-            .seek(SeekFrom::Start(offset.start as u64))
+            .seek(SeekFrom::Start(offset.start))
             .expect("failed to seek in P7Hmm::get()");
 
         self.file
