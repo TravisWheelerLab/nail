@@ -388,6 +388,9 @@ pub struct Profile {
     /// Transposed probability-space core transitions for slice access: [transition_idx][profile_idx]
     #[data_size(skip)]
     pub prob_trans_simd: [Vec<f32>; 8],
+    /// Transposed transition score deltas (1.0 if finite, f32::MIN_POSITIVE if -inf): [transition_idx][profile_idx]
+    #[data_size(skip)]
+    pub trans_delta_simd: [Vec<f32>; 8],
     /// Transposed probability-space match emissions for slice access: [alphabet_idx][profile_idx]
     #[data_size(skip)]
     pub prob_match_emit_simd: [Vec<f32>; Profile::MAX_DEGENERATE_ALPHABET_SIZE],
@@ -589,6 +592,7 @@ impl ProfileBuilder {
             prob_emission_scores: [Vec::new(), Vec::new()],
             prob_special_transitions: [[0.0; 2]; 5],
             prob_trans_simd: Default::default(),
+            trans_delta_simd: Default::default(),
             prob_match_emit_simd: Default::default(),
             prob_insert_emit_simd: Default::default(),
         };
@@ -1210,6 +1214,13 @@ impl Profile {
         &self.prob_trans_simd[transition_idx][start..=end]
     }
 
+    /// Contiguous slice of transition score deltas (1.0 if allowed, f32::MIN_POSITIVE if not)
+    /// over profile positions [start..=end].
+    #[inline(always)]
+    pub fn trans_delta_slice(&self, transition_idx: usize, start: usize, end: usize) -> &[f32] {
+        &self.trans_delta_simd[transition_idx][start..=end]
+    }
+
     /// Contiguous slice of match emission probabilities for `residue` over [start..=end].
     #[inline(always)]
     pub fn match_emit_slice(&self, residue: usize, start: usize, end: usize) -> &[f32] {
@@ -1293,6 +1304,9 @@ impl Profile {
         // Transpose core transitions: [profile_idx][t] -> [t][profile_idx]
         for t in 0..8 {
             self.prob_trans_simd[t] = self.prob_core_transitions.iter().map(|row| row[t]).collect();
+            self.trans_delta_simd[t] = self.core_transitions.iter()
+                .map(|row| if row[t].is_finite() { 1.0 } else { f32::MIN_POSITIVE })
+                .collect();
         }
 
         // Transpose emissions: [profile_idx][residue] -> [residue][profile_idx]

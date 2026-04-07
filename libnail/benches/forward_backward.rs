@@ -4,7 +4,7 @@ use rand_pcg::Pcg64;
 
 use libnail::{
     align::{
-        forward, backward, posterior,
+        forward, backward, posterior, optimal_accuracy,
         structs::{DpMatrixSparse, RowBounds},
     },
     structs::{Profile, Sequence},
@@ -109,5 +109,41 @@ fn bench_posterior(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_forward_backward, bench_posterior);
+fn bench_optimal_accuracy(c: &mut Criterion) {
+    let cases: &[(usize, usize)] = &[
+        (100, 200),
+        (200, 500),
+        (300, 1000),
+        (500, 2000),
+    ];
+
+    let mut group = c.benchmark_group("optimal_accuracy");
+    for &(prf_len, seq_len) in cases {
+        let (prf, seq) = make_fixture(prf_len, seq_len, 3, 5);
+        let bounds = full_bounds(&prf, &seq);
+        let mut fwd_mx = DpMatrixSparse::new_prob(seq.length, prf.length, &bounds);
+        let mut bwd_mx = DpMatrixSparse::new_prob(seq.length, prf.length, &bounds);
+        let mut post_mx = DpMatrixSparse::new_prob(seq.length, prf.length, &bounds);
+        let mut opt_mx = DpMatrixSparse::new(seq.length, prf.length, &bounds);
+
+        // Pre-fill fwd/bwd/posterior with real values
+        forward(&prf, &seq, &mut fwd_mx, &bounds);
+        backward(&prf, &seq, &mut bwd_mx, &bounds);
+        posterior(&prf, &fwd_mx, &bwd_mx, &mut post_mx, &bounds);
+
+        group.bench_with_input(
+            BenchmarkId::new("prf_len", format!("{prf_len}x{seq_len}")),
+            &(prf_len, seq_len),
+            |b, _| {
+                b.iter(|| {
+                    opt_mx.reuse(seq.length, prf.length, &bounds);
+                    optimal_accuracy(&prf, &post_mx, &mut opt_mx, &bounds)
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_forward_backward, bench_posterior, bench_optimal_accuracy);
 criterion_main!(benches);
