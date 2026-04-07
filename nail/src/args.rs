@@ -288,7 +288,7 @@ pub struct PipelineArgs {
 
     /// Cloud search failure parameter: parameter scaling factor
     #[arg(
-        short = 's',
+        short = 'f',
         default_value_t = 0.5,
         value_name = "X",
         help = format!(
