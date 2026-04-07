@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added CLI param `--mmseqs-path` 
 - added error Structs `io::index::{Offset, IndexCollisionError}`
 - added warning for `--mmseqs-max-seqs` saturation
+- added CLI flags `-s`, `-a` for controlling cloud search retries in the event of a failed cloud intersection
 
 ### Changed
 - trait `IndexInner` is no longer generic over offset type

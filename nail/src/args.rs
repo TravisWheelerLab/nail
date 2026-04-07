@@ -261,7 +261,7 @@ pub struct PipelineArgs {
         short = 'B',
         default_value_t = 16.0,
         value_name = "X",
-        help = "Cloud search parameter β:\n  \
+        help = "Cloud search parameter ɓ:\n  \
                 global score pruning threshold"
     )]
     pub beta: f32,
@@ -275,6 +275,29 @@ pub struct PipelineArgs {
                 at minimum, compute N anti-diagonals"
     )]
     pub gamma: usize,
+
+    /// Cloud search failure parameter: max number of retries allowed
+    #[arg(
+        short = 'a',
+        default_value_t = 5,
+        value_name = "N",
+        help = "Cloud search failure parameter:\n  \
+                  upon failure of cloud intersection, allow at most N attempts to recover"
+    )]
+    pub cloud_max_join_attempts: usize,
+
+    /// Cloud search failure parameter: parameter scaling factor
+    #[arg(
+        short = 's',
+        default_value_t = 0.5,
+        value_name = "X",
+        help = format!(
+            "{}\n  {}", 
+            "Cloud search failure parameter:",
+            "upon failure of cloud intersection, scale cloud search parameters (α, ɓ, γ) by X"
+        )
+    )]
+    pub cloud_param_scale_factor: f32,
 
     /// Seeding filter threshold
     #[arg(
