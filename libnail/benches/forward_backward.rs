@@ -4,7 +4,7 @@ use rand_pcg::Pcg64;
 
 use libnail::{
     align::{
-        forward, backward,
+        forward, backward, posterior,
         structs::{DpMatrixSparse, RowBounds},
     },
     structs::{Profile, Sequence},
@@ -75,5 +75,39 @@ fn bench_forward_backward(c: &mut Criterion) {
     bwd_group.finish();
 }
 
-criterion_group!(benches, bench_forward_backward);
+fn bench_posterior(c: &mut Criterion) {
+    let cases: &[(usize, usize)] = &[
+        (100, 200),
+        (200, 500),
+        (300, 1000),
+        (500, 2000),
+    ];
+
+    let mut group = c.benchmark_group("posterior");
+    for &(prf_len, seq_len) in cases {
+        let (prf, seq) = make_fixture(prf_len, seq_len, 3, 5);
+        let bounds = full_bounds(&prf, &seq);
+        let mut fwd_mx = DpMatrixSparse::new_prob(seq.length, prf.length, &bounds);
+        let mut bwd_mx = DpMatrixSparse::new_prob(seq.length, prf.length, &bounds);
+        let mut post_mx = DpMatrixSparse::new_prob(seq.length, prf.length, &bounds);
+
+        // Pre-fill fwd and bwd with real values
+        forward(&prf, &seq, &mut fwd_mx, &bounds);
+        backward(&prf, &seq, &mut bwd_mx, &bounds);
+
+        group.bench_with_input(
+            BenchmarkId::new("prf_len", format!("{prf_len}x{seq_len}")),
+            &(prf_len, seq_len),
+            |b, _| {
+                b.iter(|| {
+                    post_mx.reuse(seq.length, prf.length, &bounds);
+                    posterior(&prf, &fwd_mx, &bwd_mx, &mut post_mx, &bounds)
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_forward_backward, bench_posterior);
 criterion_main!(benches);

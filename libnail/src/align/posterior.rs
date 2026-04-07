@@ -1,4 +1,4 @@
-use crate::align::structs::{DpMatrix, RowBounds};
+use crate::align::structs::{DpMatrix, DpMatrixSparse, RowBounds};
 use crate::structs::Profile;
 
 /// Probability-space posterior decoding.
@@ -12,9 +12,9 @@ use crate::structs::Profile;
 /// All posteriors are normalized so that each row sums to 1.0.
 pub fn posterior(
     profile: &Profile,
-    forward_matrix: &impl DpMatrix,
-    backward_matrix: &impl DpMatrix,
-    posterior_matrix: &mut impl DpMatrix,
+    forward_matrix: &DpMatrixSparse,
+    backward_matrix: &DpMatrixSparse,
+    posterior_matrix: &mut DpMatrixSparse,
     row_bounds: &RowBounds,
 ) {
     posterior_matrix.set_special(row_bounds.seq_start - 1, Profile::E_IDX, 0.0);
@@ -33,47 +33,41 @@ pub fn posterior(
     }
 
     for target_idx in row_bounds.seq_start..=row_bounds.seq_end {
-        let mut denominator: f32 = 0.0;
+        let lp = row_bounds.left_row_bounds[target_idx];
+        let rp = row_bounds.right_row_bounds[target_idx];
 
-        let profile_start_in_current_row = row_bounds.left_row_bounds[target_idx];
-        let profile_end_in_current_row = row_bounds.right_row_bounds[target_idx];
+        posterior_matrix.set_match(target_idx, lp - 1, 0.0);
+        posterior_matrix.set_insert(target_idx, lp - 1, 0.0);
+        posterior_matrix.set_delete(target_idx, lp - 1, 0.0);
 
-        posterior_matrix.set_match(target_idx, profile_start_in_current_row - 1, 0.0);
-        posterior_matrix.set_insert(target_idx, profile_start_in_current_row - 1, 0.0);
-        posterior_matrix.set_delete(target_idx, profile_start_in_current_row - 1, 0.0);
-
-        // Core states: posterior ∝ fwd_stored * bwd_stored
-        // (the cumulative scale factors are the same for fwd[t] and bwd[t]
-        //  within the same row, so they cancel in normalization)
-        for profile_idx in profile_start_in_current_row..profile_end_in_current_row {
-            let m_post = forward_matrix.get_match(target_idx, profile_idx)
-                * backward_matrix.get_match(target_idx, profile_idx);
-            posterior_matrix.set_match(target_idx, profile_idx, m_post);
-
-            let i_post = forward_matrix.get_insert(target_idx, profile_idx)
-                * backward_matrix.get_insert(target_idx, profile_idx);
-            posterior_matrix.set_insert(target_idx, profile_idx, i_post);
-
-            posterior_matrix.set_delete(target_idx, profile_idx, 0.0);
-
-            denominator += m_post + i_post;
+        // Element-wise product for M, I, D over [lp, rp]
+        {
+            let fwd_m = forward_matrix.m_slice(target_idx, lp, rp);
+            let bwd_m = backward_matrix.m_slice(target_idx, lp, rp);
+            let fwd_i = forward_matrix.i_slice(target_idx, lp, rp);
+            let bwd_i = backward_matrix.i_slice(target_idx, lp, rp);
+            let (post_m, post_i, post_d) = posterior_matrix.core_slices_mut(target_idx, lp, rp);
+            post_m
+                .iter_mut()
+                .zip(fwd_m.iter().zip(bwd_m.iter()))
+                .for_each(|(pm, (fm, bm))| *pm = fm * bm);
+            post_i
+                .iter_mut()
+                .zip(fwd_i.iter().zip(bwd_i.iter()))
+                .for_each(|(pi, (fi, bi))| *pi = fi * bi);
+            post_d.fill(0.0);
         }
 
-        // Last profile position
-        let m_post = forward_matrix.get_match(target_idx, profile_end_in_current_row)
-            * backward_matrix.get_match(target_idx, profile_end_in_current_row);
-        posterior_matrix.set_match(target_idx, profile_end_in_current_row, m_post);
+        // Zero insert at last profile position if at end of profile
+        if rp == profile.length {
+            posterior_matrix.set_insert(target_idx, rp, 0.0);
+        }
 
-        let i_post = if profile_end_in_current_row == profile.length {
-            0.0
-        } else {
-            forward_matrix.get_insert(target_idx, profile_end_in_current_row)
-                * backward_matrix.get_insert(target_idx, profile_end_in_current_row)
+        // Denominator from core states
+        let mut denominator: f32 = {
+            let (post_m, post_i, _) = posterior_matrix.core_slices_mut(target_idx, lp, rp);
+            post_m.iter().sum::<f32>() + post_i.iter().sum::<f32>()
         };
-        posterior_matrix.set_insert(target_idx, profile_end_in_current_row, i_post);
-        posterior_matrix.set_delete(target_idx, profile_end_in_current_row, 0.0);
-
-        denominator += m_post + i_post;
 
         posterior_matrix.set_special(target_idx, Profile::E_IDX, 0.0);
 
@@ -116,41 +110,20 @@ pub fn posterior(
         if denominator <= 0.0 {
             continue;
         }
-        denominator = 1.0 / denominator;
+        let inv = 1.0 / denominator;
 
-        for profile_idx in profile_start_in_current_row..profile_end_in_current_row {
-            posterior_matrix.set_match(
-                target_idx,
-                profile_idx,
-                posterior_matrix.get_match(target_idx, profile_idx) * denominator,
-            );
-            posterior_matrix.set_insert(
-                target_idx,
-                profile_idx,
-                posterior_matrix.get_insert(target_idx, profile_idx) * denominator,
-            );
+        // Normalize M over [lp, rp]; normalize I over [lp, rp-1].
+        // I at rp is excluded from normalization (matching original behavior:
+        // it was either 0.0 or contributed to denominator but not re-scaled).
+        {
+            let (post_m, post_i, _) = posterior_matrix.core_slices_mut(target_idx, lp, rp);
+            post_m.iter_mut().for_each(|v| *v *= inv);
+            let i_main_len = post_i.len() - 1;
+            post_i[..i_main_len].iter_mut().for_each(|v| *v *= inv);
         }
 
-        posterior_matrix.set_match(
-            target_idx,
-            profile_end_in_current_row,
-            posterior_matrix.get_match(target_idx, profile_end_in_current_row) * denominator,
-        );
-
-        posterior_matrix.set_special(
-            target_idx,
-            Profile::N_IDX,
-            posterior_matrix.get_special(target_idx, Profile::N_IDX) * denominator,
-        );
-        posterior_matrix.set_special(
-            target_idx,
-            Profile::J_IDX,
-            posterior_matrix.get_special(target_idx, Profile::J_IDX) * denominator,
-        );
-        posterior_matrix.set_special(
-            target_idx,
-            Profile::C_IDX,
-            posterior_matrix.get_special(target_idx, Profile::C_IDX) * denominator,
-        );
+        posterior_matrix.set_special(target_idx, Profile::N_IDX, n_post * inv);
+        posterior_matrix.set_special(target_idx, Profile::J_IDX, j_post * inv);
+        posterior_matrix.set_special(target_idx, Profile::C_IDX, c_post * inv);
     }
 }
