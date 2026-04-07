@@ -1,4 +1,4 @@
-use crate::align::structs::{DpMatrix, RowBounds};
+use crate::align::structs::{DpMatrix, DpMatrixSparse, RowBounds};
 use crate::structs::profile::Transition;
 use crate::structs::{Profile, Sequence};
 
@@ -14,7 +14,7 @@ use super::Nats;
 pub fn forward(
     profile: &Profile,
     target: &Sequence,
-    dp_matrix: &mut impl DpMatrix,
+    dp_matrix: &mut DpMatrixSparse,
     bounds: &RowBounds,
 ) -> Nats {
     // Initial conditions in probability space
@@ -33,6 +33,9 @@ pub fn forward(
     for target_idx in bounds.seq_start..=bounds.seq_end {
         let residue = target.digital_bytes[target_idx] as usize;
         let b_prev = dp_matrix.get_special(target_idx - 1, Profile::B_IDX);
+
+        // core_max tracked inline to avoid a separate read-only pass over the row.
+        let mut core_max = 0.0f32;
 
         for profile_idx in bounds.left_row_bounds[target_idx]..bounds.right_row_bounds[target_idx]
         {
@@ -61,6 +64,8 @@ pub fn forward(
                 + dp_matrix.get_delete(target_idx, profile_idx - 1)
                     * profile.transition_prob(Transition::DD as usize, profile_idx - 1);
             dp_matrix.set_delete(target_idx, profile_idx, d_val);
+
+            core_max = core_max.max(m_val).max(i_val);
 
             // E state (accumulate)
             let e_prev = dp_matrix.get_special(target_idx, Profile::E_IDX);
@@ -98,6 +103,8 @@ pub fn forward(
                 * profile.transition_prob(Transition::DD as usize, profile_idx - 1);
         dp_matrix.set_delete(target_idx, profile_idx, d_val);
 
+        core_max = core_max.max(m_val).max(i_val);
+
         // unrolled E state
         let e_prev = dp_matrix.get_special(target_idx, Profile::E_IDX);
         dp_matrix.set_special(target_idx, Profile::E_IDX, e_prev + m_val + d_val);
@@ -124,11 +131,6 @@ pub fn forward(
         // Scale based on core states to keep match probability alive through
         // insertions. But if C/N are so much larger that scaling by core max
         // would push them past f32 range, fall back to the overall max.
-        let mut core_max = 0.0f32;
-        for p in bounds.left_row_bounds[target_idx]..=bounds.right_row_bounds[target_idx] {
-            core_max = core_max.max(dp_matrix.get_match(target_idx, p));
-            core_max = core_max.max(dp_matrix.get_insert(target_idx, p));
-        }
         let special_max = dp_matrix
             .get_special(target_idx, Profile::C_IDX)
             .max(dp_matrix.get_special(target_idx, Profile::N_IDX));
@@ -140,23 +142,12 @@ pub fn forward(
 
         if max_val > 0.0 {
             let inv = 1.0 / max_val;
-            for p in bounds.left_row_bounds[target_idx]..=bounds.right_row_bounds[target_idx] {
-                dp_matrix.set_match(
-                    target_idx,
-                    p,
-                    dp_matrix.get_match(target_idx, p) * inv,
-                );
-                dp_matrix.set_insert(
-                    target_idx,
-                    p,
-                    dp_matrix.get_insert(target_idx, p) * inv,
-                );
-                dp_matrix.set_delete(
-                    target_idx,
-                    p,
-                    dp_matrix.get_delete(target_idx, p) * inv,
-                );
-            }
+            let lp = bounds.left_row_bounds[target_idx];
+            let rp = bounds.right_row_bounds[target_idx];
+            let (m_sl, i_sl, d_sl) = dp_matrix.core_slices_mut(target_idx, lp, rp);
+            m_sl.iter_mut().for_each(|v| *v *= inv);
+            i_sl.iter_mut().for_each(|v| *v *= inv);
+            d_sl.iter_mut().for_each(|v| *v *= inv);
             dp_matrix.set_special(
                 target_idx,
                 Profile::N_IDX,

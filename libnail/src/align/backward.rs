@@ -1,4 +1,4 @@
-use crate::align::structs::{DpMatrix, RowBounds};
+use crate::align::structs::{DpMatrix, DpMatrixSparse, RowBounds};
 use crate::structs::profile::Transition;
 use crate::structs::{Profile, Sequence};
 
@@ -9,7 +9,7 @@ use crate::structs::{Profile, Sequence};
 pub fn backward(
     profile: &Profile,
     target: &Sequence,
-    dp_matrix: &mut impl DpMatrix,
+    dp_matrix: &mut DpMatrixSparse,
     row_bounds: &RowBounds,
 ) {
     // Terminal conditions in probability space
@@ -65,12 +65,13 @@ pub fn backward(
         );
     }
 
-    // Scale the last row
+    // Scale the last row: I = 0 on this row, so scan only M values for core_max.
     {
-        let mut core_max = 0.0f32;
-        for p in profile_start_on_last_row..=profile_end_on_last_row {
-            core_max = core_max.max(dp_matrix.get_match(row_bounds.seq_end, p));
-        }
+        let core_max = dp_matrix
+            .m_slice(row_bounds.seq_end, profile_start_on_last_row, profile_end_on_last_row)
+            .iter()
+            .cloned()
+            .fold(0.0f32, f32::max);
         let special_max = dp_matrix.get_special(row_bounds.seq_end, Profile::C_IDX)
             .max(dp_matrix.get_special(row_bounds.seq_end, Profile::N_IDX));
         let max_val = if core_max > 0.0 && special_max / core_max < 1e30 {
@@ -80,23 +81,14 @@ pub fn backward(
         };
         if max_val > 0.0 {
             let inv = 1.0 / max_val;
-            for p in profile_start_on_last_row..=profile_end_on_last_row {
-                dp_matrix.set_match(
-                    row_bounds.seq_end,
-                    p,
-                    dp_matrix.get_match(row_bounds.seq_end, p) * inv,
-                );
-                dp_matrix.set_insert(
-                    row_bounds.seq_end,
-                    p,
-                    dp_matrix.get_insert(row_bounds.seq_end, p) * inv,
-                );
-                dp_matrix.set_delete(
-                    row_bounds.seq_end,
-                    p,
-                    dp_matrix.get_delete(row_bounds.seq_end, p) * inv,
-                );
-            }
+            let (m_sl, i_sl, d_sl) = dp_matrix.core_slices_mut(
+                row_bounds.seq_end,
+                profile_start_on_last_row,
+                profile_end_on_last_row,
+            );
+            m_sl.iter_mut().for_each(|v| *v *= inv);
+            i_sl.iter_mut().for_each(|v| *v *= inv);
+            d_sl.iter_mut().for_each(|v| *v *= inv);
             dp_matrix.set_special(
                 row_bounds.seq_end,
                 Profile::N_IDX,
@@ -165,6 +157,9 @@ pub fn backward(
         dp_matrix.set_insert(target_idx, profile_end_on_current_row, 0.0);
         dp_matrix.set_delete(target_idx, profile_end_on_current_row, e_val);
 
+        // core_max tracked inline to avoid a separate read-only pass over the row.
+        let mut core_max = 0.0f32;
+
         // Core states (right to left)
         for profile_idx in (profile_start_on_current_row..=profile_end_on_current_row).rev() {
             let m_next_emit = dp_matrix.get_match(target_idx + 1, profile_idx + 1)
@@ -173,27 +168,21 @@ pub fn backward(
                 * profile.insert_prob(current_residue, profile_idx);
 
             // match state
-            dp_matrix.set_match(
-                target_idx,
-                profile_idx,
-                m_next_emit
-                    * profile.transition_prob(Transition::MM as usize, profile_idx)
-                    + i_next_emit
-                        * profile.transition_prob(Transition::MI as usize, profile_idx)
-                    + e_val
-                    + dp_matrix.get_delete(target_idx, profile_idx + 1)
-                        * profile.transition_prob(Transition::MD as usize, profile_idx),
-            );
+            let m_val = m_next_emit
+                * profile.transition_prob(Transition::MM as usize, profile_idx)
+                + i_next_emit
+                    * profile.transition_prob(Transition::MI as usize, profile_idx)
+                + e_val
+                + dp_matrix.get_delete(target_idx, profile_idx + 1)
+                    * profile.transition_prob(Transition::MD as usize, profile_idx);
+            dp_matrix.set_match(target_idx, profile_idx, m_val);
 
             // insert state
-            dp_matrix.set_insert(
-                target_idx,
-                profile_idx,
-                m_next_emit
-                    * profile.transition_prob(Transition::IM as usize, profile_idx)
-                    + i_next_emit
-                        * profile.transition_prob(Transition::II as usize, profile_idx),
-            );
+            let i_val = m_next_emit
+                * profile.transition_prob(Transition::IM as usize, profile_idx)
+                + i_next_emit
+                    * profile.transition_prob(Transition::II as usize, profile_idx);
+            dp_matrix.set_insert(target_idx, profile_idx, i_val);
 
             // delete state
             dp_matrix.set_delete(
@@ -205,14 +194,11 @@ pub fn backward(
                         * profile.transition_prob(Transition::DD as usize, profile_idx)
                     + e_val,
             );
+
+            core_max = core_max.max(m_val).max(i_val);
         }
 
         // Scale this row — see forward.rs for rationale on core-only scaling
-        let mut core_max = 0.0f32;
-        for p in profile_start_on_current_row..=profile_end_on_current_row {
-            core_max = core_max.max(dp_matrix.get_match(target_idx, p));
-            core_max = core_max.max(dp_matrix.get_insert(target_idx, p));
-        }
         let special_max = dp_matrix.get_special(target_idx, Profile::C_IDX)
             .max(dp_matrix.get_special(target_idx, Profile::N_IDX));
         let max_val = if core_max > 0.0 && special_max / core_max < 1e30 {
@@ -222,23 +208,12 @@ pub fn backward(
         };
         if max_val > 0.0 {
             let inv = 1.0 / max_val;
-            for p in profile_start_on_current_row..=profile_end_on_current_row {
-                dp_matrix.set_match(
-                    target_idx,
-                    p,
-                    dp_matrix.get_match(target_idx, p) * inv,
-                );
-                dp_matrix.set_insert(
-                    target_idx,
-                    p,
-                    dp_matrix.get_insert(target_idx, p) * inv,
-                );
-                dp_matrix.set_delete(
-                    target_idx,
-                    p,
-                    dp_matrix.get_delete(target_idx, p) * inv,
-                );
-            }
+            let lp = profile_start_on_current_row;
+            let rp = profile_end_on_current_row;
+            let (m_sl, i_sl, d_sl) = dp_matrix.core_slices_mut(target_idx, lp, rp);
+            m_sl.iter_mut().for_each(|v| *v *= inv);
+            i_sl.iter_mut().for_each(|v| *v *= inv);
+            d_sl.iter_mut().for_each(|v| *v *= inv);
             dp_matrix.set_special(
                 target_idx,
                 Profile::N_IDX,

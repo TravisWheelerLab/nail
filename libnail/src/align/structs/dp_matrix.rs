@@ -866,31 +866,111 @@ impl DpMatrixSparse {
         self.reset();
     }
 
+    /// Number of (M, I, or D) cells stored for `target_idx`.
+    /// Row block layout: [M...][I...][D...], each section `row_width` cells wide.
+    #[inline]
+    fn row_width(&self, target_idx: usize) -> usize {
+        (self.block_offsets[target_idx + 1] - self.block_offsets[target_idx]) / 3
+    }
+
     #[inline]
     fn match_idx(&self, target_idx: usize, profile_idx: usize) -> usize {
         debug_assert!(target_idx <= self.target_length);
-        // Note: profile_idx may legally equal profile_length + 1 in the backward
-        // algorithm's inner loop (it reads the pad column one past the right bound).
-        // The .min(next_block_offset) clamp below makes this safe; the pad cell
-        // holds the fill_value (-inf for log-space, 0.0 for prob-space).
-
         let block_offset = self.block_offsets[target_idx];
-        let next_block_offset = self.block_offsets[target_idx + 1];
+        let row_width = self.row_width(target_idx);
         let row_offset = self.row_start_offsets[target_idx];
-
-        // the saturating sub prevents moving left out of the block
-        // the min with the next block offset prevents moving right out of the block
-        (block_offset + (3 * (profile_idx.saturating_sub(row_offset)))).min(next_block_offset)
+        let delta = profile_idx.saturating_sub(row_offset);
+        // Out-of-bounds: return pad cell at offset 0 (always fill_value, never written).
+        if delta >= row_width {
+            block_offset
+        } else {
+            block_offset + delta
+        }
     }
 
     #[inline]
     fn insert_idx(&self, target_idx: usize, profile_idx: usize) -> usize {
-        self.match_idx(target_idx, profile_idx) + 1
+        let block_offset = self.block_offsets[target_idx];
+        let row_width = self.row_width(target_idx);
+        let row_offset = self.row_start_offsets[target_idx];
+        let i_base = block_offset + row_width;
+        let delta = profile_idx.saturating_sub(row_offset);
+        if delta >= row_width {
+            i_base
+        } else {
+            i_base + delta
+        }
     }
 
     #[inline]
     fn delete_idx(&self, target_idx: usize, profile_idx: usize) -> usize {
-        self.match_idx(target_idx, profile_idx) + 2
+        let block_offset = self.block_offsets[target_idx];
+        let row_width = self.row_width(target_idx);
+        let row_offset = self.row_start_offsets[target_idx];
+        let d_base = block_offset + 2 * row_width;
+        let delta = profile_idx.saturating_sub(row_offset);
+        if delta >= row_width {
+            d_base
+        } else {
+            d_base + delta
+        }
+    }
+
+    /// Contiguous slice of M values for `target_idx` from `prf_start..=prf_end`.
+    #[inline]
+    pub fn m_slice(&self, target_idx: usize, prf_start: usize, prf_end: usize) -> &[f32] {
+        let block = self.block_offsets[target_idx];
+        let row_start = self.row_start_offsets[target_idx];
+        &self.core_data[block + (prf_start - row_start)..=block + (prf_end - row_start)]
+    }
+
+    /// Contiguous slice of I values for `target_idx` from `prf_start..=prf_end`.
+    #[inline]
+    pub fn i_slice(&self, target_idx: usize, prf_start: usize, prf_end: usize) -> &[f32] {
+        let block = self.block_offsets[target_idx];
+        let row_width = self.row_width(target_idx);
+        let row_start = self.row_start_offsets[target_idx];
+        let i_base = block + row_width;
+        &self.core_data[i_base + (prf_start - row_start)..=i_base + (prf_end - row_start)]
+    }
+
+    /// Contiguous slice of D values for `target_idx` from `prf_start..=prf_end`.
+    #[inline]
+    pub fn d_slice(&self, target_idx: usize, prf_start: usize, prf_end: usize) -> &[f32] {
+        let block = self.block_offsets[target_idx];
+        let row_width = self.row_width(target_idx);
+        let row_start = self.row_start_offsets[target_idx];
+        let d_base = block + 2 * row_width;
+        &self.core_data[d_base + (prf_start - row_start)..=d_base + (prf_end - row_start)]
+    }
+
+    /// Mutable slices of (M, I, D) for `target_idx` from `prf_start..=prf_end`.
+    /// All three returned together to avoid simultaneous borrow conflicts.
+    #[inline]
+    pub fn core_slices_mut(
+        &mut self,
+        target_idx: usize,
+        prf_start: usize,
+        prf_end: usize,
+    ) -> (&mut [f32], &mut [f32], &mut [f32]) {
+        let block = self.block_offsets[target_idx];
+        let row_width = self.row_width(target_idx);
+        let row_start = self.row_start_offsets[target_idx];
+        let offset = prf_start - row_start;
+        let len = prf_end - prf_start + 1;
+
+        let m_start = block + offset;
+        let i_start = block + row_width + offset;
+        let d_start = block + 2 * row_width + offset;
+
+        // Split the flat vec into three non-overlapping mutable slices.
+        let (left, right) = self.core_data.split_at_mut(i_start);
+        let (mid, right) = right.split_at_mut(d_start - i_start);
+        (
+            &mut left[m_start..m_start + len],
+            &mut mid[..len],
+            &mut right[..len],
+        )
     }
 }
 
@@ -1124,6 +1204,11 @@ impl AdMatrixLinear {
         seq_start: usize,
         seq_end: usize,
     ) -> (&mut [f32], &mut [f32], &mut [f32]) {
+        // trim_ad can produce inverted bounds (seq_start > seq_end) when an entire
+        // AD is pruned. Return empty slices in that case so callers are safe.
+        if seq_start > seq_end {
+            return (&mut [], &mut [], &mut []);
+        }
         let [m, i, d] = &mut self.core_data[ad_idx % 3];
         (
             &mut m[seq_start..=seq_end],

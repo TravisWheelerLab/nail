@@ -37,3 +37,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "cloud_search"
 harness = false
+
+[[bench]]
+name = "forward_backward"
+harness = false
