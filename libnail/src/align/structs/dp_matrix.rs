@@ -852,8 +852,15 @@ impl DpMatrixSparse {
         self.special_data.resize(new_special_length, fill);
         self.row_scale_factors.resize(new_target_length + 1, 1.0);
 
-        self.core_data.shrink_to_fit();
-        self.special_data.shrink_to_fit();
+        // Only shrink when significantly over-allocated, to avoid repeated
+        // malloc/free churn across seeds of similar size while still bounding
+        // per-thread memory when a large seed was an outlier.
+        if self.core_data.capacity() > 4 * self.core_data.len() {
+            self.core_data.shrink_to_fit();
+        }
+        if self.special_data.capacity() > 4 * self.special_data.len() {
+            self.special_data.shrink_to_fit();
+        }
 
         self.row_start_offsets = row_offsets;
         self.block_offsets = block_offsets;
