@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     fs::File,
     io::{Read, Seek, SeekFrom},
     marker::PhantomData,
@@ -32,14 +33,14 @@ const fn tail(bytes: &'static [u8]) -> &'static [u8] {
     unsafe { core::slice::from_raw_parts(bytes.as_ptr().add(1), bytes.len() - 1) }
 }
 
-pub trait RecordParser: Send + Sync + 'static {
+pub trait RecordParser: Clone + Send + Sync + 'static {
     const DELIM: &'static [u8];
     const DELIM_HEAD: u8 = Self::DELIM[0];
     const DELIM_TAIL: &'static [u8] = tail(Self::DELIM);
     const DELIM_LEN: usize = Self::DELIM.len();
     const DELIM_TAIL_LEN: usize = Self::DELIM_TAIL.len();
     const DELIM_TYPE: Delimiter;
-    type Record;
+    type Record: Display;
 
     fn new(start_pos: u64) -> Self;
     fn offset(&mut self, line: &[u8], start: u64) -> Option<(String, Offset)>;

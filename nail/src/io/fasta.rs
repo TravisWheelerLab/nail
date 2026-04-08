@@ -16,6 +16,7 @@ use crate::io::{ByteBufferExt, DatabaseIter, Offset};
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
+#[derive(Clone)]
 pub struct FastaParser {
     name: String,
     offset: Offset,

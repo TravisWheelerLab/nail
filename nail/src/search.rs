@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::{Fasta, P7Hmm, Seeds2};
+use crate::io::{Fasta, P7Hmm, Seeds};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
     seed_max_seqs, seed_progressive, DefaultAlignStage, DefaultCloudSearchStage,
@@ -58,9 +58,9 @@ pub fn seed(
     targets: &Fasta,
     stats: &mut Stats,
     args: &mut SearchArgs,
-) -> anyhow::Result<Seeds2> {
+) -> anyhow::Result<Seeds> {
     match args.io_args.seeds_input_path {
-        Some(ref path) => Seeds2::from_path(path),
+        Some(ref path) => Seeds::from_path(path),
         None => {
             let now = Instant::now();
 

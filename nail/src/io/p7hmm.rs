@@ -18,11 +18,13 @@ use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
 
+#[derive(Clone)]
 enum P7HmmParserState {
     Name,
     Delim,
 }
 
+#[derive(Clone)]
 pub struct P7HmmParser {
     state: P7HmmParserState,
     name: String,

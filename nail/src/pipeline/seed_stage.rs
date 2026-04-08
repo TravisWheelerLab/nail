@@ -5,7 +5,7 @@ use libnail::align::{structs::Seed, Bits};
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, Seeds2},
+    io::{Database, Fasta, Seeds},
     mmseqs::{
         consts::{ALIGN_DBTYPE, PREFILTER_DBTYPE},
         run_mmseqs_align, run_mmseqs_convertalis, run_mmseqs_prefilter,
@@ -34,7 +34,7 @@ pub fn seed_max_seqs(
     db_paths: &MmseqsDbPaths,
     stats: &mut Stats,
     args: &SearchArgs,
-) -> anyhow::Result<Seeds2> {
+) -> anyhow::Result<Seeds> {
     let time_start = Instant::now();
 
     // ---
@@ -97,7 +97,7 @@ pub fn seed_max_seqs(
     // ---
 
     let now = Instant::now();
-    let seeds = Seeds2::from_path(align_tsv).context("failed to build seeds")?;
+    let seeds = Seeds::from_path(align_tsv).context("failed to build seeds")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
@@ -111,7 +111,7 @@ pub fn seed_progressive(
     db_paths: &MmseqsDbPaths,
     stats: &mut Stats,
     args: &SearchArgs,
-) -> anyhow::Result<Seeds2> {
+) -> anyhow::Result<Seeds> {
     let time_start = Instant::now();
 
     db_paths.prog_dir.create_dir()?;
@@ -317,7 +317,7 @@ pub fn seed_progressive(
     // ---
 
     let now = Instant::now();
-    let seeds = Seeds2::from_path(align_tsv).context("failed to build seeds")?;
+    let seeds = Seeds::from_path(align_tsv).context("failed to build seeds")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
