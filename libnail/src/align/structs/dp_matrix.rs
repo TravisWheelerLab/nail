@@ -1217,6 +1217,96 @@ impl AdMatrixLinear {
         )
     }
 
+    /// Immutable slice of a background state over `[seq_start, seq_end]`.
+    #[inline]
+    pub fn bg_slice(&self, state: usize, seq_start: usize, seq_end: usize) -> &[f32] {
+        &self.background_data[state][seq_start..=seq_end]
+    }
+
+    /// Mutable slice of a background state over `[seq_start, seq_end]`.
+    #[inline]
+    pub fn bg_slice_mut(&mut self, state: usize, seq_start: usize, seq_end: usize) -> &mut [f32] {
+        &mut self.background_data[state][seq_start..=seq_end]
+    }
+
+    /// Add M[ad_idx][i] + D[ad_idx][i] into E[i] for i in seq_start..=seq_end.
+    /// Accesses core_data and background_data simultaneously — safe because they are distinct fields.
+    #[inline]
+    pub fn accumulate_e(&mut self, ad_idx: usize, seq_start: usize, seq_end: usize) {
+        let row = ad_idx % 3;
+        let len = seq_end - seq_start + 1;
+        for i in 0..len {
+            let si = seq_start + i;
+            self.background_data[BackgroundState::E as usize][si] +=
+                self.core_data[row][0][si] + self.core_data[row][2][si];
+        }
+    }
+
+    /// Add m_src[i] * bm[i] * m_emit[i] into B[seq_start + i] for i in 0..len.
+    /// Used by cloud_search_bwd to accumulate the backward B state.
+    #[inline]
+    pub fn accumulate_b(&mut self, seq_start: usize, m_src: &[f32], bm: &[f32], m_emit: &[f32]) {
+        let len = m_src.len();
+        let b = &mut self.background_data[BackgroundState::B as usize];
+        for i in 0..len {
+            b[seq_start + i] += m_src[i] * bm[i] * m_emit[i];
+        }
+    }
+
+    /// Slice-based trim_ad for AdMatrixLinear.
+    /// Reads M/I/D as contiguous slices; avoids per-cell Index computation.
+    pub fn trim_ad_linear(&mut self, bound: &mut Bound, trim_thresh: f32) {
+        if bound.is_empty() {
+            return;
+        }
+        let ad_idx = bound.idx();
+        let ss = bound.0.seq_idx;
+        let se = bound.1.seq_idx;
+        let len = se - ss + 1;
+        let row = ad_idx % 3;
+
+        // Left trim: scan from low seq_idx (high prf_idx) end
+        let left_trim = (0..len)
+            .take_while(|&i| {
+                let si = ss + i;
+                self.core_data[row][0][si]
+                    .max(self.core_data[row][1][si])
+                    .max(self.core_data[row][2][si])
+                    < trim_thresh
+            })
+            .count();
+
+        if left_trim > 0 {
+            let sl = ss..ss + left_trim;
+            self.core_data[row][0][sl.clone()].fill(0.0);
+            self.core_data[row][1][sl.clone()].fill(0.0);
+            self.core_data[row][2][sl].fill(0.0);
+        }
+
+        // Right trim: scan from high seq_idx end (over the remaining untrimmed range)
+        let right_trim = (0..len - left_trim)
+            .take_while(|&i| {
+                let si = se - i;
+                self.core_data[row][0][si]
+                    .max(self.core_data[row][1][si])
+                    .max(self.core_data[row][2][si])
+                    < trim_thresh
+            })
+            .count();
+
+        if right_trim > 0 {
+            let sl = (se + 1 - right_trim)..=se;
+            self.core_data[row][0][sl.clone()].fill(0.0);
+            self.core_data[row][1][sl.clone()].fill(0.0);
+            self.core_data[row][2][sl].fill(0.0);
+        }
+
+        bound.0.prf_idx -= left_trim;
+        bound.0.seq_idx += left_trim;
+        bound.1.prf_idx += right_trim;
+        bound.1.seq_idx -= right_trim;
+    }
+
     pub fn dump(&self, out: &mut impl Write) -> anyhow::Result<()> {
         writeln!(out, "seq_len: {}", self.seq_len)?;
 
