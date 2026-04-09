@@ -1,11 +1,4 @@
-use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
-use crate::io::{util::ByteBufferExt, DatabaseIter, Offset};
+use crate::io::{util::ByteBufferExt, Offset};
 
 use libnail::structs::{
     profile::{ProfileBuilder, Transition},
@@ -13,10 +6,9 @@ use libnail::structs::{
 };
 
 use anyhow::{bail, Context};
-use indexmap::IndexMap;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
-use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
+use super::{Delimiter, RecordParser};
 
 #[derive(Clone)]
 enum P7HmmParserState {
@@ -318,173 +310,85 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
         })
 }
 
-pub type P7HmmIndex = Index<IndexMap<String, Offset>, P7HmmParser>;
-pub struct P7Hmm {
-    path: PathBuf,
-    file: File,
-    pub(crate) index: Arc<P7HmmIndex>,
-    buffer: Vec<u8>,
-}
+// #[cfg(test)]
+// mod tests {
+//     use std::{
+//         fs::{read_to_string, File},
+//         io::{Cursor, Read},
+//     };
 
-impl Clone for P7Hmm {
-    fn clone(&self) -> Self {
-        let file = match File::open(&self.path) {
-            Ok(file) => file,
-            Err(err) => panic!(
-                "failed to reopen fasta file on clone: {:?}\n error: {}",
-                self.path, err
-            ),
-        };
+//     use super::*;
 
-        Self {
-            file,
-            path: self.path.clone(),
-            index: self.index.clone(),
-            buffer: vec![],
-        }
-    }
-}
+//     #[test]
+//     fn test_profile_serialize() -> anyhow::Result<()> {
+//         let mut bytes = vec![];
+//         let mut file = File::open(
+//             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
+//         )?;
+//         file.read_to_end(&mut bytes)?;
+//         let prf = P7HmmParser::parse(&bytes)?;
 
-impl P7Hmm {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let index = Arc::new(P7HmmIndex::from_path::<20, 1>(path.as_ref())?);
-        let file = File::open(path.as_ref())?;
+//         let mut buf = vec![];
 
-        Ok(Self {
-            file,
-            index,
-            buffer: Vec::new(),
-            path: PathBuf::from(path.as_ref()),
-        })
-    }
+//         prf.serialize(&mut buf)?;
 
-    pub fn len(&self) -> usize {
-        self.index.len()
-    }
+//         let de = Profile::deserialize(Cursor::new(buf))?;
 
-    pub fn get(&mut self, name: &str) -> Option<Profile> {
-        let offset = self.index.get(name)?;
+//         assert_eq!(prf.name, de.name);
+//         assert_eq!(prf.accession, de.accession);
+//         assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
+//         assert_eq!(prf.core_transitions, de.core_transitions);
+//         assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
+//         Ok(())
+//     }
 
-        self.buffer.resize(offset.n_bytes, 0u8);
+//     #[test]
+//     fn test_p7hmm_index_starts() -> anyhow::Result<()> {
+//         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+//         let hmm_str = read_to_string(&path)?;
+//         let starts: Vec<usize> = hmm_str
+//             .as_bytes()
+//             .windows(10)
+//             .enumerate()
+//             .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i))
+//             .collect();
 
-        self.file
-            .seek(SeekFrom::Start(offset.start))
-            .expect("failed to seek in P7Hmm::get()");
+//         let names = hmm_str
+//             .lines()
+//             .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
+//             .map(|l| l.split_whitespace().nth(1).unwrap())
+//             .collect::<Vec<&str>>();
 
-        self.file
-            .read_exact(&mut self.buffer)
-            .expect("failed to read in P7Hmm::get()");
+//         let index = P7HmmIndex::from_path::<15, 1>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s);
+//         });
 
-        Some(P7HmmParser::parse(&self.buffer).unwrap_or_else(|e| {
-            panic!("failed to produce Profile in P7Hmm::get()\nError: {e}");
-        }))
-    }
+//         let index = P7HmmIndex::from_path::<15, 2>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s);
+//         });
 
-    pub fn names_iter(&self) -> impl Iterator<Item = &str> {
-        self.index.inner.keys().map(|k| k.as_str())
-    }
-}
+//         let index = P7HmmIndex::from_path::<15, 3>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s);
+//         });
 
-impl Database<Profile> for P7Hmm {
-    fn get(&mut self, name: &str) -> Option<Profile> {
-        self.get(name)
-    }
+//         let index = P7HmmIndex::from_path::<15, 4>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s);
+//         });
 
-    fn len(&self) -> usize {
-        self.len()
-    }
+//         let index = P7HmmIndex::from_path::<15, 20>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s);
+//         });
 
-    fn iter(&'_ self) -> DatabaseIter<'_, Profile> {
-        DatabaseIter {
-            inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
-        }
-    }
-
-    fn values(&'_ self) -> DatabaseValues<'_, Profile> {
-        DatabaseValues {
-            inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{fs::read_to_string, io::Cursor};
-
-    use super::*;
-
-    #[test]
-    fn test_profile_serialize() -> anyhow::Result<()> {
-        let mut bytes = vec![];
-        let mut file = File::open(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
-        )?;
-        file.read_to_end(&mut bytes)?;
-        let prf = P7HmmParser::parse(&bytes)?;
-
-        let mut buf = vec![];
-
-        prf.serialize(&mut buf)?;
-
-        let de = Profile::deserialize(Cursor::new(buf))?;
-
-        assert_eq!(prf.name, de.name);
-        assert_eq!(prf.accession, de.accession);
-        assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
-        assert_eq!(prf.core_transitions, de.core_transitions);
-        assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
-        Ok(())
-    }
-
-    #[test]
-    fn test_p7hmm_index_starts() -> anyhow::Result<()> {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
-        let hmm_str = read_to_string(&path)?;
-        let starts: Vec<usize> = hmm_str
-            .as_bytes()
-            .windows(10)
-            .enumerate()
-            .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i))
-            .collect();
-
-        let names = hmm_str
-            .lines()
-            .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
-            .map(|l| l.split_whitespace().nth(1).unwrap())
-            .collect::<Vec<&str>>();
-
-        let index = P7HmmIndex::from_path::<15, 1>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 2>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 3>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 4>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 20>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }

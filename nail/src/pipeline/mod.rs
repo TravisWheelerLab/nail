@@ -1,5 +1,4 @@
 mod cloud_stage;
-use anyhow::Context;
 pub use cloud_stage::*;
 
 mod seed_stage;
@@ -20,6 +19,8 @@ use libnail::{
 };
 
 use crate::{io::Fasta, stats::Stats};
+
+use anyhow::Context;
 
 pub enum StageResult<D, S> {
     Filtered { stats: S },
@@ -131,7 +132,7 @@ impl Pipeline {
         }
 
         let prf = self.prf.as_mut().expect("no prf");
-        let seq = self.targets.get(&seed.seq).context("no seq")?;
+        let seq = self.targets.get(&seed.seq).context("no seq")??;
 
         // configuring for the target length adjusts special state transitions
         prf.configure_for_target_length(seq.length);

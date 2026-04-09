@@ -1,43 +1,30 @@
-use super::{Database, DatabaseValues, Fasta, P7Hmm};
-use libnail::structs::{Profile, Sequence};
+use crate::io::{
+    RecordParser, {Database, DatabaseIter},
+};
 
 use rayon::iter::{
     plumbing::{bridge, Consumer, Producer, ProducerCallback, UnindexedConsumer},
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
 
-impl Fasta {
-    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, Sequence> {
+impl<R> Database<R>
+where
+    R: RecordParser,
+{
+    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, R> {
         DatabaseParIter {
-            inner: Box::new(self.clone()),
-            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
+            inner: self.clone(),
+            names: self.index.keys().map(|s| s.as_str()).collect(),
         }
     }
 }
 
-impl<'a> IntoParallelIterator for &'a Fasta {
-    type Iter = DatabaseParIter<'a, Sequence>;
-
-    type Item = Sequence;
-
-    fn into_par_iter(self) -> Self::Iter {
-        self.par_iter()
-    }
-}
-
-impl P7Hmm {
-    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, Profile> {
-        DatabaseParIter {
-            inner: Box::new(self.clone()),
-            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
-        }
-    }
-}
-
-impl<'a> IntoParallelIterator for &'a P7Hmm {
-    type Iter = DatabaseParIter<'a, Profile>;
-
-    type Item = Profile;
+impl<'a, R> IntoParallelIterator for &'a Database<R>
+where
+    R: RecordParser,
+{
+    type Iter = DatabaseParIter<'a, R>;
+    type Item = anyhow::Result<R::Record>;
 
     fn into_par_iter(self) -> Self::Iter {
         self.par_iter()
@@ -46,16 +33,19 @@ impl<'a> IntoParallelIterator for &'a P7Hmm {
 
 /////
 
-pub struct DatabaseParIter<'a, T> {
-    pub(super) inner: Box<dyn Database<T>>,
+pub struct DatabaseParIter<'a, R>
+where
+    R: RecordParser,
+{
+    pub(super) inner: Database<R>,
     pub(super) names: Vec<&'a str>,
 }
 
-impl<'a, T> ParallelIterator for DatabaseParIter<'a, T>
+impl<'a, R> ParallelIterator for DatabaseParIter<'a, R>
 where
-    T: Send + Sync,
+    R: RecordParser,
 {
-    type Item = T;
+    type Item = anyhow::Result<R::Record>;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
     where
@@ -65,9 +55,9 @@ where
     }
 }
 
-impl<'a, T> IndexedParallelIterator for DatabaseParIter<'a, T>
+impl<'a, R> IndexedParallelIterator for DatabaseParIter<'a, R>
 where
-    T: Send + Sync,
+    R: RecordParser,
 {
     fn len(&self) -> usize {
         self.inner.len()
@@ -87,20 +77,34 @@ where
     }
 }
 
-pub struct DatabaseProducer<'a, T> {
-    inner: Box<dyn Database<T>>,
+pub struct DatabaseProducer<'a, R>
+where
+    R: RecordParser,
+{
+    inner: Database<R>,
     names: &'a [&'a str],
 }
 
-impl<'a, T> Producer for DatabaseProducer<'a, T> {
-    type Item = T;
+impl<'a, R> Producer for DatabaseProducer<'a, R>
+where
+    R: RecordParser,
+{
+    type Item = anyhow::Result<R::Record>;
 
-    type IntoIter = DatabaseValues<'a, T>;
+    // note: at the time of writing, opaque types are unstable in associated
+    //       types e.g. something like this isn't allowed here:
+    //         type IntoIter = DatabaseIter<'a, R, impl DoubleEndedIter<Item = &str>>;
+    //
+    //       but, even if this feature is stablized, it might not fly since:
+    //         names.iter() seems to produce Iter<Item = &&str>
+    type IntoIter = DatabaseIter<'a, R, std::iter::Copied<std::slice::Iter<'a, &'a str>>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        DatabaseValues {
+        DatabaseIter {
             inner: self.inner,
-            names_iter: Box::new(self.names.iter().copied()),
+            // note: copied() is needed here, since
+            // we have &[&str] instead of Vec<&Str>
+            keys: self.names.iter().copied(),
         }
     }
 

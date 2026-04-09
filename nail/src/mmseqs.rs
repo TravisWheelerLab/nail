@@ -7,11 +7,13 @@ use std::{
     process::Command,
 };
 
-use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
+use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO};
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, ReadSeekExt, ReadState},
+    io::{
+        ReadSeekExt, ReadState, {Fasta, P7Hmm},
+    },
     util::{CommandExt, PathExt},
 };
 
@@ -457,7 +459,8 @@ pub fn write_mmseqs_sequence_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (seq_count, seq) in sequences.values().enumerate() {
+    for (seq_count, seq) in sequences.iter().enumerate() {
+        let seq = seq?;
         db.write_all(&seq.utf8_bytes[1..])?;
         db.write_all(&[10u8, 0u8])?;
 
@@ -482,7 +485,7 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: impl Iterator<Item = Profile>,
+    profiles: &P7Hmm,
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
@@ -511,7 +514,8 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (prf_cnt, prf) in profiles.enumerate() {
+    for (prf_cnt, prf) in profiles.iter().enumerate() {
+        let prf = prf?;
         for prf_idx in 1..=prf.length {
             for byte in (0..20)
                 .map(|residue| Nats(prf.match_score(residue, prf_idx)))

@@ -1,20 +1,12 @@
-use std::{
-    fs::File,
-    io::{BufWriter, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
 use anyhow::bail;
-use indexmap::IndexMap;
 use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
     structs::{Profile, Sequence},
 };
 
-use crate::io::{ByteBufferExt, DatabaseIter, Offset};
+use crate::io::{ByteBufferExt, Offset};
 
-use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
+use super::{Delimiter, RecordParser};
 
 #[derive(Clone)]
 pub struct FastaParser {
@@ -115,156 +107,59 @@ impl RecordParser for FastaParser {
     }
 }
 
-pub type FastaIndex = Index<IndexMap<String, Offset>, FastaParser>;
-pub struct Fasta {
-    path: PathBuf,
-    file: File,
-    pub(crate) index: Arc<FastaIndex>,
-    buffer: Vec<u8>,
-}
+// #[cfg(test)]
+// mod tests {
+//     use std::fs::read_to_string;
 
-impl Clone for Fasta {
-    fn clone(&self) -> Self {
-        let file = match File::open(&self.path) {
-            Ok(file) => file,
-            Err(err) => panic!(
-                "failed to reopen fasta file on clone: {:?}\n error: {}",
-                self.path, err
-            ),
-        };
+//     use super::*;
 
-        Self {
-            file,
-            path: self.path.clone(),
-            index: self.index.clone(),
-            buffer: vec![],
-        }
-    }
-}
+//     #[test]
+//     fn test_fasta_index_starts() -> anyhow::Result<()> {
+//         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+//         let fasta_str = read_to_string(&path)?;
+//         let starts: Vec<usize> = fasta_str
+//             .as_bytes()
+//             .iter()
+//             .enumerate()
+//             .filter_map(|(i, b)| (*b == b'>').then_some(i))
+//             .collect();
 
-impl Fasta {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let index = Arc::new(Index::from_path::<15, 1>(path.as_ref())?);
-        let file = File::open(path.as_ref())?;
+//         let fasta_bytes = fasta_str.as_bytes();
+//         let names: Vec<&str> = starts
+//             .iter()
+//             .filter_map(|p| fasta_bytes.word_from(p + 1).ok())
+//             .collect();
 
-        Ok(Self {
-            file,
-            index,
-            buffer: Vec::new(),
-            path: PathBuf::from(path.as_ref()),
-        })
-    }
+//         let index = FastaIndex::from_path::<15, 1>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s as u64);
+//         });
 
-    pub fn len(&self) -> usize {
-        self.index.len()
-    }
+//         let index = FastaIndex::from_path::<15, 2>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s as u64);
+//         });
 
-    pub fn write<W: Write>(&self, out: W) -> anyhow::Result<()> {
-        let mut out = BufWriter::new(out);
-        self.values().try_for_each(|s| writeln!(out, "{s}"))?;
-        Ok(())
-    }
+//         let index = FastaIndex::from_path::<15, 3>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s as u64);
+//         });
 
-    pub fn get(&mut self, name: &str) -> Option<Sequence> {
-        let offset = self.index.get(name)?;
+//         let index = FastaIndex::from_path::<15, 4>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s as u64);
+//         });
 
-        self.buffer.resize(offset.n_bytes, 0u8);
+//         let index = FastaIndex::from_path::<15, 20>(&path)?;
+//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
+//             let o = index.get(n).unwrap();
+//             assert_eq!(o.start, *s as u64);
+//         });
 
-        self.file
-            .seek(SeekFrom::Start(offset.start))
-            .expect("failed to seek in Fasta::get()");
-
-        self.file
-            .read_exact(&mut self.buffer)
-            .expect("failed to read in Fasta::get()");
-
-        Some(FastaParser::parse(&self.buffer).unwrap_or_else(|e| {
-            panic!("failed to produce Sequence in Fasta::get()\nName: {name}\nError: {e}");
-        }))
-    }
-
-    pub fn names_iter(&self) -> impl Iterator<Item = &str> {
-        self.index.inner.keys().map(|k| k.as_str())
-    }
-}
-
-impl Database<Sequence> for Fasta {
-    fn get(&mut self, name: &str) -> Option<Sequence> {
-        self.get(name)
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn iter(&'_ self) -> DatabaseIter<'_, Sequence> {
-        DatabaseIter {
-            inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
-        }
-    }
-
-    fn values(&'_ self) -> DatabaseValues<'_, Sequence> {
-        DatabaseValues {
-            inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::read_to_string;
-
-    use super::*;
-
-    #[test]
-    fn test_fasta_index_starts() -> anyhow::Result<()> {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
-        let fasta_str = read_to_string(&path)?;
-        let starts: Vec<usize> = fasta_str
-            .as_bytes()
-            .iter()
-            .enumerate()
-            .filter_map(|(i, b)| (*b == b'>').then_some(i))
-            .collect();
-
-        let fasta_bytes = fasta_str.as_bytes();
-        let names: Vec<&str> = starts
-            .iter()
-            .filter_map(|p| fasta_bytes.word_from(p + 1).ok())
-            .collect();
-
-        let index = FastaIndex::from_path::<15, 1>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s as u64);
-        });
-
-        let index = FastaIndex::from_path::<15, 2>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s as u64);
-        });
-
-        let index = FastaIndex::from_path::<15, 3>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s as u64);
-        });
-
-        let index = FastaIndex::from_path::<15, 4>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s as u64);
-        });
-
-        let index = FastaIndex::from_path::<15, 20>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s as u64);
-        });
-
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }

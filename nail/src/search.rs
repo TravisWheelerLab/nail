@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::args::SearchArgs;
-use crate::io::{Fasta, P7Hmm, Seeds};
+use crate::io::Seeds;
+use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
     seed_max_seqs, seed_progressive, DefaultAlignStage, DefaultCloudSearchStage,
@@ -104,10 +105,11 @@ pub fn build_pipeline(
         match queries {
             Queries::Sequence(fasta) => fasta
                 .par_iter()
-                .filter_map(|s| Profile::from_blosum_62_and_seq(&s).ok())
-                .collect::<Vec<_>>(),
-            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<Vec<_>>(),
+                .map(|s| Profile::from_blosum_62_and_seq(&s?))
+                .collect::<anyhow::Result<Vec<_>>>(),
+            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
         }
+        .context("failed to build profiles")?
         .into_iter()
         .map(|p| (p.name.clone(), p))
         .collect(),

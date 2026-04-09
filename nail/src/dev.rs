@@ -9,7 +9,10 @@ use libnail::{
     },
     structs::Profile,
 };
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use rayon::{
+    iter::{IntoParallelRefIterator, ParallelIterator},
+    slice::ParallelSlice,
+};
 use regex::Regex;
 use thread_local::ThreadLocal;
 
@@ -84,10 +87,11 @@ pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
     let mut profiles: HashMap<String, Profile> = match queries {
         Queries::Sequence(fasta) => fasta
             .par_iter()
-            .filter_map(|s| Profile::from_blosum_62_and_seq(&s).ok())
-            .collect::<Vec<_>>(),
-        Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<Vec<_>>(),
+            .map(|s| Profile::from_blosum_62_and_seq(&s?))
+            .collect::<anyhow::Result<Vec<_>>>(),
+        Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
     }
+    .context("failed to build profiles")?
     .into_iter()
     .map(|p| (p.name.clone(), p))
     .collect();
@@ -113,7 +117,7 @@ pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
     let file_re = Regex::new(r"[^A-Za-z0-9._-]").unwrap();
     '_main: for seed in seeds.seeds.iter() {
         let prf = profiles.get_mut(&seed.prf).unwrap();
-        let seq = targets.get(&seed.seq).unwrap();
+        let seq = targets.get(&seed.seq).unwrap().unwrap();
 
         let prefix = mx_dir.join(format!(
             "{}-{}",

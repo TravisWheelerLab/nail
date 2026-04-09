@@ -5,7 +5,7 @@ use libnail::align::{structs::Seed, Bits};
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, Seeds},
+    io::{Fasta, Seeds},
     mmseqs::{
         consts::{ALIGN_DBTYPE, PREFILTER_DBTYPE},
         run_mmseqs_align, run_mmseqs_convertalis, run_mmseqs_prefilter,
@@ -44,7 +44,7 @@ pub fn seed_max_seqs(
     match queries {
         Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
-        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm.values(), &db_paths.query_db)
+        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
     }
 
@@ -123,7 +123,7 @@ pub fn seed_progressive(
     match queries {
         Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
-        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm.values(), &db_paths.query_db)
+        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
     }
 
