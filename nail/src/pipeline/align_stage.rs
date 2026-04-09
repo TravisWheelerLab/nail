@@ -75,6 +75,9 @@ pub struct DefaultAlignStage {
     forward_p_value_threshold: f64,
     target_count: usize,
     config: AlignConfig,
+    null_two_match_sums: Vec<f32>,
+    null_two_insert_sums: Vec<f32>,
+    null_two_core_posteriors: Vec<f32>,
 }
 
 impl DefaultAlignStage {
@@ -184,6 +187,9 @@ impl AlignStage for DefaultAlignStage {
                 profile,
                 target,
                 bounds,
+                &mut self.null_two_match_sums,
+                &mut self.null_two_insert_sums,
+                &mut self.null_two_core_posteriors,
             ));
             stats.null_two_time(now.elapsed());
             score

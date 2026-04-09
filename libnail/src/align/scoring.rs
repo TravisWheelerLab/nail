@@ -223,12 +223,17 @@ pub fn null_two_score(
     profile: &Profile,
     target: &Sequence,
     row_bounds: &RowBounds,
+    match_sums: &mut Vec<f32>,
+    insert_sums: &mut Vec<f32>,
+    core_posteriors: &mut Vec<f32>,
 ) -> Nats {
-    // TODO: prevent these allocations?
-    let mut expected_prob_ratios: Vec<f32> = vec![0.0; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
-    let mut match_sums: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut insert_sums: Vec<f32> = vec![0.0; profile.length + 1];
-    let mut core_posteriors: Vec<f32> = vec![0.0; target.length + 1];
+    let mut expected_prob_ratios = [0.0f32; Profile::MAX_DEGENERATE_ALPHABET_SIZE];
+    match_sums.clear();
+    match_sums.resize(profile.length + 1, 0.0);
+    insert_sums.clear();
+    insert_sums.resize(profile.length + 1, 0.0);
+    core_posteriors.clear();
+    core_posteriors.resize(target.length + 1, 0.0);
     let mut core_state_sum: f32 = 0.0;
 
     // what: for each position in the model, take the sum of
@@ -301,15 +306,15 @@ pub fn null_two_score(
         .for_each(|(residue, ratio)| {
             for profile_idx in 1..profile.length {
                 let match_contribution =
-                    match_sums[profile_idx] * profile.match_score(residue, profile_idx).exp();
+                    match_sums[profile_idx] * profile.match_prob(residue, profile_idx);
 
                 let insert_contribution =
-                    insert_sums[profile_idx] * profile.insert_score(residue, profile_idx).exp();
+                    insert_sums[profile_idx] * profile.insert_prob(residue, profile_idx);
 
                 *ratio += match_contribution + insert_contribution;
             }
             let match_contribution =
-                match_sums[profile.length] * profile.match_score(residue, profile.length).exp();
+                match_sums[profile.length] * profile.match_prob(residue, profile.length);
 
             *ratio += match_contribution;
             *ratio /= core_state_sum;
@@ -344,22 +349,16 @@ pub fn null_two_score(
     expected_prob_ratios[Profile::NON_RESIDUE_IDX] = 1.0;
     expected_prob_ratios[Profile::MISSING_DATA_IDX] = 1.0;
 
-    let expected_scores: Vec<_> = expected_prob_ratios.into_iter().map(|r| r.ln()).collect();
+    expected_prob_ratios.iter_mut().for_each(|r| *r = r.ln());
 
     let mut null_two_score = 0.0;
-    (row_bounds.seq_start..=row_bounds.seq_end)
-        .map(|idx| {
-            (
-                core_posteriors[idx],
-                expected_scores[target.digital_bytes[idx] as usize],
-            )
-        })
-        .for_each(|(core_posterior, expected_score)| {
-            // we weight each residue's contribution to the
-            // bias by the posterior probability that
-            // the residue was emitted by a core model state
-            null_two_score += core_posterior * expected_score;
-        });
+    for idx in row_bounds.seq_start..=row_bounds.seq_end {
+        // we weight each residue's contribution to the
+        // bias by the posterior probability that
+        // the residue was emitted by a core model state
+        null_two_score += core_posteriors[idx]
+            * expected_prob_ratios[target.digital_bytes[idx] as usize];
+    }
 
     // this is "omega" in hmmer
     //   essentially, we have a strong prior expecation that
