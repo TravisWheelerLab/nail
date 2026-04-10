@@ -18,7 +18,7 @@ use crate::util::{guess_query_format_from_query_file, FileFormat};
 
 use anyhow::Context;
 use libnail::structs::Profile;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use thread_local::ThreadLocal;
 
@@ -107,7 +107,8 @@ pub fn build_pipeline(
                 .par_iter()
                 .map(|s| Profile::from_blosum_62_and_seq(&s?))
                 .collect::<anyhow::Result<Vec<_>>>(),
-            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
+            // Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
+            Queries::Profile(p7hmm) => p7hmm.iter().collect::<anyhow::Result<Vec<_>>>(),
         }
         .context("failed to build profiles")?
         .into_iter()
@@ -169,7 +170,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut pipeline = build_pipeline(queries, targets, stats, &mut args)?;
+    let mut pipeline =
+        build_pipeline(queries, targets, stats, &mut args).context("failed to build pipeline")?;
 
     let align_timer = Instant::now();
     println!("running nail pipeline...");

@@ -410,8 +410,6 @@ impl Stats {
 
         let path = args.io_args.temp_dir_path.join("max-seqs-report.txt");
 
-        println!("{:?}", self.hit_counts_by_query);
-
         let mut out = path.open(true)?;
 
         let mut recs: Vec<(&String, u64, u64)> = queries

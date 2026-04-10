@@ -1,4 +1,4 @@
-use crate::io::{util::ByteBufferExt, Offset};
+use crate::io::{util::ByteBufferExt, Database, Offset};
 
 use libnail::structs::{
     profile::{ProfileBuilder, Transition},
@@ -9,6 +9,8 @@ use anyhow::{bail, Context};
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use super::{Delimiter, RecordParser};
+
+pub type P7Hmm = Database<P7HmmParser>;
 
 #[derive(Clone)]
 enum P7HmmParserState {
@@ -310,85 +312,91 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
         })
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::{
-//         fs::{read_to_string, File},
-//         io::{Cursor, Read},
-//     };
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::{read_to_string, File},
+        io::{Cursor, Read},
+        path::Path,
+    };
 
-//     use super::*;
+    use crate::io::DefaultIndex;
 
-//     #[test]
-//     fn test_profile_serialize() -> anyhow::Result<()> {
-//         let mut bytes = vec![];
-//         let mut file = File::open(
-//             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
-//         )?;
-//         file.read_to_end(&mut bytes)?;
-//         let prf = P7HmmParser::parse(&bytes)?;
+    use super::*;
 
-//         let mut buf = vec![];
+    pub fn p7hmm_offset_starts_from_bytes(hmm: &[u8]) -> Vec<u64> {
+        hmm.windows(10)
+            .enumerate()
+            .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i as u64))
+            .collect()
+    }
 
-//         prf.serialize(&mut buf)?;
+    ///
 
-//         let de = Profile::deserialize(Cursor::new(buf))?;
+    macro_rules! p7hmm_index_test_start {
+        ($name:ident, $chunks:expr) => {
+            #[test]
+            fn $name() -> anyhow::Result<()> {
+                test_starts::<$chunks>()
+            }
+        };
+    }
 
-//         assert_eq!(prf.name, de.name);
-//         assert_eq!(prf.accession, de.accession);
-//         assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
-//         assert_eq!(prf.core_transitions, de.core_transitions);
-//         assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
-//         Ok(())
-//     }
+    fn test_starts<const C: usize>() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let hmm_str = read_to_string(&path)?;
+        let hmm_bytes = hmm_str.as_bytes();
+        let starts = p7hmm_offset_starts_from_bytes(&hmm_bytes);
 
-//     #[test]
-//     fn test_p7hmm_index_starts() -> anyhow::Result<()> {
-//         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
-//         let hmm_str = read_to_string(&path)?;
-//         let starts: Vec<usize> = hmm_str
-//             .as_bytes()
-//             .windows(10)
-//             .enumerate()
-//             .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i))
-//             .collect();
+        let names = hmm_str
+            .lines()
+            .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
+            .map(|l| l.split_whitespace().nth(1).unwrap())
+            .collect::<Vec<&str>>();
 
-//         let names = hmm_str
-//             .lines()
-//             .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
-//             .map(|l| l.split_whitespace().nth(1).unwrap())
-//             .collect::<Vec<&str>>();
+        let index = DefaultIndex::build::<_, P7HmmParser, 15, C>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
 
-//         let index = P7HmmIndex::from_path::<15, 1>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s);
-//         });
+        Ok(())
+    }
 
-//         let index = P7HmmIndex::from_path::<15, 2>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s);
-//         });
+    p7hmm_index_test_start!(test_p7hmm_index_start_1_chunk, 1);
+    p7hmm_index_test_start!(test_p7hmm_index_start_2_chunks, 2);
+    p7hmm_index_test_start!(test_p7hmm_index_start_4_chunks, 4);
+    p7hmm_index_test_start!(test_p7hmm_index_start_8_chunks, 8);
+    p7hmm_index_test_start!(test_p7hmm_index_start_16_chunks, 16);
+    p7hmm_index_test_start!(test_p7hmm_index_start_32_chunks, 32);
 
-//         let index = P7HmmIndex::from_path::<15, 3>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s);
-//         });
+    #[test]
+    fn test_p7hmm_iter_parse() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let database = P7Hmm::from_path(&path)?;
+        let _ = database.iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
 
-//         let index = P7HmmIndex::from_path::<15, 4>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s);
-//         });
+    #[test]
+    fn test_profile_serialize() -> anyhow::Result<()> {
+        let mut bytes = vec![];
+        let mut file =
+            File::open(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"))?;
+        file.read_to_end(&mut bytes)?;
+        let prf = P7HmmParser::parse(&bytes)?;
 
-//         let index = P7HmmIndex::from_path::<15, 20>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s);
-//         });
+        let mut buf = vec![];
 
-//         Ok(())
-//     }
-// }
+        prf.serialize(&mut buf)?;
+
+        let de = Profile::deserialize(Cursor::new(buf))?;
+
+        assert_eq!(prf.name, de.name);
+        assert_eq!(prf.accession, de.accession);
+        assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
+        assert_eq!(prf.core_transitions, de.core_transitions);
+        assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
+        Ok(())
+    }
+}

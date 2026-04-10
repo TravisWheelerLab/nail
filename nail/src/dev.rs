@@ -9,10 +9,7 @@ use libnail::{
     },
     structs::Profile,
 };
-use rayon::{
-    iter::{IntoParallelRefIterator, ParallelIterator},
-    slice::ParallelSlice,
-};
+use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use regex::Regex;
 use thread_local::ThreadLocal;
 

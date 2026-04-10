@@ -4,9 +4,11 @@ use libnail::{
     structs::{Profile, Sequence},
 };
 
-use crate::io::{ByteBufferExt, Offset};
+use crate::io::{ByteBufferExt, Database, Offset};
 
 use super::{Delimiter, RecordParser};
+
+pub type Fasta = Database<FastaParser>;
 
 #[derive(Clone)]
 pub struct FastaParser {
@@ -90,7 +92,9 @@ impl RecordParser for FastaParser {
                 utf8_bytes.push(*b);
                 digital_bytes.push(match UTF8_TO_DIGITAL_AMINO.get(b) {
                     Some(b) => *b,
-                    None => bail!("unknown byte"),
+                    None => {
+                        bail!("byte: \"{b}\" is not in the compressed amino acid alphabet")
+                    }
                 });
                 Ok(())
             })?;
@@ -107,59 +111,66 @@ impl RecordParser for FastaParser {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::fs::read_to_string;
+#[cfg(test)]
+pub mod tests {
+    use std::{fs::read_to_string, path::Path};
 
-//     use super::*;
+    use crate::io::DefaultIndex;
 
-//     #[test]
-//     fn test_fasta_index_starts() -> anyhow::Result<()> {
-//         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
-//         let fasta_str = read_to_string(&path)?;
-//         let starts: Vec<usize> = fasta_str
-//             .as_bytes()
-//             .iter()
-//             .enumerate()
-//             .filter_map(|(i, b)| (*b == b'>').then_some(i))
-//             .collect();
+    use super::*;
 
-//         let fasta_bytes = fasta_str.as_bytes();
-//         let names: Vec<&str> = starts
-//             .iter()
-//             .filter_map(|p| fasta_bytes.word_from(p + 1).ok())
-//             .collect();
+    pub fn fasta_offset_starts_from_bytes(fasta: &[u8]) -> Vec<u64> {
+        fasta
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| (*b == b'>').then_some(i as u64))
+            .collect()
+    }
 
-//         let index = FastaIndex::from_path::<15, 1>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s as u64);
-//         });
+    ///
 
-//         let index = FastaIndex::from_path::<15, 2>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s as u64);
-//         });
+    macro_rules! fasta_index_test_start {
+        ($name:ident, $chunks:expr) => {
+            #[test]
+            fn $name() -> anyhow::Result<()> {
+                test_starts::<$chunks>()
+            }
+        };
+    }
 
-//         let index = FastaIndex::from_path::<15, 3>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s as u64);
-//         });
+    fn test_starts<const C: usize>() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let fasta_str = read_to_string(&path)?;
+        let fasta_bytes = fasta_str.as_bytes();
 
-//         let index = FastaIndex::from_path::<15, 4>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s as u64);
-//         });
+        let starts = fasta_offset_starts_from_bytes(&fasta_bytes);
 
-//         let index = FastaIndex::from_path::<15, 20>(&path)?;
-//         starts.iter().zip(names.iter()).for_each(|(s, n)| {
-//             let o = index.get(n).unwrap();
-//             assert_eq!(o.start, *s as u64);
-//         });
+        let names: Vec<&str> = starts
+            .iter()
+            .filter_map(|p| fasta_bytes.word_from(*p as usize + 1).ok())
+            .collect();
 
-//         Ok(())
-//     }
-// }
+        let index = DefaultIndex::build::<_, FastaParser, 15, C>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        Ok(())
+    }
+
+    fasta_index_test_start!(test_fasta_index_start_1_chunk, 1);
+    fasta_index_test_start!(test_fasta_index_start_2_chunks, 2);
+    fasta_index_test_start!(test_fasta_index_start_4_chunks, 4);
+    fasta_index_test_start!(test_fasta_index_start_8_chunks, 8);
+    fasta_index_test_start!(test_fasta_index_start_16_chunks, 16);
+    fasta_index_test_start!(test_fasta_index_start_32_chunks, 32);
+
+    #[test]
+    fn test_fasta_iter_parse() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let database = Fasta::from_path(&path)?;
+        let _ = database.iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
+}

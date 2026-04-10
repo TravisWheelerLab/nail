@@ -14,7 +14,7 @@ where
     pub fn par_iter(&'_ self) -> DatabaseParIter<'_, R> {
         DatabaseParIter {
             inner: self.clone(),
-            names: self.index.keys().map(|s| s.as_str()).collect(),
+            names: self.index.keys().collect(),
         }
     }
 }
@@ -121,4 +121,54 @@ where
             },
         )
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::io::{Fasta, P7Hmm};
+
+    use rayon::iter::ParallelIterator;
+
+    macro_rules! database_par_iter_test {
+        ($name:ident, $func:expr, $threads:expr) => {
+            #[test]
+            fn $name() -> anyhow::Result<()> {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads($threads)
+                    .build()
+                    .unwrap()
+                    .install(|| -> anyhow::Result<()> { $func() })
+            }
+        };
+    }
+
+    fn test_parse_fasta() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let database = Fasta::from_path(&path)?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    database_par_iter_test!(test_fasta_par_iter_parse_1_thread, test_parse_fasta, 1);
+    database_par_iter_test!(test_fasta_par_iter_parse_2_threads, test_parse_fasta, 2);
+    database_par_iter_test!(test_fasta_par_iter_parse_4_threads, test_parse_fasta, 4);
+    database_par_iter_test!(test_fasta_par_iter_parse_8_threads, test_parse_fasta, 8);
+    database_par_iter_test!(test_fasta_par_iter_parse_16_threads, test_parse_fasta, 16);
+    database_par_iter_test!(test_fasta_par_iter_parse_32_threads, test_parse_fasta, 32);
+
+    fn test_parse_p7hmm() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let database = P7Hmm::from_path(&path)?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    database_par_iter_test!(test_p7hmm_par_iter_parse_1_thread, test_parse_p7hmm, 1);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_2_threads, test_parse_p7hmm, 2);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_4_threads, test_parse_p7hmm, 4);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_8_threads, test_parse_p7hmm, 8);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_16_threads, test_parse_p7hmm, 16);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_32_threads, test_parse_p7hmm, 32);
 }
