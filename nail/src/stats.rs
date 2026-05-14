@@ -424,13 +424,15 @@ impl Stats {
         recs.sort_by(|a, b| b.1.cmp(&a.1));
 
         use crate::util::term::*;
-        if recs[0].1 == args.mmseqs_args.max_seqs as u64 {
-            println!();
-            println!(
+        if let Some(first) = recs.first() {
+            if first.1 == args.mmseqs_args.max_seqs as u64 {
+                println!();
+                println!(
                 "{RED}warning{RESET}: one or more queries saturated the mmseqs {YELLOW}--max-seqs{RESET} limit of {YELLOW}{}{RESET}",
                 args.mmseqs_args.max_seqs
             );
-            println!("         for a full report, view the file: {YELLOW}{path:?}{RESET}",);
+                println!("         for a full report, view the file: {YELLOW}{path:?}{RESET}",);
+            }
         }
 
         let h1 = "query";
