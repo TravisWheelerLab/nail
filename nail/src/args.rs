@@ -1,12 +1,28 @@
-use std::{io::Write, path::PathBuf, str::FromStr};
+use std::{
+    io::{IsTerminal, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use anyhow::bail;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use regex::Regex;
 
 use crate::util::{term::*, PathExt};
 
-#[derive(Subcommand)]
+#[derive(Parser)]
+#[command(
+    version,
+    name = "nail",
+    about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
+)]
+pub struct NailCli {
+    #[command(subcommand)]
+    pub command: NailSubCommands,
+}
+
 #[allow(clippy::large_enum_variant)]
+#[derive(Subcommand)]
 pub enum NailSubCommands {
     #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
@@ -14,24 +30,13 @@ pub enum NailSubCommands {
     Dev(DevSubCommands),
 }
 
-#[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
+#[derive(Subcommand)]
 pub enum DevSubCommands {
     #[command()]
     Play(SearchArgs),
     Search(SearchArgs),
     Mx(SearchArgs),
-}
-
-#[derive(Parser)]
-#[command(version)]
-#[command(name = "nail")]
-#[command(
-    about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
-)]
-pub struct NailCli {
-    #[command(subcommand)]
-    pub command: NailSubCommands,
 }
 
 #[derive(Debug, Args)]
@@ -246,96 +251,84 @@ pub struct IoArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct PipelineArgs {
-    /// Pruning parameter alpha
+    /// (cloud search) local score pruning threshold
     #[arg(
         short = 'A',
         default_value_t = 10.0,
         value_name = "X",
-        help = "Cloud search parameter α:\n  \
-                local score pruning threshold"
+        verbatim_doc_comment
     )]
     pub alpha: f32,
 
-    /// Pruning parameter beta
+    /// (cloud search) global score pruning threshold
     #[arg(
         short = 'B',
         default_value_t = 16.0,
         value_name = "X",
-        help = "Cloud search parameter ɓ:\n  \
-                global score pruning threshold"
+        verbatim_doc_comment
     )]
     pub beta: f32,
 
-    /// Pruning parameter gamma
+    /// (cloud search) at minimum, compute N anti-diagonals
     #[arg(
         short = 'G',
         default_value_t = 5,
         value_name = "N",
-        help = "Cloud search parameter γ:\n  \
-                at minimum, compute N anti-diagonals"
+        verbatim_doc_comment
     )]
     pub gamma: usize,
 
-    /// Cloud search failure parameter: max number of retries allowed
+    /// (cloud search) allow at most N attempts to recover disjoint clouds
     #[arg(
         short = 'a',
         default_value_t = 5,
         value_name = "N",
-        help = "Cloud search failure parameter:\n  \
-                  upon failure of cloud intersection, allow at most N attempts to recover"
+        verbatim_doc_comment
     )]
     pub cloud_max_join_attempts: usize,
 
-    /// Cloud search failure parameter: parameter scaling factor
+    /// (cloud search) when cloud search fails, scale cloud search parameters (α, ɓ, γ) by 1.0 + X
     #[arg(
         short = 'f',
         default_value_t = 0.5,
         value_name = "X",
-        help = format!(
-            "{}\n  {}", 
-            "Cloud search failure parameter:",
-            "upon failure of cloud intersection, scale cloud search parameters (α, ɓ, γ) by X"
-        )
+        verbatim_doc_comment
     )]
     pub cloud_param_scale_factor: f32,
 
-    /// Seeding filter threshold
+    /// (seeding filter) filter hits with P-value > X
     #[arg(
         short = 'S',
         default_value_t = 1e-4,
         value_name = "X",
-        help = "Seeding filter threshold:\n  \
-                filter hits with P-value > X"
+        verbatim_doc_comment
     )]
     pub seed_pvalue_threshold: f64,
 
-    /// Cloud search filter threshold
+    /// (cloud search filter) filter hits with P-value > X
     #[arg(
         short = 'C',
         default_value_t = 1e-2,
         value_name = "X",
-        help = "Cloud search threshold:\n  \
-                filter hits with P-value > X"
+        verbatim_doc_comment
     )]
     pub cloud_pvalue_threshold: f64,
 
-    /// Forward filter threshold
+    /// (forward filter) filter hits with P-value > X
     #[arg(
         short = 'F',
         default_value_t = 1e-4,
         value_name = "X",
-        help = "Forward filter threshold:\n  \
-                filter hits with P-value > X"
+        verbatim_doc_comment
     )]
     pub forward_pvalue_threshold: f64,
 
-    /// Final E-value threshold
+    /// (reporting filter) filter hits with E-value > X
     #[arg(
         short = 'E',
         default_value_t = 10.0,
         value_name = "X",
-        help = "Final reporting threshold:\n  \
-                filter hits with E-value > X"
+        verbatim_doc_comment
     )]
     pub e_value_threshold: f64,
 
@@ -380,45 +373,50 @@ pub struct DevArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct MmseqsArgs {
-    /// MMseqs2 Parameter: k-mer length (0: automatically set to optimum)
+    /// (MMseqs2 prefilter) k-mer length (0: automatically set to optimum)
     #[arg(
         long = "mmseqs-k",
         default_value_t = 6usize,
         value_name = "N",
-        help = "MMseqs2 parameter:\n  \
-                k-mer length (0: automatically set to optimum)"
+        verbatim_doc_comment
     )]
     pub k: usize,
 
-    /// MMseqs2 Parameter: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
+    /// (MMseqs2 prefilter) Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
     #[arg(
         long = "mmseqs-s",
         default_value_t = 10.0,
         value_name = "X",
-        help = "MMseqs2 parameter:\n  \
-                Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive"
+        verbatim_doc_comment
     )]
     pub s: f32,
 
-    /// MMseqs2 Parameter: Maximum results per query sequence allowed to pass the prefilter
+    /// (MMseqs2 prefilter): Maximum results per query sequence allowed to pass the prefilter
     #[arg(
         long = "mmseqs-max-seqs",
         default_value_t = 200usize,
         default_value_if("prog_seed", "true", "2147483647"),
         value_name = "N",
-        help = "MMseqs2 parameter:\n  \
-                Maximum results per query sequence allowed to pass the prefilter"
+        verbatim_doc_comment
     )]
     pub max_seqs: usize,
 
-    /// MMseqs2 Parameter: Correct for locally biased amino acid composition (range 0-1)
+    /// The maximum number of seeds per query that nail will align
+    #[arg(
+        long = "max-seeds", 
+        default_value = None, 
+        value_name = "N", 
+        verbatim_doc_comment
+    )]
+    pub max_seeds: Option<usize>,
+
+    /// (MMseqs2 Parameter) Correct for locally biased amino acid composition (range 0-1)
     #[arg(
         long = "mmseqs-comp-bias-corr",
         default_value = None,
         value_name = "N",
         hide = true,
-        help = "MMseqs2 parameter:\n  \
-                Correct for locally biased amino acid composition (range 0-1)"
+        verbatim_doc_comment
     )]
     pub comp_bias_corr: Option<usize>,
 
@@ -426,7 +424,15 @@ pub struct MmseqsArgs {
     #[arg(long, action, conflicts_with = "max_seqs")]
     pub prog_seed: bool,
 
-    /// The initial number of mmseqs alignments per query
+    /// How nail will produce alignment seeds
+    ///
+    ///   static|0: run the MMseqs2 prefilter, then run MMseqs2 align on the entire prefilter results
+    ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following
+    ///             parameterizetation of --prog-n and prog-f 
+    #[arg(long, default_value = "prog", verbatim_doc_comment)]
+    pub seed_mode: SeedMode,
+
+    /// (prog seeding) the initial number of mmseqs alignments per query
     #[arg(
         long,
         default_value = "200",
@@ -434,12 +440,11 @@ pub struct MmseqsArgs {
         default_value_if("prog_seed", "false", None),
         value_name = "N",
         conflicts_with = "max_seqs",
-        help = "Progressive seeding:\n  \
-                the initial number of mmseqs alignments per query"
+        verbatim_doc_comment
     )]
     pub prog_n: Option<usize>,
 
-    /// test
+    /// (prog seeding) the fraction of hits required to continue progressive seeding
     #[arg(
         long,
         default_value = "0.01",
@@ -447,8 +452,100 @@ pub struct MmseqsArgs {
         default_value_if("prog_seed", "false", None),
         value_name = "X",
         conflicts_with = "max_seqs",
-        help = "Progressive seeding:\n  \
-                the fraction of hits required to continue progressive seeding"
+        verbatim_doc_comment
     )]
     pub prog_f: Option<f32>,
+}
+
+#[derive(Default, Clone, Copy, Debug, ValueEnum)]
+pub enum SeedMode {
+    #[value(alias = "0")]
+    Static,
+    #[default]
+    #[value(alias = "1")]
+    Prog,
+}
+
+pub fn handle_clap_error(e: clap::Error) -> ! {
+    match e.kind() {
+        clap::error::ErrorKind::DisplayHelp => {
+            let args: Vec<String> = std::env::args().collect();
+
+            let is_terminal = std::io::stdout().is_terminal();
+            let is_short_help_zebra = args[2] == "-hz";
+
+            if is_terminal && is_short_help_zebra {
+                print_help_summary_zebra(&e);
+                std::process::exit(e.exit_code());
+            } else {
+                e.exit();
+            }
+        }
+        _ => e.exit(),
+    }
+}
+
+pub fn print_help_summary_zebra(e: &clap::Error) {
+    let ansi_string = format!("{}", e.render().ansi());
+
+    // ANSI codes escaped for use in regex search
+    const BOLD_RE: &str = r"\x1b\[1m";
+    const UNDERLINE_RE: &str = r"\x1b\[4m";
+    const RESET_RE: &str = r"\x1b\[0m";
+
+    // this should find any ANSI formatted clap --help line that is a header
+    // i.e. this will find "usage", "arguments," "options," and then anything
+    // set up in the CLI using the "(next_help_heading macro = <HEADER>)"
+    let header_re = Regex::new(&format!(r"(?m)^{BOLD_RE}{UNDERLINE_RE}.*:{RESET_RE}")).unwrap();
+
+    /// Given a regex and string, do a split-on-regex-inclusive search.
+    ///
+    /// returns: (splits, matches)
+    fn split_and_match(re: &Regex, str: &str) -> (Vec<String>, Vec<String>) {
+        let mut other = Vec::new();
+        let mut matches = Vec::new();
+        let mut last = 0;
+
+        for m in re.find_iter(str) {
+            other.push(str[last..m.start()].to_string());
+            matches.push(m.as_str().to_string());
+            last = m.end();
+        }
+
+        other.push(str[last..].to_string());
+
+        (other, matches)
+    }
+
+    let (mut info, headers) = split_and_match(&header_re, &ansi_string);
+
+    // this should find any ANSI formatted clap argument in the info lines
+    let arg_re = Regex::new(&format!(r"(?m)^\s*{BOLD_RE}.*{RESET_RE}")).unwrap();
+
+    for info_lines in info
+        .iter_mut()
+        // skip three sets of info lines,
+        // since the "about" section
+        // is before the first header
+        .skip(3)
+    {
+        let (helps, args) = split_and_match(&arg_re, info_lines);
+
+        *info_lines = args
+            .into_iter()
+            .zip(helps.into_iter().skip(1))
+            .enumerate()
+            .map(|(i, (arg, help))| {
+                let color = if i % 2 == 0 { BRIGHT_WHITE } else { WHITE };
+                format!("{color}{arg}{color}{help}{RESET}")
+            })
+            .collect();
+    }
+
+    // this prints "about"
+    print!("{}", info[0]);
+
+    for (h, i) in headers.into_iter().zip(info.into_iter().skip(1)) {
+        print!("{h}{i}");
+    }
 }

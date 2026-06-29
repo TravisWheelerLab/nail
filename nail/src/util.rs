@@ -11,6 +11,8 @@ use thiserror::Error;
 #[allow(dead_code)]
 pub mod term {
     pub const RESET: &str = "\x1b[0m";
+    pub const BOLD: &str = "\x1b[1m";
+    pub const UNDERLINE: &str = "\x1b[4m";
 
     pub const RED: &str = "\x1b[31m";
     pub const GREEN: &str = "\x1b[32m";
@@ -18,6 +20,7 @@ pub mod term {
     pub const BLUE: &str = "\x1b[34m";
     pub const MAGENTA: &str = "\x1b[35m";
     pub const CYAN: &str = "\x1b[36m";
+    pub const WHITE: &str = "\x1b[37m";
 
     pub const BRIGHT_RED: &str = "\x1b[91m";
     pub const BRIGHT_GREEN: &str = "\x1b[92m";
@@ -25,6 +28,10 @@ pub mod term {
     pub const BRIGHT_BLUE: &str = "\x1b[94m";
     pub const BRIGHT_MAGENTA: &str = "\x1b[95m";
     pub const BRIGHT_CYAN: &str = "\x1b[96m";
+    pub const BRIGHT_WHITE: &str = "\x1b[97m";
+
+    pub const BG_BLACK: &str = "\x1b[40m";
+    pub const BG_BRIGHT_BLACK: &str = "\x1b[100m";
 }
 
 #[allow(dead_code)]
