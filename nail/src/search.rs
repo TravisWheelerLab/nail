@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::args::SearchArgs;
+use crate::args::{SearchArgs, SeedMode};
 use crate::io::Seeds;
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
@@ -74,11 +74,17 @@ pub fn seed(
                 db_paths.check().context("mmseqs DB check failed")?;
             }
 
-            let seeds = if args.mmseqs_args.prog_seed {
-                seed_progressive(queries, targets, &db_paths, stats, args)
-                    .context("progessive seeding failed")
-            } else {
-                seed_max_seqs(queries, targets, &db_paths, stats, args).context("seeding failed")
+            let seeds = match args.mmseqs_args.seed_mode {
+                SeedMode::Static => {
+                    //
+                    seed_max_seqs(queries, targets, &db_paths, stats, args)
+                        .context("seeding failed")
+                }
+                SeedMode::Prog => {
+                    //
+                    seed_progressive(queries, targets, &db_paths, stats, args)
+                        .context("progessive seeding failed")
+                }
             }?;
 
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());

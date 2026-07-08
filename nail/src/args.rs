@@ -139,28 +139,22 @@ impl SearchArgs {
             self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
         }
 
-        if self.mmseqs_args.prog_seed {
-            if self.mmseqs_args.max_seqs != 2_147_483_647 {
-                bail!(
-                    "the argument '{YELLOW}--mmseqs-max-seqs{RESET}' is set wrong: {}",
-                    self.mmseqs_args.max_seqs
-                )
+        match self.mmseqs_args.seed_mode {
+            SeedMode::Static => {
+                if self.mmseqs_args.prog_n.is_some() {
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                }
+                if self.mmseqs_args.prog_f.is_some() {
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                }
             }
-
-            if self.mmseqs_args.prog_n.is_none() {
-                bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
-            }
-
-            if self.mmseqs_args.prog_n.is_none() {
-                bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
-            }
-        } else {
-            #[allow(clippy::collapsible_if)]
-            if self.mmseqs_args.prog_n.is_some() {
-                bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
-            }
-            if self.mmseqs_args.prog_n.is_some() {
-                bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+            SeedMode::Prog => {
+                if self.mmseqs_args.prog_n.is_none() {
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
+                }
+                if self.mmseqs_args.prog_f.is_none() {
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
+                }
             }
         }
 
@@ -188,19 +182,27 @@ impl SearchArgs {
             " ├─ mmseqs --max-seqs: {:.}",
             self.mmseqs_args.max_seqs
         )?;
-        writeln!(out, " ├─ prog-seed: {}", self.mmseqs_args.prog_seed)?;
-        if self.mmseqs_args.prog_seed {
-            writeln!(
-                out,
-                "   ├─ n: {}",
-                self.mmseqs_args.prog_n.unwrap_or_default()
-            )?;
-            writeln!(
-                out,
-                "   └─ f: {}",
-                self.mmseqs_args.prog_f.unwrap_or_default()
-            )?;
+        match self.mmseqs_args.seed_mode {
+            SeedMode::Static => {
+                writeln!(out, " ├─ seed-mode: static",)?;
+            }
+
+            SeedMode::Prog => {
+                writeln!(out, " ├─ seed-mode: prog",)?;
+
+                writeln!(
+                    out,
+                    "   ├─ n: {}",
+                    self.mmseqs_args.prog_n.unwrap_or_default()
+                )?;
+                writeln!(
+                    out,
+                    "   └─ f: {}",
+                    self.mmseqs_args.prog_f.unwrap_or_default()
+                )?;
+            }
         }
+
         writeln!(out, " ├─ α: {}", self.pipeline_args.alpha)?;
         writeln!(out, " ├─ β: {}", self.pipeline_args.beta)?;
         writeln!(out, " ├─ γ: {}", self.pipeline_args.gamma)?;
@@ -392,54 +394,51 @@ pub struct MmseqsArgs {
     pub s: f32,
 
     /// (MMseqs2 prefilter): Maximum results per query sequence allowed to pass the prefilter
+    ///
+    ///
     #[arg(
         long = "mmseqs-max-seqs",
-        default_value_t = 200usize,
-        default_value_if("prog_seed", "true", "2147483647"),
+        default_value_t = 2147483647usize,
+        default_value_if("seed_mode", "static", "300"),
+        default_value_if("seed_mode", "prog", "2147483647"),
         value_name = "N",
         verbatim_doc_comment
     )]
     pub max_seqs: usize,
 
-    /// The maximum number of seeds per query that nail will align
-    #[arg(
-        long = "max-seeds", 
-        default_value = None, 
-        value_name = "N", 
-        verbatim_doc_comment
-    )]
+    /// Impose a limit on the number of seeds that nail will align per query
+    #[arg(long = "max-seeds", value_name = "N", verbatim_doc_comment)]
     pub max_seeds: Option<usize>,
 
     /// (MMseqs2 Parameter) Correct for locally biased amino acid composition (range 0-1)
     #[arg(
         long = "mmseqs-comp-bias-corr",
-        default_value = None,
         value_name = "N",
         hide = true,
         verbatim_doc_comment
     )]
     pub comp_bias_corr: Option<usize>,
 
-    /// Enable progressive seeding
-    #[arg(long, action, conflicts_with = "max_seqs")]
-    pub prog_seed: bool,
-
     /// How nail will produce alignment seeds
     ///
     ///   static|0: run the MMseqs2 prefilter, then run MMseqs2 align on the entire prefilter results
     ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following
-    ///             parameterizetation of --prog-n and prog-f 
-    #[arg(long, default_value = "prog", verbatim_doc_comment)]
+    ///             parameterization of --prog-n and prog-f
+    #[arg(
+        long,
+        default_value = "prog",
+        value_name = "MODE",
+        verbatim_doc_comment
+    )]
     pub seed_mode: SeedMode,
 
     /// (prog seeding) the initial number of mmseqs alignments per query
     #[arg(
         long,
         default_value = "200",
-        default_value_if("prog_seed", "true", "200"),
-        default_value_if("prog_seed", "false", None),
+        default_value_if("seed_mode", "static", None),
+        default_value_if("seed_mode", "prog", "200"),
         value_name = "N",
-        conflicts_with = "max_seqs",
         verbatim_doc_comment
     )]
     pub prog_n: Option<usize>,
@@ -448,10 +447,9 @@ pub struct MmseqsArgs {
     #[arg(
         long,
         default_value = "0.01",
-        default_value_if("prog_seed", "true", "0.01"),
-        default_value_if("prog_seed", "false", None),
+        default_value_if("seed_mode", "static", None),
+        default_value_if("seed_mode", "prog", "0.01"),
         value_name = "X",
-        conflicts_with = "max_seqs",
         verbatim_doc_comment
     )]
     pub prog_f: Option<f32>,
