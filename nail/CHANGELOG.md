@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - method `Index::build_chunk()` now panics on key collisions
 - renamed function `pipeline::seed_stage::seed_max_seqs()` to `seed_static()`
 - renamed  `MmseqsArgs` to `SeedArgs`
+- `Seeds::from_path()` now takes parameter `max_seeds: Option<usize>`
 
 ### Removed
 - removed structs `io::fasta::FastaOffset`, `io::p7hmm::P7HmmOffset`, `io::seeds::SeedOffset`
