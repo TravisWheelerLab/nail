@@ -76,7 +76,7 @@ pub struct SearchArgs {
     /// Arguments that are passed to MMseqs2
     #[command(flatten)]
     #[clap(next_help_heading = "Seeding options")]
-    pub mmseqs_args: MmseqsArgs,
+    pub mmseqs_args: SeedArgs,
 
     #[command(flatten)]
     #[clap(next_help_heading = "Expert options")]
@@ -374,7 +374,7 @@ pub struct DevArgs {
 }
 
 #[derive(Args, Debug, Clone, Default)]
-pub struct MmseqsArgs {
+pub struct SeedArgs {
     /// (MMseqs2 prefilter) k-mer length (0: automatically set to optimum)
     #[arg(
         long = "mmseqs-k",

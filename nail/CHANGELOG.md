@@ -28,10 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - trait `IndexInner` is no longer generic over offset type
 - trait method `IndexInner::extend()` now returns an error on key collisions
 - method `Index::build_chunk()` now panics on key collisions
+- renamed function `pipeline::seed_stage::seed_max_seqs()` to `seed_static()`
+- renamed  `MmseqsArgs` to `SeedArgs`
 
 ### Removed
 - removed structs `io::fasta::FastaOffset`, `io::p7hmm::P7HmmOffset`, `io::seeds::SeedOffset`
 - removed struct `io::seeds::SeedsIndexInner`
+- removed CLI param `--prog-seed`
 
 ## [0.5.0] - 2026-3-19
 

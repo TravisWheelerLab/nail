@@ -30,8 +30,6 @@ fn main() {
 fn run() -> anyhow::Result<()> {
     color_backtrace::install();
 
-    let args = std::env::args().collect::<Vec<_>>();
-
     let command = match NailCli::try_parse() {
         Err(e) => handle_clap_error(e),
         Ok(cli) => cli.command,

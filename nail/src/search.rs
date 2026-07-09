@@ -10,7 +10,7 @@ use crate::io::Seeds;
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    seed_max_seqs, seed_progressive, DefaultAlignStage, DefaultCloudSearchStage,
+    seed_progressive, seed_static, DefaultAlignStage, DefaultCloudSearchStage,
     FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
@@ -76,15 +76,10 @@ pub fn seed(
 
             let seeds = match args.mmseqs_args.seed_mode {
                 SeedMode::Static => {
-                    //
-                    seed_max_seqs(queries, targets, &db_paths, stats, args)
-                        .context("seeding failed")
+                    seed_static(queries, targets, &db_paths, stats, args).context("seeding failed")
                 }
-                SeedMode::Prog => {
-                    //
-                    seed_progressive(queries, targets, &db_paths, stats, args)
-                        .context("progessive seeding failed")
-                }
+                SeedMode::Prog => seed_progressive(queries, targets, &db_paths, stats, args)
+                    .context("progessive seeding failed"),
             }?;
 
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());

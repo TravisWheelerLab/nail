@@ -28,7 +28,7 @@ pub struct SeedStageStats {
     pub e_value: f64,
 }
 
-pub fn seed_max_seqs(
+pub fn seed_static(
     queries: &Queries,
     seqs: &Fasta,
     db_paths: &MmseqsDbPaths,
@@ -41,6 +41,7 @@ pub fn seed_max_seqs(
 
     write_mmseqs_sequence_database(seqs, &db_paths.target_db)
         .context("failed to write mmseqs target DB")?;
+
     match queries {
         Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
@@ -120,6 +121,7 @@ pub fn seed_progressive(
 
     write_mmseqs_sequence_database(seqs, &db_paths.target_db)
         .context("failed to write mmseqs target DB")?;
+
     match queries {
         Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
@@ -145,19 +147,33 @@ pub fn seed_progressive(
         .context("failed to open initial prefilter DB")?;
 
     #[derive(PartialEq, Debug)]
-    enum State {
+    enum Status {
         Active,
         Final(usize),
         Terminated,
+    }
+
+    struct State {
+        idx: usize,
+        status: Status,
+        cnt: usize,
     }
 
     let mut i = 0;
     let mut n_take = args.mmseqs_args.prog_n.context("prog_n unset")?;
     let prog_frac = args.mmseqs_args.prog_f.context("prog_f unset")?;
 
-    let mut state: Vec<State> = (0..queries.len()).map(|_| State::Active).collect();
+    let mut state: Vec<State> = (0..queries.len())
+        .map(|i| State {
+            idx: i,
+            status: Status::Active,
+            cnt: 0,
+        })
+        .collect();
+
     let mut prog_adbs = vec![];
-    while state.contains(&State::Active) {
+    // TODO: remove states from vec instead of setting terminated
+    while state.iter().any(|s| s.status == Status::Active) {
         let prog_iter_dir = &db_paths.prog_dir.join(i.to_string());
         let prog_pdb_path = prog_iter_dir.join("pdb");
 
@@ -173,21 +189,22 @@ pub fn seed_progressive(
                 .write_all(PREFILTER_DBTYPE)?;
 
             let mut offset = 0;
-            for (prf_idx, prf_state) in state.iter_mut().enumerate() {
-                let record_bytes = match prf_state {
-                    State::Active => match pdb.next_n(prf_idx, n_take)? {
+
+            for prf_state in state.iter_mut() {
+                let record_bytes = match prf_state.status {
+                    Status::Active => match pdb.next_n(prf_state.idx, n_take)? {
                         ByteBuffer::Complete(buf) => buf,
                         ByteBuffer::Partial(buf, n_retrieved) => {
-                            *prf_state = State::Final(n_retrieved);
+                            prf_state.status = Status::Final(n_retrieved);
                             buf
                         }
                         ByteBuffer::Empty => {
-                            *prf_state = State::Terminated;
+                            prf_state.status = Status::Terminated;
                             &[]
                         }
                     },
-                    State::Terminated => &[],
-                    State::Final(_) => unreachable!(),
+                    Status::Terminated => &[],
+                    Status::Final(_) => unreachable!(),
                 };
 
                 prog_pfdb.write_all(record_bytes)?;
@@ -195,7 +212,7 @@ pub fn seed_progressive(
 
                 let n_written = record_bytes.len() + 1;
 
-                let s = format!("{}\t{offset}\t{}\n", prf_idx, n_written);
+                let s = format!("{}\t{offset}\t{}\n", prf_state.idx, n_written);
                 prog_pfdb_index.write_all(s.as_bytes())?;
 
                 offset += n_written;
@@ -222,10 +239,10 @@ pub fn seed_progressive(
 
         let mut report_out = prog_pdb_path.with_file_name("report.txt").open(true)?;
 
-        for (prf_idx, prf_state) in state.iter_mut().enumerate() {
-            match prf_state {
-                State::Active => {
-                    let record_bytes = prog_adb.get(prf_idx)?;
+        for prf_state in state.iter_mut() {
+            match prf_state.status {
+                Status::Active => {
+                    let record_bytes = prog_adb.get(prf_state.idx)?;
                     let mut cnt = 0;
                     for b in record_bytes.iter() {
                         if *b == b'\n' {
@@ -233,18 +250,31 @@ pub fn seed_progressive(
                         }
                     }
 
+                    prf_state.cnt += cnt;
+                    if let Some(max) = args.mmseqs_args.max_seeds {
+                        if prf_state.cnt >= max {
+                            prf_state.status = Status::Terminated;
+                            continue;
+                        }
+                    }
+
                     let frac = cnt as f32 / n_take as f32;
 
                     if frac < prog_frac {
-                        *prf_state = State::Terminated;
+                        prf_state.status = Status::Terminated;
                     }
-                    writeln!(report_out, "{prf_idx}: {cnt} / {n_take} | {frac:0.3}")?;
+                    writeln!(
+                        report_out,
+                        "{}: {} | {cnt} / {n_take} | {frac:0.3}",
+                        prf_state.idx, prf_state.cnt
+                    )?;
                 }
-                State::Final(n) => {
-                    writeln!(report_out, "{prf_idx}: ({n})")?;
-                    *prf_state = State::Terminated;
+                Status::Final(n) => {
+                    prf_state.cnt += n;
+                    writeln!(report_out, "{}: {} | ({n})", prf_state.idx, prf_state.cnt)?;
+                    prf_state.status = Status::Terminated;
                 }
-                State::Terminated => continue,
+                Status::Terminated => continue,
             }
         }
 
@@ -281,9 +311,18 @@ pub fn seed_progressive(
         for prf_idx in 0..queries.len() {
             let mut n_written = 0;
             for prog_adb in &mut prog_adbs {
-                let record_bytes = prog_adb.get(prf_idx)?;
-                adb.write_all(record_bytes)?;
-                n_written += record_bytes.len();
+                if let Some(max) = args.mmseqs_args.max_seeds {
+                    let record_bytes = match prog_adb.next_n(prf_idx, max)? {
+                        ByteBuffer::Complete(buf) | ByteBuffer::Partial(buf, _) => buf,
+                        ByteBuffer::Empty => continue,
+                    };
+                    adb.write_all(record_bytes)?;
+                    n_written += record_bytes.len();
+                } else {
+                    let record_bytes = prog_adb.get(prf_idx)?;
+                    adb.write_all(record_bytes)?;
+                    n_written += record_bytes.len();
+                }
             }
 
             adb.write_all(&[0])?;
