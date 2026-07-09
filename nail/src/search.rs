@@ -61,7 +61,7 @@ pub fn seed(
     args: &mut SearchArgs,
 ) -> anyhow::Result<Seeds> {
     match args.io_args.seeds_input_path {
-        Some(ref path) => Seeds::from_path(path),
+        Some(ref path) => Seeds::from_path(path, args.seed_args.max_seeds),
         None => {
             let now = Instant::now();
 
@@ -74,7 +74,7 @@ pub fn seed(
                 db_paths.check().context("mmseqs DB check failed")?;
             }
 
-            let seeds = match args.mmseqs_args.seed_mode {
+            let seeds = match args.seed_args.seed_mode {
                 SeedMode::Static => {
                     seed_static(queries, targets, &db_paths, stats, args).context("seeding failed")
                 }

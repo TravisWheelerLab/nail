@@ -98,7 +98,8 @@ pub fn seed_static(
     // ---
 
     let now = Instant::now();
-    let seeds = Seeds::from_path(align_tsv).context("failed to build seeds")?;
+    let seeds =
+        Seeds::from_path(align_tsv, args.seed_args.max_seeds).context("failed to build seeds")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
@@ -160,8 +161,8 @@ pub fn seed_progressive(
     }
 
     let mut i = 0;
-    let mut n_take = args.mmseqs_args.prog_n.context("prog_n unset")?;
-    let prog_frac = args.mmseqs_args.prog_f.context("prog_f unset")?;
+    let mut n_take = args.seed_args.prog_n.context("prog_n unset")?;
+    let prog_frac = args.seed_args.prog_f.context("prog_f unset")?;
 
     let mut state: Vec<State> = (0..queries.len())
         .map(|i| State {
@@ -251,7 +252,7 @@ pub fn seed_progressive(
                     }
 
                     prf_state.cnt += cnt;
-                    if let Some(max) = args.mmseqs_args.max_seeds {
+                    if let Some(max) = args.seed_args.max_seeds {
                         if prf_state.cnt >= max {
                             prf_state.status = Status::Terminated;
                             continue;
@@ -311,18 +312,9 @@ pub fn seed_progressive(
         for prf_idx in 0..queries.len() {
             let mut n_written = 0;
             for prog_adb in &mut prog_adbs {
-                if let Some(max) = args.mmseqs_args.max_seeds {
-                    let record_bytes = match prog_adb.next_n(prf_idx, max)? {
-                        ByteBuffer::Complete(buf) | ByteBuffer::Partial(buf, _) => buf,
-                        ByteBuffer::Empty => continue,
-                    };
-                    adb.write_all(record_bytes)?;
-                    n_written += record_bytes.len();
-                } else {
-                    let record_bytes = prog_adb.get(prf_idx)?;
-                    adb.write_all(record_bytes)?;
-                    n_written += record_bytes.len();
-                }
+                let record_bytes = prog_adb.get(prf_idx)?;
+                adb.write_all(record_bytes)?;
+                n_written += record_bytes.len();
             }
 
             adb.write_all(&[0])?;
@@ -356,7 +348,9 @@ pub fn seed_progressive(
     // ---
 
     let now = Instant::now();
-    let seeds = Seeds::from_path(align_tsv).context("failed to build seeds")?;
+
+    let seeds =
+        Seeds::from_path(align_tsv, args.seed_args.max_seeds).context("failed to build seeds")?;
 
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
     stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());

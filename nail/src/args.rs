@@ -76,7 +76,7 @@ pub struct SearchArgs {
     /// Arguments that are passed to MMseqs2
     #[command(flatten)]
     #[clap(next_help_heading = "Seeding options")]
-    pub mmseqs_args: SeedArgs,
+    pub seed_args: SeedArgs,
 
     #[command(flatten)]
     #[clap(next_help_heading = "Expert options")]
@@ -139,20 +139,20 @@ impl SearchArgs {
             self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
         }
 
-        match self.mmseqs_args.seed_mode {
+        match self.seed_args.seed_mode {
             SeedMode::Static => {
-                if self.mmseqs_args.prog_n.is_some() {
+                if self.seed_args.prog_n.is_some() {
                     bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
                 }
-                if self.mmseqs_args.prog_f.is_some() {
+                if self.seed_args.prog_f.is_some() {
                     bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
                 }
             }
             SeedMode::Prog => {
-                if self.mmseqs_args.prog_n.is_none() {
+                if self.seed_args.prog_n.is_none() {
                     bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
                 }
-                if self.mmseqs_args.prog_f.is_none() {
+                if self.seed_args.prog_f.is_none() {
                     bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
                 }
             }
@@ -175,14 +175,10 @@ impl SearchArgs {
         writeln!(out)?;
 
         writeln!(out, "pipeline arguments:")?;
-        writeln!(out, " ├─ mmseqs -k: {}", self.mmseqs_args.k)?;
-        writeln!(out, " ├─ mmseqs -s: {:.}", self.mmseqs_args.s)?;
-        writeln!(
-            out,
-            " ├─ mmseqs --max-seqs: {:.}",
-            self.mmseqs_args.max_seqs
-        )?;
-        match self.mmseqs_args.seed_mode {
+        writeln!(out, " ├─ mmseqs -k: {}", self.seed_args.k)?;
+        writeln!(out, " ├─ mmseqs -s: {:.}", self.seed_args.s)?;
+        writeln!(out, " ├─ mmseqs --max-seqs: {:.}", self.seed_args.max_seqs)?;
+        match self.seed_args.seed_mode {
             SeedMode::Static => {
                 writeln!(out, " ├─ seed-mode: static",)?;
             }
@@ -193,12 +189,12 @@ impl SearchArgs {
                 writeln!(
                     out,
                     "   ├─ n: {}",
-                    self.mmseqs_args.prog_n.unwrap_or_default()
+                    self.seed_args.prog_n.unwrap_or_default()
                 )?;
                 writeln!(
                     out,
                     "   └─ f: {}",
-                    self.mmseqs_args.prog_f.unwrap_or_default()
+                    self.seed_args.prog_f.unwrap_or_default()
                 )?;
             }
         }

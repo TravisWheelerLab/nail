@@ -425,11 +425,11 @@ impl Stats {
 
         use crate::util::term::*;
         if let Some(first) = recs.first() {
-            if first.1 == args.mmseqs_args.max_seqs as u64 {
+            if first.1 == args.seed_args.max_seqs as u64 {
                 println!();
                 println!(
                 "{RED}warning{RESET}: one or more queries saturated the mmseqs {YELLOW}--max-seqs{RESET} limit of {YELLOW}{}{RESET}",
-                args.mmseqs_args.max_seqs
+                args.seed_args.max_seqs
             );
                 println!("         for a full report, view the file: {YELLOW}{path:?}{RESET}",);
             }
@@ -442,8 +442,8 @@ impl Stats {
         let w1 = h1
             .len()
             .max(queries.iter().map(|q| q.len()).max().unwrap_or(0));
-        let w2 = h2.len().max(args.mmseqs_args.max_seqs.to_string().len());
-        let w3 = h3.len().max(args.mmseqs_args.max_seqs.to_string().len());
+        let w2 = h2.len().max(args.seed_args.max_seqs.to_string().len());
+        let w3 = h3.len().max(args.seed_args.max_seqs.to_string().len());
 
         writeln!(out, "{h1:W1$} {h2:W2$} {h3:W3$}", W1 = w1, W2 = w2, W3 = w3)?;
         writeln!(
