@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use regex::Regex;
 
@@ -89,6 +89,10 @@ pub struct SearchArgs {
 
 impl SearchArgs {
     pub fn validate(&mut self) -> anyhow::Result<()> {
+        // ----------------
+        // output precision
+        // ----------------
+
         if let Some(p1) = self.dev_args.bit_p {
             let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
             if p1 != p2 {
@@ -110,9 +114,53 @@ impl SearchArgs {
             }
         }
 
+        match self.io_args.tmp_dir_path {
+            Some(ref dir) => {
+                dir.create_dir()?;
+            }
+            None => {
+                let root_dir = PathBuf::from("./tmp-nail");
+                root_dir.create_dir()?;
+
+                let now = std::time::Instant::now();
+                const TIMEOUT: u64 = 1;
+                let dir = loop {
+                    if now.elapsed().as_secs() >= TIMEOUT {
+                        break Err(anyhow!("timeout: {TIMEOUT}s on Unix timestamping"));
+                    }
+
+                    let unix_ns = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .context("failed to produce Unix epoch time")?
+                        .as_nanos();
+
+                    let dir = root_dir.join(unix_ns.to_string());
+
+                    match std::fs::create_dir(&dir) {
+                        Ok(_) => break Ok(dir),
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                            // this probably almost never matters, but yielding
+                            // should help the case where many, many threads
+                            // happen to collide on the directory namespace
+                            std::thread::yield_now();
+                            continue;
+                        }
+                        Err(e) => break Err(e.into()),
+                    }
+                }
+                .with_context(|| {
+                    format!(
+                        "failed to create temp database directory under: {:?}",
+                        root_dir,
+                    )
+                })?;
+
+                self.io_args.tmp_dir_path = Some(dir);
+            }
+        }
+
         {
             // quickly make sure we can write to all of the results paths
-            self.io_args.temp_dir_path.create_dir()?;
 
             if let Some(path) = &self.io_args.tbl_results_path {
                 path.check_open(self.io_args.allow_overwrite)?;
@@ -239,8 +287,8 @@ pub struct IoArgs {
     pub seeds_output_path: Option<PathBuf>,
 
     /// The directory where intermediate files will be placed
-    #[arg(long = "tmp-dir", default_value = "tmp-nail/", value_name = "PATH")]
-    pub temp_dir_path: PathBuf,
+    #[arg(long = "tmp-dir", value_name = "PATH")]
+    pub tmp_dir_path: Option<PathBuf>,
 
     /// Allow nail to overwrite files
     #[arg(short = 'X', long = "allow-overwrite", default_value_t = false)]

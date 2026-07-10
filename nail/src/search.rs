@@ -16,7 +16,7 @@ use crate::pipeline::{
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
 use crate::util::{guess_query_format_from_query_file, FileFormat};
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use libnail::structs::Profile;
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
@@ -65,7 +65,13 @@ pub fn seed(
         None => {
             let now = Instant::now();
 
-            let db_paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
+            let db_paths = MmseqsDbPaths::new(
+                args.io_args
+                    .tmp_dir_path
+                    .as_ref()
+                    .context("args.io_args.tmp_dir_path is somehow unset")?,
+            );
+
             if args.io_args.allow_overwrite {
                 db_paths
                     .destroy()

@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
 use crate::{
@@ -414,7 +414,12 @@ impl Stats {
     pub fn write_max_seqs_report(&self, args: &SearchArgs) -> anyhow::Result<()> {
         let queries: Vec<&String> = self.seed_counts_by_query.keys().collect();
 
-        let path = args.io_args.temp_dir_path.join("max-seqs-report.txt");
+        let path = args
+            .io_args
+            .tmp_dir_path
+            .as_ref()
+            .context("args.io_args.tmp_dir_path is somehow unset")?
+            .join("max-seqs-report.txt");
 
         let mut out = path.open(true)?;
 

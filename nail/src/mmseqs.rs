@@ -264,7 +264,8 @@ pub struct MmseqsDbPaths {
 
 impl MmseqsDbPaths {
     pub fn new(dir: impl AsRef<Path>) -> Self {
-        let dir = dir.as_ref().to_path_buf();
+        let dir = dir.as_ref();
+
         Self {
             query_db: dir.join("query-db/qdb"),
             target_db: dir.join("target-db/tdb"),

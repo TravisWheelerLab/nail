@@ -80,7 +80,12 @@ pub fn seed_static(
 
     let align_tsv = match &args.io_args.seeds_output_path {
         Some(path) => path,
-        None => &args.io_args.temp_dir_path.join("seeds.tsv"),
+        None => &args
+            .io_args
+            .tmp_dir_path
+            .as_ref()
+            .context("args.io_args.tmp_dir_path is somehow unset")?
+            .join("seeds.tsv"),
     };
 
     let now = Instant::now();
@@ -330,7 +335,12 @@ pub fn seed_progressive(
 
     let align_tsv = match &args.io_args.seeds_output_path {
         Some(path) => path,
-        None => &args.io_args.temp_dir_path.join("seeds.tsv"),
+        None => &args
+            .io_args
+            .tmp_dir_path
+            .as_ref()
+            .context("args.io_args.tmp_dir_path is somehow unset")?
+            .join("seeds.tsv"),
     };
 
     let now = Instant::now();
