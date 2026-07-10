@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-7-10
+
 ### Added
 - added CLI param `--mmseqs-path` 
 - added error Structs `io::index::{Offset, IndexCollisionError}`
