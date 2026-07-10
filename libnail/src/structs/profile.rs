@@ -346,7 +346,7 @@ mod serialize {
     }
 }
 
-#[derive(Clone, Default, DataSize)]
+#[derive(Clone, PartialEq, Default, DataSize)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,

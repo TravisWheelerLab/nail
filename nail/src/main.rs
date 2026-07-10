@@ -10,7 +10,7 @@ mod util;
 use clap::Parser;
 
 use crate::{
-    args::{DevSubCommands, NailCli, NailSubCommands},
+    args::{handle_clap_error, DevSubCommands, NailCli, NailSubCommands},
     dev::{dev_mx, dev_play, dev_search},
     search::search,
     util::{check_mmseqs_installed, set_threads, term::*},
@@ -29,29 +29,35 @@ fn main() {
 
 fn run() -> anyhow::Result<()> {
     color_backtrace::install();
-    match NailCli::parse().command {
+
+    let command = match NailCli::try_parse() {
+        Err(e) => handle_clap_error(e),
+        Ok(cli) => cli.command,
+    };
+
+    match command {
         NailSubCommands::Search(mut args) => {
             args.validate()?;
-            check_mmseqs_installed()?;
+            check_mmseqs_installed(&args.mmseqs_path)?;
             set_threads(args.num_threads)?;
             search(args)?;
         }
         NailSubCommands::Dev(cmd) => match cmd {
             DevSubCommands::Play(mut args) => {
                 args.validate()?;
-                check_mmseqs_installed()?;
+                check_mmseqs_installed(&args.mmseqs_path)?;
                 set_threads(args.num_threads)?;
                 dev_play(args)?;
             }
             DevSubCommands::Search(mut args) => {
                 args.validate()?;
-                check_mmseqs_installed()?;
+                check_mmseqs_installed(&args.mmseqs_path)?;
                 set_threads(args.num_threads)?;
                 dev_search(args)?;
             }
             DevSubCommands::Mx(mut args) => {
                 args.validate()?;
-                check_mmseqs_installed()?;
+                check_mmseqs_installed(&args.mmseqs_path)?;
                 set_threads(args.num_threads)?;
                 dev_mx(args)?;
             }

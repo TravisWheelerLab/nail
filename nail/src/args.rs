@@ -1,12 +1,28 @@
-use std::{io::Write, path::PathBuf, str::FromStr};
+use std::{
+    io::{IsTerminal, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 
-use anyhow::bail;
-use clap::{Args, Parser, Subcommand};
+use anyhow::{anyhow, bail, Context};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use regex::Regex;
 
 use crate::util::{term::*, PathExt};
 
-#[derive(Subcommand)]
+#[derive(Parser)]
+#[command(
+    version,
+    name = "nail",
+    about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
+)]
+pub struct NailCli {
+    #[command(subcommand)]
+    pub command: NailSubCommands,
+}
+
 #[allow(clippy::large_enum_variant)]
+#[derive(Subcommand)]
 pub enum NailSubCommands {
     #[command(about = "Run nail's protein search pipeline")]
     Search(SearchArgs),
@@ -14,24 +30,13 @@ pub enum NailSubCommands {
     Dev(DevSubCommands),
 }
 
-#[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
+#[derive(Subcommand)]
 pub enum DevSubCommands {
     #[command()]
     Play(SearchArgs),
     Search(SearchArgs),
     Mx(SearchArgs),
-}
-
-#[derive(Parser)]
-#[command(version)]
-#[command(name = "nail")]
-#[command(
-    about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
-)]
-pub struct NailCli {
-    #[command(subcommand)]
-    pub command: NailSubCommands,
 }
 
 #[derive(Debug, Args)]
@@ -56,6 +61,10 @@ pub struct SearchArgs {
     #[arg(short = 'x', action)]
     pub ali_to_stdout: bool,
 
+    /// The path to the MMseqs2 binary that nail will use for seeding
+    #[arg(long, value_name = "/path/to/mmseqs", default_value = "mmseqs")]
+    pub mmseqs_path: PathBuf,
+
     #[command(flatten)]
     #[clap(next_help_heading = "File I/O options")]
     pub io_args: IoArgs,
@@ -67,7 +76,7 @@ pub struct SearchArgs {
     /// Arguments that are passed to MMseqs2
     #[command(flatten)]
     #[clap(next_help_heading = "Seeding options")]
-    pub mmseqs_args: MmseqsArgs,
+    pub seed_args: SeedArgs,
 
     #[command(flatten)]
     #[clap(next_help_heading = "Expert options")]
@@ -80,6 +89,33 @@ pub struct SearchArgs {
 
 impl SearchArgs {
     pub fn validate(&mut self) -> anyhow::Result<()> {
+        if self.ali_to_stdout {
+            self.io_args.tbl_results_path = None
+        }
+
+        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
+            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
+        }
+
+        match self.seed_args.seed_mode {
+            SeedMode::Static => {
+                if self.seed_args.prog_n.is_some() {
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                }
+                if self.seed_args.prog_f.is_some() {
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                }
+            }
+            SeedMode::Prog => {
+                if self.seed_args.prog_n.is_none() {
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
+                }
+                if self.seed_args.prog_f.is_none() {
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
+                }
+            }
+        }
+
         if let Some(p1) = self.dev_args.bit_p {
             let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
             if p1 != p2 {
@@ -102,56 +138,80 @@ impl SearchArgs {
         }
 
         {
-            // quickly make sure we can write to all of the results paths
-            self.io_args.temp_dir_path.create_dir()?;
-
             if let Some(path) = &self.io_args.tbl_results_path {
-                path.check_open(self.io_args.allow_overwrite)?;
+                match path.check_open(self.io_args.allow_overwrite) {
+                    Ok(_) => Ok(()),
+                    Err(e)
+                        if e.chain()
+                            .any(|cause| cause.to_string().contains("already exists")) =>
+                    {
+                        bail!(
+                            "tabular results file: {path:?} already exists\n\
+                                {YELLOW}help:{RESET} run nail with {BLUE}--allow-overwrite{RESET} \
+                                or redirect output with {BLUE}--tbl-out <PATH>{RESET}",
+                        );
+                    }
+                    Err(e) => Err(e),
+                }?;
             }
 
-            if let Some(path) = &self.io_args.ali_results_path {
-                path.check_open(self.io_args.allow_overwrite)?;
-            }
-
-            if let Some(path) = &self.io_args.seeds_output_path {
-                path.check_open(self.io_args.allow_overwrite)?;
-            }
-
-            if let Some(path) = &self.dev_args.stats_results_path {
-                path.check_open(self.io_args.allow_overwrite)?;
-            }
+            [
+                &self.io_args.ali_results_path,
+                &self.io_args.seeds_output_path,
+                &self.dev_args.stats_results_path,
+            ]
+            .into_iter()
+            .try_for_each(|path| {
+                if let Some(p) = path {
+                    p.check_open(self.io_args.allow_overwrite)
+                } else {
+                    Ok(())
+                }
+            })?;
         }
 
-        if self.ali_to_stdout {
-            self.io_args.tbl_results_path = None
-        }
-
-        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
-            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
-        }
-
-        if self.mmseqs_args.prog_seed {
-            if self.mmseqs_args.max_seqs != 2_147_483_647 {
-                bail!(
-                    "the argument '{YELLOW}--mmseqs-max-seqs{RESET}' is set wrong: {}",
-                    self.mmseqs_args.max_seqs
-                )
+        match self.io_args.tmp_dir_path {
+            Some(ref dir) => {
+                dir.create_dir()?;
             }
+            None => {
+                let root_dir = PathBuf::from("./tmp-nail");
+                root_dir.create_dir()?;
 
-            if self.mmseqs_args.prog_n.is_none() {
-                bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
-            }
+                let now = std::time::Instant::now();
+                const TIMEOUT: u64 = 1;
+                let dir = loop {
+                    if now.elapsed().as_secs() >= TIMEOUT {
+                        break Err(anyhow!("timeout: {TIMEOUT}s on Unix timestamping"));
+                    }
 
-            if self.mmseqs_args.prog_n.is_none() {
-                bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
-            }
-        } else {
-            #[allow(clippy::collapsible_if)]
-            if self.mmseqs_args.prog_n.is_some() {
-                bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
-            }
-            if self.mmseqs_args.prog_n.is_some() {
-                bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                    let unix_ns = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .context("failed to produce Unix epoch time")?
+                        .as_nanos();
+
+                    let dir = root_dir.join(unix_ns.to_string());
+
+                    match std::fs::create_dir(&dir) {
+                        Ok(_) => break Ok(dir),
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                            // this probably almost never matters, but yielding
+                            // should help the case where many, many threads
+                            // happen to collide on the directory namespace
+                            std::thread::yield_now();
+                            continue;
+                        }
+                        Err(e) => break Err(e.into()),
+                    }
+                }
+                .with_context(|| {
+                    format!(
+                        "failed to create temp database directory under: {:?}",
+                        root_dir,
+                    )
+                })?;
+
+                self.io_args.tmp_dir_path = Some(dir);
             }
         }
 
@@ -172,26 +232,30 @@ impl SearchArgs {
         writeln!(out)?;
 
         writeln!(out, "pipeline arguments:")?;
-        writeln!(out, " ├─ mmseqs -k: {}", self.mmseqs_args.k)?;
-        writeln!(out, " ├─ mmseqs -s: {:.}", self.mmseqs_args.s)?;
-        writeln!(
-            out,
-            " ├─ mmseqs --max-seqs: {:.}",
-            self.mmseqs_args.max_seqs
-        )?;
-        writeln!(out, " ├─ prog-seed: {}", self.mmseqs_args.prog_seed)?;
-        if self.mmseqs_args.prog_seed {
-            writeln!(
-                out,
-                "   ├─ n: {}",
-                self.mmseqs_args.prog_n.unwrap_or_default()
-            )?;
-            writeln!(
-                out,
-                "   └─ f: {}",
-                self.mmseqs_args.prog_f.unwrap_or_default()
-            )?;
+        writeln!(out, " ├─ mmseqs -k: {}", self.seed_args.k)?;
+        writeln!(out, " ├─ mmseqs -s: {:.}", self.seed_args.s)?;
+        writeln!(out, " ├─ mmseqs --max-seqs: {:.}", self.seed_args.max_seqs)?;
+        match self.seed_args.seed_mode {
+            SeedMode::Static => {
+                writeln!(out, " ├─ seed-mode: static",)?;
+            }
+
+            SeedMode::Prog => {
+                writeln!(out, " ├─ seed-mode: prog",)?;
+
+                writeln!(
+                    out,
+                    "   ├─ n: {}",
+                    self.seed_args.prog_n.unwrap_or_default()
+                )?;
+                writeln!(
+                    out,
+                    "   └─ f: {}",
+                    self.seed_args.prog_f.unwrap_or_default()
+                )?;
+            }
         }
+
         writeln!(out, " ├─ α: {}", self.pipeline_args.alpha)?;
         writeln!(out, " ├─ β: {}", self.pipeline_args.beta)?;
         writeln!(out, " ├─ γ: {}", self.pipeline_args.gamma)?;
@@ -232,83 +296,94 @@ pub struct IoArgs {
     pub seeds_output_path: Option<PathBuf>,
 
     /// The directory where intermediate files will be placed
-    #[arg(long = "tmp-dir", default_value = "tmp-nail/", value_name = "PATH")]
-    pub temp_dir_path: PathBuf,
+    #[arg(long = "tmp-dir", value_name = "PATH")]
+    pub tmp_dir_path: Option<PathBuf>,
 
     /// Allow nail to overwrite files
-    #[arg(long = "allow-overwrite", default_value_t = false)]
+    #[arg(short = 'X', long = "allow-overwrite", default_value_t = false)]
     pub allow_overwrite: bool,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct PipelineArgs {
-    /// Pruning parameter alpha
+    /// (cloud search) local score pruning threshold
     #[arg(
         short = 'A',
         default_value_t = 10.0,
         value_name = "X",
-        help = "Cloud search parameter α:\n  \
-                local score pruning threshold"
+        verbatim_doc_comment
     )]
     pub alpha: f32,
 
-    /// Pruning parameter beta
+    /// (cloud search) global score pruning threshold
     #[arg(
         short = 'B',
         default_value_t = 16.0,
         value_name = "X",
-        help = "Cloud search parameter β:\n  \
-                global score pruning threshold"
+        verbatim_doc_comment
     )]
     pub beta: f32,
 
-    /// Pruning parameter gamma
+    /// (cloud search) at minimum, compute N anti-diagonals
     #[arg(
         short = 'G',
         default_value_t = 5,
         value_name = "N",
-        help = "Cloud search parameter γ:\n  \
-                at minimum, compute N anti-diagonals"
+        verbatim_doc_comment
     )]
     pub gamma: usize,
 
-    /// Seeding filter threshold
+    /// (cloud search) allow at most N attempts to recover disjoint clouds
+    #[arg(
+        short = 'a',
+        default_value_t = 5,
+        value_name = "N",
+        verbatim_doc_comment
+    )]
+    pub cloud_max_join_attempts: usize,
+
+    /// (cloud search) when cloud search fails, scale cloud search parameters (α, ɓ, γ) by 1.0 + X
+    #[arg(
+        short = 'f',
+        default_value_t = 0.5,
+        value_name = "X",
+        verbatim_doc_comment
+    )]
+    pub cloud_param_scale_factor: f32,
+
+    /// (seeding filter) filter hits with P-value > X
     #[arg(
         short = 'S',
         default_value_t = 1e-4,
         value_name = "X",
-        help = "Seeding filter threshold:\n  \
-                filter hits with P-value > X"
+        verbatim_doc_comment
     )]
     pub seed_pvalue_threshold: f64,
 
-    /// Cloud search filter threshold
+    /// (cloud search filter) filter hits with P-value > X
     #[arg(
         short = 'C',
         default_value_t = 1e-2,
         value_name = "X",
-        help = "Cloud search threshold:\n  \
-                filter hits with P-value > X"
+        verbatim_doc_comment
     )]
     pub cloud_pvalue_threshold: f64,
 
-    /// Forward filter threshold
+    /// (forward filter) filter hits with P-value > X
     #[arg(
         short = 'F',
         default_value_t = 1e-4,
         value_name = "X",
-        help = "Forward filter threshold:\n  \
-                filter hits with P-value > X"
+        verbatim_doc_comment
     )]
     pub forward_pvalue_threshold: f64,
 
-    /// Final E-value threshold
+    /// (reporting filter) filter hits with E-value > X
     #[arg(
         short = 'E',
         default_value_t = 10.0,
         value_name = "X",
-        help = "Final reporting threshold:\n  \
-                filter hits with E-value > X"
+        verbatim_doc_comment
     )]
     pub e_value_threshold: f64,
 
@@ -352,76 +427,176 @@ pub struct DevArgs {
 }
 
 #[derive(Args, Debug, Clone, Default)]
-pub struct MmseqsArgs {
-    /// MMseqs2 Parameter: k-mer length (0: automatically set to optimum)
+pub struct SeedArgs {
+    /// (MMseqs2 prefilter) k-mer length (0: automatically set to optimum)
     #[arg(
         long = "mmseqs-k",
         default_value_t = 6usize,
         value_name = "N",
-        help = "MMseqs2 parameter:\n  \
-                k-mer length (0: automatically set to optimum)"
+        verbatim_doc_comment
     )]
     pub k: usize,
 
-    /// MMseqs2 Parameter: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
+    /// (MMseqs2 prefilter) Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
     #[arg(
         long = "mmseqs-s",
         default_value_t = 10.0,
         value_name = "X",
-        help = "MMseqs2 parameter:\n  \
-                Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive"
+        verbatim_doc_comment
     )]
     pub s: f32,
 
-    /// MMseqs2 Parameter: Maximum results per query sequence allowed to pass the prefilter
+    /// (MMseqs2 prefilter): Maximum results per query sequence allowed to pass the prefilter
+    ///
+    ///
     #[arg(
         long = "mmseqs-max-seqs",
-        default_value_t = 200usize,
-        default_value_if("prog_seed", "true", "2147483647"),
+        default_value_t = 2147483647usize,
+        default_value_if("seed_mode", "static", "300"),
+        default_value_if("seed_mode", "prog", "2147483647"),
         value_name = "N",
-        help = "MMseqs2 parameter:\n  \
-                Maximum results per query sequence allowed to pass the prefilter"
+        verbatim_doc_comment
     )]
     pub max_seqs: usize,
 
-    /// MMseqs2 Parameter: Correct for locally biased amino acid composition (range 0-1)
+    /// Impose a limit on the number of seeds that nail will align per query
+    #[arg(long = "max-seeds", value_name = "N", verbatim_doc_comment)]
+    pub max_seeds: Option<usize>,
+
+    /// (MMseqs2 Parameter) Correct for locally biased amino acid composition (range 0-1)
     #[arg(
         long = "mmseqs-comp-bias-corr",
-        default_value = None,
         value_name = "N",
         hide = true,
-        help = "MMseqs2 parameter:\n  \
-                Correct for locally biased amino acid composition (range 0-1)"
+        verbatim_doc_comment
     )]
     pub comp_bias_corr: Option<usize>,
 
-    /// Enable progressive seeding
-    #[arg(long, action, conflicts_with = "max_seqs")]
-    pub prog_seed: bool,
+    /// How nail will produce alignment seeds
+    ///
+    ///   static|0: run the MMseqs2 prefilter, then run MMseqs2 align on the entire prefilter results
+    ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following
+    ///             parameterization of --prog-n and prog-f
+    #[arg(
+        long,
+        default_value = "prog",
+        value_name = "MODE",
+        verbatim_doc_comment
+    )]
+    pub seed_mode: SeedMode,
 
-    /// The initial number of mmseqs alignments per query
+    /// (prog seeding) the initial number of mmseqs alignments per query
     #[arg(
         long,
         default_value = "200",
-        default_value_if("prog_seed", "true", "200"),
-        default_value_if("prog_seed", "false", None),
+        default_value_if("seed_mode", "static", None),
+        default_value_if("seed_mode", "prog", "200"),
         value_name = "N",
-        conflicts_with = "max_seqs",
-        help = "Progressive seeding:\n  \
-                the initial number of mmseqs alignments per query"
+        verbatim_doc_comment
     )]
     pub prog_n: Option<usize>,
 
-    /// test
+    /// (prog seeding) the fraction of hits required to continue progressive seeding
     #[arg(
         long,
         default_value = "0.01",
-        default_value_if("prog_seed", "true", "0.01"),
-        default_value_if("prog_seed", "false", None),
+        default_value_if("seed_mode", "static", None),
+        default_value_if("seed_mode", "prog", "0.01"),
         value_name = "X",
-        conflicts_with = "max_seqs",
-        help = "Progressive seeding:\n  \
-                the fraction of hits required to continue progressive seeding"
+        verbatim_doc_comment
     )]
     pub prog_f: Option<f32>,
+}
+
+#[derive(Default, Clone, Copy, Debug, ValueEnum)]
+pub enum SeedMode {
+    #[value(alias = "0")]
+    Static,
+    #[default]
+    #[value(alias = "1")]
+    Prog,
+}
+
+pub fn handle_clap_error(e: clap::Error) -> ! {
+    match e.kind() {
+        clap::error::ErrorKind::DisplayHelp => {
+            let args: Vec<String> = std::env::args().collect();
+
+            let is_terminal = std::io::stdout().is_terminal();
+            let is_short_help_zebra = args[2] == "-hz";
+
+            if is_terminal && is_short_help_zebra {
+                print_help_summary_zebra(&e);
+                std::process::exit(e.exit_code());
+            } else {
+                e.exit();
+            }
+        }
+        _ => e.exit(),
+    }
+}
+
+pub fn print_help_summary_zebra(e: &clap::Error) {
+    let ansi_string = format!("{}", e.render().ansi());
+
+    // ANSI codes escaped for use in regex search
+    const BOLD_RE: &str = r"\x1b\[1m";
+    const UNDERLINE_RE: &str = r"\x1b\[4m";
+    const RESET_RE: &str = r"\x1b\[0m";
+
+    // this should find any ANSI formatted clap --help line that is a header
+    // i.e. this will find "usage", "arguments," "options," and then anything
+    // set up in the CLI using the "(next_help_heading macro = <HEADER>)"
+    let header_re = Regex::new(&format!(r"(?m)^{BOLD_RE}{UNDERLINE_RE}.*:{RESET_RE}")).unwrap();
+
+    /// Given a regex and string, do a split-on-regex-inclusive search.
+    ///
+    /// returns: (splits, matches)
+    fn split_and_match(re: &Regex, str: &str) -> (Vec<String>, Vec<String>) {
+        let mut other = Vec::new();
+        let mut matches = Vec::new();
+        let mut last = 0;
+
+        for m in re.find_iter(str) {
+            other.push(str[last..m.start()].to_string());
+            matches.push(m.as_str().to_string());
+            last = m.end();
+        }
+
+        other.push(str[last..].to_string());
+
+        (other, matches)
+    }
+
+    let (mut info, headers) = split_and_match(&header_re, &ansi_string);
+
+    // this should find any ANSI formatted clap argument in the info lines
+    let arg_re = Regex::new(&format!(r"(?m)^\s*{BOLD_RE}.*{RESET_RE}")).unwrap();
+
+    for info_lines in info
+        .iter_mut()
+        // skip three sets of info lines,
+        // since the "about" section
+        // is before the first header
+        .skip(3)
+    {
+        let (helps, args) = split_and_match(&arg_re, info_lines);
+
+        *info_lines = args
+            .into_iter()
+            .zip(helps.into_iter().skip(1))
+            .enumerate()
+            .map(|(i, (arg, help))| {
+                let color = if i % 2 == 0 { BRIGHT_WHITE } else { WHITE };
+                format!("{color}{arg}{color}{help}{RESET}")
+            })
+            .collect();
+    }
+
+    // this prints "about"
+    print!("{}", info[0]);
+
+    for (h, i) in headers.into_iter().zip(info.into_iter().skip(1)) {
+        print!("{h}{i}");
+    }
 }

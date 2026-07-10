@@ -7,11 +7,13 @@ use std::{
     process::Command,
 };
 
-use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
+use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO};
 
 use crate::{
     args::SearchArgs,
-    io::{Database, Fasta, ReadSeekExt, ReadState},
+    io::{
+        ReadSeekExt, ReadState, {Fasta, P7Hmm},
+    },
     util::{CommandExt, PathExt},
 };
 
@@ -262,7 +264,8 @@ pub struct MmseqsDbPaths {
 
 impl MmseqsDbPaths {
     pub fn new(dir: impl AsRef<Path>) -> Self {
-        let dir = dir.as_ref().to_path_buf();
+        let dir = dir.as_ref();
+
         Self {
             query_db: dir.join("query-db/qdb"),
             target_db: dir.join("target-db/tdb"),
@@ -457,7 +460,8 @@ pub fn write_mmseqs_sequence_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (seq_count, seq) in sequences.values().enumerate() {
+    for (seq_count, seq) in sequences.iter().enumerate() {
+        let seq = seq?;
         db.write_all(&seq.utf8_bytes[1..])?;
         db.write_all(&[10u8, 0u8])?;
 
@@ -482,7 +486,7 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: impl Iterator<Item = Profile>,
+    profiles: &P7Hmm,
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
@@ -511,7 +515,8 @@ pub fn write_mmseqs_profile_database(
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
 
-    for (prf_cnt, prf) in profiles.enumerate() {
+    for (prf_cnt, prf) in profiles.iter().enumerate() {
+        let prf = prf?;
         for prf_idx in 1..=prf.length {
             for byte in (0..20)
                 .map(|residue| Nats(prf.match_score(residue, prf_idx)))
@@ -577,7 +582,7 @@ pub fn run_mmseqs_prefilter(
     score_mx_path: Option<PathBuf>,
     args: &SearchArgs,
 ) -> anyhow::Result<()> {
-    let mut prefilter = Command::new("mmseqs");
+    let mut prefilter = Command::new(&args.mmseqs_path);
 
     let qdb = query_db_path.as_ref();
     let tdb = target_db_path.as_ref();
@@ -595,11 +600,11 @@ pub fn run_mmseqs_prefilter(
         .arg(tdb)
         .arg(pdb)
         .args(["--threads", &args.num_threads.to_string()])
-        .args(["-k", &args.mmseqs_args.k.to_string()])
-        .args(["-s", &args.mmseqs_args.s.to_string()])
-        .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()]);
+        .args(["-k", &args.seed_args.k.to_string()])
+        .args(["-s", &args.seed_args.s.to_string()])
+        .args(["--max-seqs", &args.seed_args.max_seqs.to_string()]);
 
-    if let Some(v) = args.mmseqs_args.comp_bias_corr {
+    if let Some(v) = args.seed_args.comp_bias_corr {
         prefilter.args(["--comp-bias-corr", &v.to_string()]);
     }
 
@@ -639,7 +644,7 @@ pub fn run_mmseqs_align(
 
     adb_dir.create_dir()?;
 
-    let mut align = Command::new("mmseqs");
+    let mut align = Command::new(&args.mmseqs_path);
     align
         .arg("align")
         .arg(qdb)
@@ -652,7 +657,7 @@ pub fn run_mmseqs_align(
         // it is required to get start positions for alignments
         .args(["-a", "1"]);
 
-    if let Some(v) = args.mmseqs_args.comp_bias_corr {
+    if let Some(v) = args.seed_args.comp_bias_corr {
         align.args(["--comp-bias-corr", &v.to_string()]);
     }
 
@@ -678,7 +683,7 @@ pub fn run_mmseqs_convertalis(
     let adb = align_db_path.as_ref().to_path_buf();
     let align_tsv = align_tsv_path.as_ref();
 
-    Command::new("mmseqs")
+    Command::new(&args.mmseqs_path)
         .arg("convertalis")
         .arg(qdb)
         .arg(tdb)

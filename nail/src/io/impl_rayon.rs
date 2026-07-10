@@ -1,43 +1,30 @@
-use super::{Database, DatabaseValues, Fasta, P7Hmm};
-use libnail::structs::{Profile, Sequence};
+use crate::io::{
+    RecordParser, {Database, DatabaseIter},
+};
 
 use rayon::iter::{
     plumbing::{bridge, Consumer, Producer, ProducerCallback, UnindexedConsumer},
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
 
-impl Fasta {
-    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, Sequence> {
+impl<R> Database<R>
+where
+    R: RecordParser,
+{
+    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, R> {
         DatabaseParIter {
-            inner: Box::new(self.clone()),
-            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
+            inner: self.clone(),
+            names: self.index.keys().collect(),
         }
     }
 }
 
-impl<'a> IntoParallelIterator for &'a Fasta {
-    type Iter = DatabaseParIter<'a, Sequence>;
-
-    type Item = Sequence;
-
-    fn into_par_iter(self) -> Self::Iter {
-        self.par_iter()
-    }
-}
-
-impl P7Hmm {
-    pub fn par_iter(&'_ self) -> DatabaseParIter<'_, Profile> {
-        DatabaseParIter {
-            inner: Box::new(self.clone()),
-            names: self.index.inner.keys().map(|s| s.as_str()).collect(),
-        }
-    }
-}
-
-impl<'a> IntoParallelIterator for &'a P7Hmm {
-    type Iter = DatabaseParIter<'a, Profile>;
-
-    type Item = Profile;
+impl<'a, R> IntoParallelIterator for &'a Database<R>
+where
+    R: RecordParser,
+{
+    type Iter = DatabaseParIter<'a, R>;
+    type Item = anyhow::Result<R::Record>;
 
     fn into_par_iter(self) -> Self::Iter {
         self.par_iter()
@@ -46,16 +33,19 @@ impl<'a> IntoParallelIterator for &'a P7Hmm {
 
 /////
 
-pub struct DatabaseParIter<'a, T> {
-    pub(super) inner: Box<dyn Database<T>>,
+pub struct DatabaseParIter<'a, R>
+where
+    R: RecordParser,
+{
+    pub(super) inner: Database<R>,
     pub(super) names: Vec<&'a str>,
 }
 
-impl<'a, T> ParallelIterator for DatabaseParIter<'a, T>
+impl<'a, R> ParallelIterator for DatabaseParIter<'a, R>
 where
-    T: Send + Sync,
+    R: RecordParser,
 {
-    type Item = T;
+    type Item = anyhow::Result<R::Record>;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
     where
@@ -65,9 +55,9 @@ where
     }
 }
 
-impl<'a, T> IndexedParallelIterator for DatabaseParIter<'a, T>
+impl<'a, R> IndexedParallelIterator for DatabaseParIter<'a, R>
 where
-    T: Send + Sync,
+    R: RecordParser,
 {
     fn len(&self) -> usize {
         self.inner.len()
@@ -87,20 +77,34 @@ where
     }
 }
 
-pub struct DatabaseProducer<'a, T> {
-    inner: Box<dyn Database<T>>,
+pub struct DatabaseProducer<'a, R>
+where
+    R: RecordParser,
+{
+    inner: Database<R>,
     names: &'a [&'a str],
 }
 
-impl<'a, T> Producer for DatabaseProducer<'a, T> {
-    type Item = T;
+impl<'a, R> Producer for DatabaseProducer<'a, R>
+where
+    R: RecordParser,
+{
+    type Item = anyhow::Result<R::Record>;
 
-    type IntoIter = DatabaseValues<'a, T>;
+    // note: at the time of writing, opaque types are unstable in associated
+    //       types e.g. something like this isn't allowed here:
+    //         type IntoIter = DatabaseIter<'a, R, impl DoubleEndedIter<Item = &str>>;
+    //
+    //       but, even if this feature is stablized, it might not fly since:
+    //         names.iter() seems to produce Iter<Item = &&str>
+    type IntoIter = DatabaseIter<'a, R, std::iter::Copied<std::slice::Iter<'a, &'a str>>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        DatabaseValues {
+        DatabaseIter {
             inner: self.inner,
-            names_iter: Box::new(self.names.iter().copied()),
+            // note: copied() is needed here, since
+            // we have &[&str] instead of Vec<&Str>
+            keys: self.names.iter().copied(),
         }
     }
 
@@ -117,4 +121,54 @@ impl<'a, T> Producer for DatabaseProducer<'a, T> {
             },
         )
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::io::{Fasta, P7Hmm};
+
+    use rayon::iter::ParallelIterator;
+
+    macro_rules! database_par_iter_test {
+        ($name:ident, $func:expr, $threads:expr) => {
+            #[test]
+            fn $name() -> anyhow::Result<()> {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads($threads)
+                    .build()
+                    .unwrap()
+                    .install(|| -> anyhow::Result<()> { $func() })
+            }
+        };
+    }
+
+    fn test_parse_fasta() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let database = Fasta::from_path(&path)?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    database_par_iter_test!(test_fasta_par_iter_parse_1_thread, test_parse_fasta, 1);
+    database_par_iter_test!(test_fasta_par_iter_parse_2_threads, test_parse_fasta, 2);
+    database_par_iter_test!(test_fasta_par_iter_parse_4_threads, test_parse_fasta, 4);
+    database_par_iter_test!(test_fasta_par_iter_parse_8_threads, test_parse_fasta, 8);
+    database_par_iter_test!(test_fasta_par_iter_parse_16_threads, test_parse_fasta, 16);
+    database_par_iter_test!(test_fasta_par_iter_parse_32_threads, test_parse_fasta, 32);
+
+    fn test_parse_p7hmm() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let database = P7Hmm::from_path(&path)?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    database_par_iter_test!(test_p7hmm_par_iter_parse_1_thread, test_parse_p7hmm, 1);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_2_threads, test_parse_p7hmm, 2);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_4_threads, test_parse_p7hmm, 4);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_8_threads, test_parse_p7hmm, 8);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_16_threads, test_parse_p7hmm, 16);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_32_threads, test_parse_p7hmm, 32);
 }

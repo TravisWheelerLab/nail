@@ -1,11 +1,4 @@
-use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
-use crate::io::{util::ByteBufferExt, DatabaseIter};
+use crate::io::{util::ByteBufferExt, Database, Offset};
 
 use libnail::structs::{
     profile::{ProfileBuilder, Transition},
@@ -13,53 +6,42 @@ use libnail::structs::{
 };
 
 use anyhow::{bail, Context};
-use indexmap::IndexMap;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
-use super::{Database, DatabaseValues, Delimiter, Index, RecordParser};
+use super::{Delimiter, RecordParser};
 
-#[derive(Clone, Default)]
-pub struct P7HmmOffset {
-    // points to the 'H' byte in the 'HMMER3/f ...' line
-    start: usize,
-    n_bytes: usize,
-}
+pub type P7Hmm = Database<P7HmmParser>;
 
-impl std::fmt::Debug for P7HmmOffset {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}->+{}", self.start, self.n_bytes)
-    }
-}
-
+#[derive(Clone)]
 enum P7HmmParserState {
     Name,
     Delim,
 }
 
+#[derive(Clone)]
 pub struct P7HmmParser {
     state: P7HmmParserState,
     name: String,
-    offset: P7HmmOffset,
+    offset: Offset,
 }
 
 impl RecordParser for P7HmmParser {
     const DELIM: &'static [u8] = b"//";
     const DELIM_TYPE: Delimiter = Delimiter::Terminating;
-    type Offset = P7HmmOffset;
     type Record = Profile;
 
     fn new(start_pos: u64) -> Self {
         Self {
             state: P7HmmParserState::Name,
             name: String::new(),
-            offset: P7HmmOffset {
-                start: start_pos as usize,
+            offset: Offset {
+                start: start_pos,
                 n_bytes: 0,
             },
         }
     }
 
-    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Self::Offset)> {
+    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Offset)> {
         use P7HmmParserState::*;
 
         self.offset.n_bytes += line.len();
@@ -91,8 +73,8 @@ impl RecordParser for P7HmmParser {
                 self.state = Name;
                 self.name.clear();
                 // if the line has a newline at the end, we want to add one
-                let maybe_one = (line[line.len() - 1] != b'\n') as usize;
-                self.offset.start = line_start as usize + line.len() + maybe_one;
+                let maybe_one = (line[line.len() - 1] != b'\n') as u64;
+                self.offset.start = line_start + line.len() as u64 + maybe_one;
                 self.offset.n_bytes = 0;
             }
             _ => {}
@@ -330,109 +312,77 @@ fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> 
         })
 }
 
-pub type P7HmmIndex = Index<IndexMap<String, P7HmmOffset>, P7HmmParser>;
-pub struct P7Hmm {
-    path: PathBuf,
-    file: File,
-    pub(crate) index: Arc<P7HmmIndex>,
-    buffer: Vec<u8>,
-}
-
-impl Clone for P7Hmm {
-    fn clone(&self) -> Self {
-        let file = match File::open(&self.path) {
-            Ok(file) => file,
-            Err(err) => panic!(
-                "failed to reopen fasta file on clone: {:?}\n error: {}",
-                self.path, err
-            ),
-        };
-
-        Self {
-            file,
-            path: self.path.clone(),
-            index: self.index.clone(),
-            buffer: vec![],
-        }
-    }
-}
-
-impl P7Hmm {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let index = Arc::new(P7HmmIndex::from_path::<20, 1>(path.as_ref())?);
-        let file = File::open(path.as_ref())?;
-
-        Ok(Self {
-            file,
-            index,
-            buffer: Vec::new(),
-            path: PathBuf::from(path.as_ref()),
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.index.len()
-    }
-
-    pub fn get(&mut self, name: &str) -> Option<Profile> {
-        let offset = self.index.get(name)?;
-
-        self.buffer.resize(offset.n_bytes, 0u8);
-
-        self.file
-            .seek(SeekFrom::Start(offset.start as u64))
-            .expect("failed to seek in P7Hmm::get()");
-
-        self.file
-            .read_exact(&mut self.buffer)
-            .expect("failed to read in P7Hmm::get()");
-
-        Some(P7HmmParser::parse(&self.buffer).unwrap_or_else(|e| {
-            panic!("failed to produce Profile in P7Hmm::get()\nError: {e}");
-        }))
-    }
-
-    pub fn names_iter(&self) -> impl Iterator<Item = &str> {
-        self.index.inner.keys().map(|k| k.as_str())
-    }
-}
-
-impl Database<Profile> for P7Hmm {
-    fn get(&mut self, name: &str) -> Option<Profile> {
-        self.get(name)
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn iter(&'_ self) -> DatabaseIter<'_, Profile> {
-        DatabaseIter {
-            inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
-        }
-    }
-
-    fn values(&'_ self) -> DatabaseValues<'_, Profile> {
-        DatabaseValues {
-            inner: Box::new(self.clone()),
-            names_iter: Box::new(self.index.inner.keys().map(|s| s.as_str())),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{fs::read_to_string, io::Cursor};
+    use std::{
+        fs::{read_to_string, File},
+        io::{Cursor, Read},
+        path::Path,
+    };
+
+    use crate::io::DefaultIndex;
 
     use super::*;
+
+    pub fn p7hmm_offset_starts_from_bytes(hmm: &[u8]) -> Vec<u64> {
+        hmm.windows(10)
+            .enumerate()
+            .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i as u64))
+            .collect()
+    }
+
+    ///
+
+    macro_rules! p7hmm_index_test_start {
+        ($name:ident, $chunks:expr) => {
+            #[test]
+            fn $name() -> anyhow::Result<()> {
+                test_starts::<$chunks>()
+            }
+        };
+    }
+
+    fn test_starts<const C: usize>() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let hmm_str = read_to_string(&path)?;
+        let hmm_bytes = hmm_str.as_bytes();
+        let starts = p7hmm_offset_starts_from_bytes(&hmm_bytes);
+
+        let names = hmm_str
+            .lines()
+            .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
+            .map(|l| l.split_whitespace().nth(1).unwrap())
+            .collect::<Vec<&str>>();
+
+        let index = DefaultIndex::build::<_, P7HmmParser, 15, C>(&path)?;
+        starts.iter().zip(names.iter()).for_each(|(s, n)| {
+            let o = index.get(n).unwrap();
+            assert_eq!(o.start, *s);
+        });
+
+        Ok(())
+    }
+
+    p7hmm_index_test_start!(test_p7hmm_index_start_1_chunk, 1);
+    p7hmm_index_test_start!(test_p7hmm_index_start_2_chunks, 2);
+    p7hmm_index_test_start!(test_p7hmm_index_start_4_chunks, 4);
+    p7hmm_index_test_start!(test_p7hmm_index_start_8_chunks, 8);
+    p7hmm_index_test_start!(test_p7hmm_index_start_16_chunks, 16);
+    p7hmm_index_test_start!(test_p7hmm_index_start_32_chunks, 32);
+
+    #[test]
+    fn test_p7hmm_iter_parse() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let database = P7Hmm::from_path(&path)?;
+        let _ = database.iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
 
     #[test]
     fn test_profile_serialize() -> anyhow::Result<()> {
         let mut bytes = vec![];
-        let mut file = File::open(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
-        )?;
+        let mut file =
+            File::open(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"))?;
         file.read_to_end(&mut bytes)?;
         let prf = P7HmmParser::parse(&bytes)?;
 
@@ -447,56 +397,6 @@ mod tests {
         assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
         assert_eq!(prf.core_transitions, de.core_transitions);
         assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
-        Ok(())
-    }
-
-    #[test]
-    fn test_p7hmm_index_starts() -> anyhow::Result<()> {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
-        let hmm_str = read_to_string(&path)?;
-        let starts: Vec<usize> = hmm_str
-            .as_bytes()
-            .windows(10)
-            .enumerate()
-            .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i))
-            .collect();
-
-        let names = hmm_str
-            .lines()
-            .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
-            .map(|l| l.split_whitespace().nth(1).unwrap())
-            .collect::<Vec<&str>>();
-
-        let index = P7HmmIndex::from_path::<15, 1>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 2>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 3>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 4>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        let index = P7HmmIndex::from_path::<15, 20>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
         Ok(())
     }
 }

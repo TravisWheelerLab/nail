@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.5.1] - 2026-7-10
+
+### Changed
+- struct `Profile` now derives `PartialEq`
+
 ## [0.5.0] - 2026-3-19
 
 ### Added

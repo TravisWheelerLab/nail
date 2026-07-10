@@ -5,14 +5,16 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::args::SearchArgs;
-use crate::io::{Fasta, P7Hmm, Seeds2};
+use crate::args::{SearchArgs, SeedMode};
+use crate::io::Seeds;
+use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    seed_max_seqs, seed_progressive, DefaultAlignStage, DefaultCloudSearchStage,
+    seed_progressive, seed_static, DefaultAlignStage, DefaultCloudSearchStage,
     FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
+use crate::util::term::*;
 use crate::util::{guess_query_format_from_query_file, FileFormat};
 
 use anyhow::Context;
@@ -40,11 +42,11 @@ pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
 
     match query_format {
         FileFormat::Fasta => {
-            let queries = Fasta::from_path(&path).context("failed to read query fasta")?;
+            let queries = Fasta::from_path(&path).context("failed to index query fasta")?;
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries = P7Hmm::from_path(&path).context("failed to open query hmm")?;
+            let queries = P7Hmm::from_path(&path).context("failed to index query hmm")?;
             Ok(Queries::Profile(queries))
         }
         _ => {
@@ -58,13 +60,19 @@ pub fn seed(
     targets: &Fasta,
     stats: &mut Stats,
     args: &mut SearchArgs,
-) -> anyhow::Result<Seeds2> {
+) -> anyhow::Result<Seeds> {
     match args.io_args.seeds_input_path {
-        Some(ref path) => Seeds2::from_path(path),
+        Some(ref path) => Seeds::from_path(path, args.seed_args.max_seeds),
         None => {
             let now = Instant::now();
 
-            let db_paths = MmseqsDbPaths::new(&args.io_args.temp_dir_path);
+            let db_paths = MmseqsDbPaths::new(
+                args.io_args
+                    .tmp_dir_path
+                    .as_ref()
+                    .context("args.io_args.tmp_dir_path is somehow unset")?,
+            );
+
             if args.io_args.allow_overwrite {
                 db_paths
                     .destroy()
@@ -73,16 +81,24 @@ pub fn seed(
                 db_paths.check().context("mmseqs DB check failed")?;
             }
 
-            let seeds = if args.mmseqs_args.prog_seed {
-                seed_progressive(queries, targets, &db_paths, stats, args)
-                    .context("progessive seeding failed")
-            } else {
-                seed_max_seqs(queries, targets, &db_paths, stats, args).context("seeding failed")
-            };
+            let seeds = match args.seed_args.seed_mode {
+                SeedMode::Static => {
+                    seed_static(queries, targets, &db_paths, stats, args).context("seeding failed")
+                }
+                SeedMode::Prog => seed_progressive(queries, targets, &db_paths, stats, args)
+                    .context("progessive seeding failed"),
+            }?;
 
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
 
-            seeds
+            let mut counts: HashMap<String, u64> = HashMap::new();
+            for seed in &seeds.seeds {
+                *counts.entry(seed.prf.clone()).or_insert(0) += 1;
+            }
+
+            stats.set_seed_counts(counts);
+
+            Ok(seeds)
         }
     }
 }
@@ -97,10 +113,12 @@ pub fn build_pipeline(
         match queries {
             Queries::Sequence(fasta) => fasta
                 .par_iter()
-                .filter_map(|s| Profile::from_blosum_62_and_seq(&s).ok())
-                .collect::<Vec<_>>(),
-            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<Vec<_>>(),
+                .map(|s| Profile::from_blosum_62_and_seq(&s?))
+                .collect::<anyhow::Result<Vec<_>>>(),
+            // Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
+            Queries::Profile(p7hmm) => p7hmm.iter().collect::<anyhow::Result<Vec<_>>>(),
         }
+        .context("failed to build profiles")?
         .into_iter()
         .map(|p| (p.name.clone(), p))
         .collect(),
@@ -135,7 +153,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let now = Instant::now();
     println!("indexing target database...");
-    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
+    let targets = Fasta::from_path(&args.target_path).context("failed to index target fasta")?;
     println!(
         "\x1b[Aindexing target database... done ({:.2}s)",
         now.elapsed().as_secs_f64()
@@ -160,7 +178,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut pipeline = build_pipeline(queries, targets, stats, &mut args)?;
+    let mut pipeline =
+        build_pipeline(queries, targets, stats, &mut args).context("failed to build pipeline")?;
 
     let align_timer = Instant::now();
     println!("running nail pipeline...");
@@ -201,6 +220,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         align_timer.elapsed().as_secs_f64()
     );
 
+    if let Some(path) = &args.io_args.tbl_results_path {
+        println!("tabular results written to: {BLUE}{path:?}{RESET}");
+    }
+
     pipeline
         .stats
         .set_serial_time(SerialTimed::Total, start_time.elapsed());
@@ -209,6 +232,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         args.write(&mut stdout())?;
         pipeline.stats.write(&mut stdout())?;
     }
+
+    pipeline.stats.write_max_seqs_report(&args)?;
 
     Ok(())
 }

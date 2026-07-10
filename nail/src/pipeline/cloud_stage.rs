@@ -62,6 +62,8 @@ pub struct DefaultCloudSearchStage {
     fwd_cloud: Cloud,
     bwd_cloud: Cloud,
     params: CloudSearchParams,
+    max_attempts: usize,
+    param_scale_factor: f32,
     p_value_threshold: f64,
 }
 
@@ -74,6 +76,8 @@ impl DefaultCloudSearchStage {
                 beta: args.pipeline_args.beta,
             },
             p_value_threshold: args.pipeline_args.cloud_pvalue_threshold,
+            max_attempts: args.pipeline_args.cloud_max_join_attempts,
+            param_scale_factor: args.pipeline_args.cloud_param_scale_factor,
             ..Default::default()
         }
     }
@@ -90,14 +94,17 @@ impl CloudSearchStage for DefaultCloudSearchStage {
         let mut bwd_results = None;
         let mut raw_cloud_score = None;
 
-        for attempts in 0..5 {
+        for num_attempts in 0..self.max_attempts {
             let now = Instant::now();
             self.mx.reuse(seq.length);
             self.fwd_cloud.reuse(seq.length, prf.length);
             self.bwd_cloud.reuse(seq.length, prf.length);
             stats.memory_init_time(now.elapsed());
 
-            let params = self.params.scale(1.0 + (attempts as f32 * 0.5));
+            let params = self
+                .params
+                .scale(1.0 + (num_attempts as f32 * self.param_scale_factor));
+
             let now = Instant::now();
             fwd_results = Some(cloud_search_fwd(
                 prf,
@@ -131,7 +138,7 @@ impl CloudSearchStage for DefaultCloudSearchStage {
 
             match self.fwd_cloud.anti_diagonal_relationship(&self.bwd_cloud) {
                 Disjoint(_) => {
-                    if attempts >= 4 {
+                    if num_attempts >= 4 {
                         return StageResult::Filtered {
                             stats: stats.build().unwrap(),
                         };

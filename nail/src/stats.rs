@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::Debug,
     io::Write,
     sync::{
@@ -8,12 +9,16 @@ use std::{
     time::Duration,
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
-use crate::pipeline::{
-    OutputStageStats, PipelineResult,
-    StageResult::{Filtered, Passed},
+use crate::{
+    args::SearchArgs,
+    pipeline::{
+        OutputStageStats, PipelineResult,
+        StageResult::{Filtered, Passed},
+    },
+    util::PathExt,
 };
 
 pub struct Bytes(pub usize);
@@ -97,6 +102,7 @@ pub enum ThreadedTimed {
     Forward,
     Backward,
     Posterior,
+    OptimalAccuracy,
     Traceback,
     NullTwo,
     OutputWrite,
@@ -115,6 +121,7 @@ impl Debug for ThreadedTimed {
             ThreadedTimed::Forward => "forward",
             ThreadedTimed::Backward => "backward",
             ThreadedTimed::Posterior => "posterior",
+            ThreadedTimed::OptimalAccuracy => "optimal accuracy",
             ThreadedTimed::Traceback => "traceback",
             ThreadedTimed::NullTwo => "null two",
         };
@@ -185,6 +192,10 @@ pub struct Stats {
     threaded_times_num_samples: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     counted_values: Arc<[AtomicU64; CountedValue::COUNT]>,
     computed_values: [u64; ComputedValue::COUNT],
+    seed_counts_by_query: HashMap<String, u64>,
+    // TODO: this is basically getting ignored because
+    //       the Stats struct is cloned per thread
+    hit_counts_by_query: HashMap<String, u64>,
 }
 
 impl Stats {
@@ -206,6 +217,10 @@ impl Stats {
         self.mmseqs_times[timed as usize] += time;
     }
 
+    pub fn set_seed_counts(&mut self, counts: HashMap<String, u64>) {
+        self.seed_counts_by_query = counts;
+    }
+
     pub fn add_sample(
         &mut self,
         pipeline_results: &[PipelineResult],
@@ -217,6 +232,11 @@ impl Stats {
                 CountedValue::SeedCells,
                 result.profile_length * result.target_length,
             );
+
+            *(self
+                .hit_counts_by_query
+                .entry(result.profile_name.clone())
+                .or_insert(0)) += 1;
 
             if let Some(ref result) = result.cloud_result {
                 match result {
@@ -264,6 +284,10 @@ impl Stats {
 
                         self.add_threaded_time(ThreadedTimed::Backward, stats.backward_time);
                         self.add_threaded_time(ThreadedTimed::Posterior, stats.posterior_time);
+                        self.add_threaded_time(
+                            ThreadedTimed::OptimalAccuracy,
+                            stats.optimal_accuracy_time,
+                        );
                         self.add_threaded_time(ThreadedTimed::Traceback, stats.traceback_time);
                         self.add_threaded_time(ThreadedTimed::NullTwo, stats.null_two_time);
                     }
@@ -385,6 +409,70 @@ impl Stats {
             self.serial_time_pct(timed) * 100.0,
             w = width,
         )
+    }
+
+    pub fn write_max_seqs_report(&self, args: &SearchArgs) -> anyhow::Result<()> {
+        let queries: Vec<&String> = self.seed_counts_by_query.keys().collect();
+
+        let path = args
+            .io_args
+            .tmp_dir_path
+            .as_ref()
+            .context("args.io_args.tmp_dir_path is somehow unset")?
+            .join("max-seqs-report.txt");
+
+        let mut out = path.open(true)?;
+
+        let mut recs: Vec<(&String, u64, u64)> = queries
+            .iter()
+            .map(|&q| {
+                let a = *self.seed_counts_by_query.get(q).unwrap_or(&0);
+                let b = *self.hit_counts_by_query.get(q).unwrap_or(&0);
+                (q, a, b)
+            })
+            .collect();
+
+        recs.sort_by(|a, b| b.1.cmp(&a.1));
+
+        use crate::util::term::*;
+        if let Some(first) = recs.first() {
+            if first.1 == args.seed_args.max_seqs as u64 {
+                println!();
+                println!(
+                "{RED}warning{RESET}: one or more queries saturated the mmseqs {YELLOW}--max-seqs{RESET} limit of {YELLOW}{}{RESET}",
+                args.seed_args.max_seqs
+            );
+                println!("         for a full report, view the file: {YELLOW}{path:?}{RESET}",);
+            }
+        }
+
+        let h1 = "query";
+        let h2 = "seeds";
+        let h3 = "reported hits";
+
+        let w1 = h1
+            .len()
+            .max(queries.iter().map(|q| q.len()).max().unwrap_or(0));
+        let w2 = h2.len().max(args.seed_args.max_seqs.to_string().len());
+        let w3 = h3.len().max(args.seed_args.max_seqs.to_string().len());
+
+        writeln!(out, "{h1:W1$} {h2:W2$} {h3:W3$}", W1 = w1, W2 = w2, W3 = w3)?;
+        writeln!(
+            out,
+            "{:W1$} {:W2$} {:W3$}",
+            "-".repeat(w1),
+            "-".repeat(w2),
+            "-".repeat(w3),
+            W1 = w1,
+            W2 = w2,
+            W3 = w3
+        )?;
+
+        recs.into_iter().try_for_each(|(q, a, b)| {
+            writeln!(out, "{q:W1$} {a:W2$} {b:W3$}", W1 = w1, W2 = w2, W3 = w3)
+        })?;
+
+        Ok(())
     }
 
     pub fn write(&self, out: &mut impl Write) -> anyhow::Result<()> {

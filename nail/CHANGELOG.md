@@ -16,6 +16,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-7-10
+
+### Added
+- added CLI param `--mmseqs-path` 
+- added error Structs `io::index::{Offset, IndexCollisionError}`
+- added warning for `--mmseqs-max-seqs` saturation
+- added CLI params `-f`, `-a` for controlling cloud search retries in the event of a failed cloud intersection
+- added CLI params `--seed-mode`, `--max-seeds`
+- added flag `-hz` for printing help in "zebra" format
+
+### Changed
+- trait `IndexInner` is no longer generic over offset type
+- trait method `IndexInner::extend()` now returns an error on key collisions
+- method `Index::build_chunk()` now panics on key collisions
+- renamed function `pipeline::seed_stage::seed_max_seqs()` to `seed_static()`
+- renamed  `MmseqsArgs` to `SeedArgs`
+- `Seeds::from_path()` now takes parameter `max_seeds: Option<usize>`
+- changed CLI flag `--tmp-dir` behavior to use Unix epoch timestamps
+
+### Removed
+- removed structs `io::fasta::FastaOffset`, `io::p7hmm::P7HmmOffset`, `io::seeds::SeedOffset`
+- removed struct `io::seeds::SeedsIndexInner`
+- removed CLI param `--prog-seed`
 
 ## [0.5.0] - 2026-3-19
 
