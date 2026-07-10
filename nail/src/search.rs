@@ -14,9 +14,10 @@ use crate::pipeline::{
     FullDpCloudSearchStage, OutputStage, Pipeline,
 };
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
+use crate::util::term::*;
 use crate::util::{guess_query_format_from_query_file, FileFormat};
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use libnail::structs::Profile;
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
@@ -218,6 +219,10 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
         align_timer.elapsed().as_secs_f64()
     );
+
+    if let Some(path) = &args.io_args.tbl_results_path {
+        println!("tabular results written to: {BLUE}{path:?}{RESET}");
+    }
 
     pipeline
         .stats

@@ -89,10 +89,6 @@ pub struct SearchArgs {
 
 impl SearchArgs {
     pub fn validate(&mut self) -> anyhow::Result<()> {
-        // ----------------
-        // output precision
-        // ----------------
-
         if let Some(p1) = self.dev_args.bit_p {
             let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
             if p1 != p2 {
@@ -160,23 +156,36 @@ impl SearchArgs {
         }
 
         {
-            // quickly make sure we can write to all of the results paths
-
             if let Some(path) = &self.io_args.tbl_results_path {
-                path.check_open(self.io_args.allow_overwrite)?;
+                match path.check_open(self.io_args.allow_overwrite) {
+                    Ok(_) => Ok(()),
+                    Err(e)
+                        if e.chain()
+                            .any(|cause| cause.to_string().contains("already exists")) =>
+                    {
+                        bail!(
+                            "tabular results file: {path:?} already exists\n\
+                                {YELLOW}help:{RESET} run nail with {BLUE}--allow-overwrite{RESET} \
+                                or redirect output with {BLUE}--tbl-out <PATH>{RESET}",
+                        );
+                    }
+                    Err(e) => Err(e),
+                }?;
             }
 
-            if let Some(path) = &self.io_args.ali_results_path {
-                path.check_open(self.io_args.allow_overwrite)?;
-            }
-
-            if let Some(path) = &self.io_args.seeds_output_path {
-                path.check_open(self.io_args.allow_overwrite)?;
-            }
-
-            if let Some(path) = &self.dev_args.stats_results_path {
-                path.check_open(self.io_args.allow_overwrite)?;
-            }
+            [
+                &self.io_args.ali_results_path,
+                &self.io_args.seeds_output_path,
+                &self.dev_args.stats_results_path,
+            ]
+            .into_iter()
+            .try_for_each(|path| {
+                if let Some(p) = path {
+                    p.check_open(self.io_args.allow_overwrite)
+                } else {
+                    Ok(())
+                }
+            })?;
         }
 
         if self.ali_to_stdout {
