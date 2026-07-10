@@ -89,6 +89,33 @@ pub struct SearchArgs {
 
 impl SearchArgs {
     pub fn validate(&mut self) -> anyhow::Result<()> {
+        if self.ali_to_stdout {
+            self.io_args.tbl_results_path = None
+        }
+
+        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
+            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
+        }
+
+        match self.seed_args.seed_mode {
+            SeedMode::Static => {
+                if self.seed_args.prog_n.is_some() {
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                }
+                if self.seed_args.prog_f.is_some() {
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                }
+            }
+            SeedMode::Prog => {
+                if self.seed_args.prog_n.is_none() {
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
+                }
+                if self.seed_args.prog_f.is_none() {
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
+                }
+            }
+        }
+
         if let Some(p1) = self.dev_args.bit_p {
             let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
             if p1 != p2 {
@@ -108,6 +135,39 @@ impl SearchArgs {
             if p1 != p2 {
                 bail!("failed to set F64_P")
             }
+        }
+
+        {
+            if let Some(path) = &self.io_args.tbl_results_path {
+                match path.check_open(self.io_args.allow_overwrite) {
+                    Ok(_) => Ok(()),
+                    Err(e)
+                        if e.chain()
+                            .any(|cause| cause.to_string().contains("already exists")) =>
+                    {
+                        bail!(
+                            "tabular results file: {path:?} already exists\n\
+                                {YELLOW}help:{RESET} run nail with {BLUE}--allow-overwrite{RESET} \
+                                or redirect output with {BLUE}--tbl-out <PATH>{RESET}",
+                        );
+                    }
+                    Err(e) => Err(e),
+                }?;
+            }
+
+            [
+                &self.io_args.ali_results_path,
+                &self.io_args.seeds_output_path,
+                &self.dev_args.stats_results_path,
+            ]
+            .into_iter()
+            .try_for_each(|path| {
+                if let Some(p) = path {
+                    p.check_open(self.io_args.allow_overwrite)
+                } else {
+                    Ok(())
+                }
+            })?;
         }
 
         match self.io_args.tmp_dir_path {
@@ -152,66 +212,6 @@ impl SearchArgs {
                 })?;
 
                 self.io_args.tmp_dir_path = Some(dir);
-            }
-        }
-
-        {
-            if let Some(path) = &self.io_args.tbl_results_path {
-                match path.check_open(self.io_args.allow_overwrite) {
-                    Ok(_) => Ok(()),
-                    Err(e)
-                        if e.chain()
-                            .any(|cause| cause.to_string().contains("already exists")) =>
-                    {
-                        bail!(
-                            "tabular results file: {path:?} already exists\n\
-                                {YELLOW}help:{RESET} run nail with {BLUE}--allow-overwrite{RESET} \
-                                or redirect output with {BLUE}--tbl-out <PATH>{RESET}",
-                        );
-                    }
-                    Err(e) => Err(e),
-                }?;
-            }
-
-            [
-                &self.io_args.ali_results_path,
-                &self.io_args.seeds_output_path,
-                &self.dev_args.stats_results_path,
-            ]
-            .into_iter()
-            .try_for_each(|path| {
-                if let Some(p) = path {
-                    p.check_open(self.io_args.allow_overwrite)
-                } else {
-                    Ok(())
-                }
-            })?;
-        }
-
-        if self.ali_to_stdout {
-            self.io_args.tbl_results_path = None
-        }
-
-        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
-            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
-        }
-
-        match self.seed_args.seed_mode {
-            SeedMode::Static => {
-                if self.seed_args.prog_n.is_some() {
-                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
-                }
-                if self.seed_args.prog_f.is_some() {
-                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
-                }
-            }
-            SeedMode::Prog => {
-                if self.seed_args.prog_n.is_none() {
-                    bail!("the argument '{YELLOW}--prog-n{RESET}' is unset")
-                }
-                if self.seed_args.prog_f.is_none() {
-                    bail!("the argument '{YELLOW}--prog-f{RESET}' is unset")
-                }
             }
         }
 
