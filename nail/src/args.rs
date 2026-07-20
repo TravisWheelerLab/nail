@@ -137,6 +137,12 @@ impl SearchArgs {
             }
         }
 
+        let use_accession =
+            *libnail::output::output_tabular::ACC.get_or_init(|| self.io_args.use_accession);
+        if use_accession != self.io_args.use_accession {
+            bail!("failed to set ACC")
+        }
+
         {
             if let Some(path) = &self.io_args.tbl_results_path {
                 match path.check_open(self.io_args.allow_overwrite) {
@@ -302,6 +308,10 @@ pub struct IoArgs {
     /// Allow nail to overwrite files
     #[arg(short = 'X', long = "allow-overwrite", default_value_t = false)]
     pub allow_overwrite: bool,
+
+    /// Use profile accessions instead of names in the output
+    #[arg(long = "acc", action)]
+    pub use_accession: bool,
 }
 
 #[derive(Args, Debug, Clone, Default)]

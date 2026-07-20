@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 pub static BIT_P: OnceLock<usize> = OnceLock::new();
 pub static F32_P: OnceLock<usize> = OnceLock::new();
 pub static F64_P: OnceLock<usize> = OnceLock::new();
+pub static ACC: OnceLock<bool> = OnceLock::new();
 
 trait FieldString {
     fn field_string(&self) -> String;
@@ -49,7 +50,18 @@ impl Field {
     fn extract(&self, alignment: &Alignment) -> Option<String> {
         Some(match self {
             Field::Target => alignment.target_name.clone()?,
-            Field::Query => alignment.profile_name.clone()?,
+            Field::Query => {
+                if *ACC.get().unwrap_or(&false) {
+                    // prefer the accession, but fall back to the
+                    // name when the profile has no accession
+                    alignment
+                        .profile_accession
+                        .clone()
+                        .or_else(|| alignment.profile_name.clone())?
+                } else {
+                    alignment.profile_name.clone()?
+                }
+            }
             Field::TargetStart => alignment.boundaries.as_ref()?.target_start.to_string(),
             Field::TargetEnd => alignment.boundaries.as_ref()?.target_end.to_string(),
             Field::QueryStart => alignment.boundaries.as_ref()?.profile_start.to_string(),

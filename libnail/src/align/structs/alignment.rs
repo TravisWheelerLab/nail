@@ -58,6 +58,8 @@ pub struct DisplayStrings {
 pub struct Alignment {
     /// The name of the profile/model
     pub profile_name: Option<String>,
+    /// The accession of the profile/model
+    pub profile_accession: Option<String>,
     /// The name of the target sequence
     pub target_name: Option<String>,
     /// The boundaries of the alignment
@@ -297,6 +299,13 @@ impl<'a> AlignmentBuilder<'a> {
 
         Ok(Alignment {
             profile_name: self.profile.map(|profile| profile.name.clone()),
+            profile_accession: self.profile.and_then(|profile| {
+                if profile.accession.is_empty() {
+                    None
+                } else {
+                    Some(profile.accession.clone())
+                }
+            }),
             target_name: self.target.map(|target| target.name.clone()),
             boundaries,
             scores,
