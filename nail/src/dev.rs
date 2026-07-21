@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use libnail::{
     align::{
         backward, cloud_search_bwd, cloud_search_fwd, forward, posterior,
@@ -60,7 +60,10 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
                 .map(|seed| pipeline.run(seed))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            pipeline.output.run(&res)?;
+            match pipeline.output.lock() {
+                Ok(mut guard) => guard.run(&res)?,
+                Err(_) => bail!("mutex poisoned"),
+            };
 
             Ok(())
         })?;

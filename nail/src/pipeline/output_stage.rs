@@ -1,17 +1,12 @@
 use std::{
     io::{stdout, Write},
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context};
 use derive_builder::Builder;
-use libnail::{
-    align::structs::Alignment,
-    output::output_tabular::{Field, TableFormat},
-};
+use libnail::output::output_tabular::{Field, TableFormat};
 
-use crate::{args::SearchArgs, util::PathExt};
+use crate::{args::SearchArgs, pipeline::StageResult, util::PathExt};
 
 use super::PipelineResult;
 
@@ -28,30 +23,14 @@ pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::CellFrac,
 ];
 
-#[derive(Clone)]
-pub enum HeaderStatus {
-    Unwritten,
-    Written,
-}
-
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct OutputStageStats {
     pub n_reported: usize,
-    pub lock_time: Duration,
     pub write_time: Duration,
 }
 
 impl OutputStageStatsBuilder {
-    fn add_lock_time(&mut self, duration: Duration) {
-        match self.lock_time {
-            Some(ref mut time) => *time += duration,
-            None => {
-                self.lock_time(duration);
-            }
-        }
-    }
-
     fn add_write_time(&mut self, duration: Duration) {
         match self.write_time {
             Some(ref mut time) => *time += duration,
@@ -62,145 +41,130 @@ impl OutputStageStatsBuilder {
     }
 }
 
-type ResultsWriter = Option<Arc<Mutex<Box<dyn Write + Send>>>>;
-#[derive(Clone)]
-pub struct OutputStage {
-    alignment_writer: ResultsWriter,
-    table_writer: ResultsWriter,
-    stats_writer: ResultsWriter,
-    e_value_threshold: f64,
+pub trait PipelineOutput: Send {
+    fn output(&mut self, res: &PipelineResult) -> anyhow::Result<()>;
+}
+
+// ---
+
+struct TableOutput<W>
+where
+    W: Write + Send,
+{
+    buf: W,
     table_format: TableFormat,
-    header_status: Arc<Mutex<HeaderStatus>>,
+    header_written: bool,
+}
+
+impl<W> TableOutput<W>
+where
+    W: Write + Send,
+{
+    pub fn new(buf: W) -> Self {
+        Self {
+            buf,
+            table_format: TableFormat::new(&DEFAULT_COLUMNS).expect("failed to build table format"),
+            header_written: false,
+        }
+    }
+}
+
+impl<W> PipelineOutput for TableOutput<W>
+where
+    W: Write + Send,
+{
+    fn output(&mut self, res: &PipelineResult) -> anyhow::Result<()> {
+        if !self.header_written {
+            writeln!(self.buf, "{}", self.table_format.header()?)?;
+            self.header_written = true;
+        }
+
+        // TODO: state for column width formatting
+        if let Some(StageResult::Passed { data: ali, .. }) = &res.align_result {
+            writeln!(self.buf, "{}", ali.tab_string_formatted(&self.table_format))?;
+        }
+
+        Ok(())
+    }
+}
+
+// ---
+
+struct AlignmentOutput<W>
+where
+    W: Write + Send,
+{
+    buf: W,
+}
+
+impl<W> AlignmentOutput<W>
+where
+    W: Write + Send,
+{
+    pub fn new(buf: W) -> Self {
+        Self { buf }
+    }
+}
+
+impl<W> PipelineOutput for AlignmentOutput<W>
+where
+    W: Write + Send,
+{
+    fn output(&mut self, res: &PipelineResult) -> anyhow::Result<()> {
+        if let Some(StageResult::Passed { data: ali, .. }) = &res.align_result {
+            writeln!(self.buf, "{}", ali.ali_string())?;
+        }
+        Ok(())
+    }
+}
+
+// ---
+
+pub struct OutputStage {
+    output: Vec<Box<dyn PipelineOutput>>,
+    e_value_threshold: f64,
 }
 
 impl OutputStage {
     pub fn new(args: &SearchArgs) -> anyhow::Result<Self> {
-        let alignment_writer: ResultsWriter = if args.ali_to_stdout {
-            Some(Arc::new(Mutex::new(Box::new(stdout()))))
-        } else {
-            match &args.io_args.ali_results_path {
-                Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
-                None => None,
-            }
-        };
+        let mut output: Vec<Box<dyn PipelineOutput>> = vec![];
 
-        let table_writer: ResultsWriter = match &args.io_args.tbl_results_path {
-            Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
-            None => None,
-        };
+        if args.ali_to_stdout {
+            output.push(Box::new(AlignmentOutput::new(stdout())))
+        } else if let Some(path) = &args.io_args.ali_results_path {
+            output.push(Box::new(AlignmentOutput::new(path.open(true)?)))
+        }
 
-        let stats_writer: ResultsWriter = match &args.dev_args.stats_results_path {
-            Some(path) => Some(Arc::new(Mutex::new(Box::new(path.open(true)?)))),
-            None => None,
-        };
+        if let Some(path) = &args.io_args.tbl_results_path {
+            output.push(Box::new(TableOutput::new(path.open(true)?)));
+        }
 
         Ok(Self {
-            alignment_writer,
-            table_writer,
-            table_format: TableFormat::new(&DEFAULT_COLUMNS)?,
+            output,
             e_value_threshold: args.pipeline_args.e_value_threshold,
-            header_status: Arc::new(Mutex::new(HeaderStatus::Unwritten)),
-            stats_writer,
         })
     }
 
     pub fn run(&mut self, pipeline_results: &[PipelineResult]) -> anyhow::Result<OutputStageStats> {
         let mut stats = OutputStageStatsBuilder::default();
 
-        let mut reported: Vec<&Alignment> = pipeline_results
-            .iter()
-            .filter_map(|r| r.align_result.as_ref())
-            .filter_map(|r| match r {
-                super::StageResult::Filtered { .. } => None,
-                super::StageResult::Passed { data, .. } => Some(data),
-            })
-            .filter(|a| a.scores.e_value <= self.e_value_threshold)
-            .collect();
+        let mut n_reported = 0;
 
-        reported.sort_by(|a, b| a.scores.e_value.partial_cmp(&b.scores.e_value).unwrap());
-
-        stats.n_reported(reported.len());
-
-        if let Some(writer) = &self.alignment_writer {
-            let now = Instant::now();
-            match writer.lock() {
-                Ok(mut guard) => {
-                    stats.add_lock_time(now.elapsed());
-
-                    let now = Instant::now();
-                    reported
-                        .iter()
-                        .try_for_each(|ali| writeln!(guard, "{}\n", ali.ali_string()))
-                        .with_context(|| "failed to write to alignment writer")?;
-
-                    stats.add_write_time(now.elapsed());
-                    Ok(())
+        for res in pipeline_results {
+            if let Some(StageResult::Passed { data: ali, .. }) = &res.align_result {
+                if ali.scores.e_value <= self.e_value_threshold {
+                    n_reported += 1;
+                    for writer in &mut self.output {
+                        let now = Instant::now();
+                        writer.output(res)?;
+                        stats.add_write_time(now.elapsed());
+                    }
                 }
-                Err(_) => Err(anyhow!("alignment writer mutex poisoned")),
-            }?;
+            }
         }
 
-        if let Some(writer) = &self.table_writer {
-            let now = Instant::now();
-            match writer.lock() {
-                Ok(mut writer_guard) => {
-                    stats.add_lock_time(now.elapsed());
+        stats.n_reported(n_reported);
 
-                    self.table_format.reset_widths();
-                    self.table_format.update_widths(&reported);
-
-                    // TODO: it's a bit messy to put the header status in a
-                    //       mutex I'd like to come up with a better way to
-                    //       write the header just one time, but the problem
-                    //       is that the output looks way better if we have
-                    //       the first table format computed
-                    match self.header_status.lock() {
-                        Ok(mut header_status_guard) => {
-                            if let HeaderStatus::Unwritten = *header_status_guard {
-                                let header = TableFormat::header(&self.table_format)?;
-                                writeln!(writer_guard, "{header}")?;
-                                *header_status_guard = HeaderStatus::Written;
-                            }
-                            Ok(())
-                        }
-                        Err(_) => Err(anyhow!("header status mutex poisoned")),
-                    }?;
-
-                    let now = Instant::now();
-                    reported.iter().try_for_each(|ali| {
-                        writeln!(
-                            writer_guard,
-                            "{}",
-                            ali.tab_string_formatted(&self.table_format)
-                        )
-                        .with_context(|| "failed to write to table writer")
-                    })?;
-
-                    stats.add_write_time(now.elapsed());
-                    Ok(())
-                }
-                Err(_) => Err(anyhow!("table writer mutex poisoned")),
-            }?;
-        }
-
-        if let Some(writer) = &self.stats_writer {
-            let now = Instant::now();
-            match writer.lock() {
-                Ok(mut guard) => {
-                    stats.add_lock_time(now.elapsed());
-
-                    let now = Instant::now();
-                    pipeline_results
-                        .iter()
-                        .try_for_each(|r| writeln!(guard, "{}", r.stat_string()))?;
-
-                    stats.add_write_time(now.elapsed());
-                    Ok(())
-                }
-                Err(_) => Err(anyhow!("stats writer mutex poisoned")),
-            }?;
-        }
-
-        stats.build().map_err(Into::into)
+        Ok(stats.build()?)
     }
 }

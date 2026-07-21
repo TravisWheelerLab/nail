@@ -10,8 +10,8 @@ pub use align_stage::*;
 mod output_stage;
 pub use output_stage::*;
 
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::{collections::HashMap, sync::Mutex};
 
 use libnail::{
     align::{structs::Seed, Bits},
@@ -114,7 +114,7 @@ pub struct Pipeline {
     pub targets: Fasta,
     pub cloud_search: Box<dyn CloudSearchStage>,
     pub align: Box<dyn AlignStage>,
-    pub output: OutputStage,
+    pub output: Arc<Mutex<OutputStage>>,
     pub stats: Stats,
 }
 

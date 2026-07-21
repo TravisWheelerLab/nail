@@ -296,7 +296,6 @@ impl Stats {
         });
         self.add_count(CountedValue::PassedReport, output_stats.n_reported);
         self.add_threaded_time(ThreadedTimed::OutputWrite, output_stats.write_time);
-        self.add_threaded_time(ThreadedTimed::OutputMutex, output_stats.lock_time);
     }
 
     pub fn set_serial_time(&mut self, timed: SerialTimed, time: Duration) {
