@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- added fields `profile_name`, `target_name` to struct `AlignmentBuilder`
 
 ## [0.5.1] - 2026-7-10
 

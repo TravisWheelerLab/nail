@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- added CLI params `--use_accession`, `--tbl-format` 
+- added field `use_accession` to struct `AlignConfig`
+
 ## [0.6.0] - 2026-7-10
 
 ### Added

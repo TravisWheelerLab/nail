@@ -137,12 +137,6 @@ impl SearchArgs {
             }
         }
 
-        let use_accession =
-            *libnail::output::output_tabular::ACC.get_or_init(|| self.io_args.use_accession);
-        if use_accession != self.io_args.use_accession {
-            bail!("failed to set ACC")
-        }
-
         {
             if let Some(path) = &self.io_args.tbl_results_path {
                 match path.check_open(self.io_args.allow_overwrite) {
@@ -309,9 +303,22 @@ pub struct IoArgs {
     #[arg(short = 'X', long = "allow-overwrite", default_value_t = false)]
     pub allow_overwrite: bool,
 
-    /// Use profile accessions instead of names in the output
-    #[arg(long = "acc", action)]
+    /// Set the format of tabular results
+    #[arg(long, default_value = "nail", value_name = "FMT", verbatim_doc_comment)]
+    pub tbl_format: TableFormat,
+
+    /// Prefer profile accessions instead of names in output
+    #[arg(long, action)]
     pub use_accession: bool,
+}
+
+#[derive(Default, Clone, Copy, Debug, ValueEnum)]
+pub enum TableFormat {
+    #[value(alias = "0")]
+    Nail,
+    #[default]
+    #[value(alias = "1")]
+    Blast,
 }
 
 #[derive(Args, Debug, Clone, Default)]

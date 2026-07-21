@@ -58,8 +58,6 @@ pub struct DisplayStrings {
 pub struct Alignment {
     /// The name of the profile/model
     pub profile_name: Option<String>,
-    /// The accession of the profile/model
-    pub profile_accession: Option<String>,
     /// The name of the target sequence
     pub target_name: Option<String>,
     /// The boundaries of the alignment
@@ -117,6 +115,8 @@ impl ScoreParams {
 pub struct AlignmentBuilder<'a> {
     target: Option<&'a Sequence>,
     profile: Option<&'a Profile>,
+    profile_name: Option<String>,
+    target_name: Option<String>,
     trace: Option<&'a Trace>,
     database_size: Option<usize>,
     forward_score: Option<Bits>,
@@ -135,8 +135,18 @@ impl<'a> AlignmentBuilder<'a> {
         self
     }
 
+    pub fn with_profile_name(mut self, name: &str) -> Self {
+        self.profile_name = Some(name.to_string());
+        self
+    }
+
     pub fn with_target(mut self, target: &'a Sequence) -> Self {
         self.target = Some(target);
+        self
+    }
+
+    pub fn with_target_name(mut self, name: &str) -> Self {
+        self.target_name = Some(name.to_string());
         self
     }
 
@@ -298,15 +308,8 @@ impl<'a> AlignmentBuilder<'a> {
         };
 
         Ok(Alignment {
-            profile_name: self.profile.map(|profile| profile.name.clone()),
-            profile_accession: self.profile.and_then(|profile| {
-                if profile.accession.is_empty() {
-                    None
-                } else {
-                    Some(profile.accession.clone())
-                }
-            }),
-            target_name: self.target.map(|target| target.name.clone()),
+            profile_name: self.profile_name,
+            target_name: self.target_name,
             boundaries,
             scores,
             cell_stats,
