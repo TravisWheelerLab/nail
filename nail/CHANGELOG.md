@@ -21,16 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added field `use_accession` to struct `AlignConfig`
 - added trait `PipelineOutput`
 - added structs `TableOutput`, `AlignmentOutput` (both are `impl PipelineOutput`)
+- added const `pipeline::output_stage::BLAST_COLUMNS`
 
 ### Changed
 - refactored pipeline output:
     - struct `OutputStage` refactored using generic `PipelineOutput`
     - struct `Pipeline` now locks output via `Arc<Mutex<OutputStage>>` instead of independently locked writers
-
 ### Removed
 - removed enum `pipeline::output_stage::HeaderStatus`
 - removed field `lock_time` from struct `OutputStageStats`
 
+<!-- ************* -->
 
 ## [0.6.0] - 2026-7-10
 

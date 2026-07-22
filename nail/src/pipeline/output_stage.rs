@@ -23,6 +23,21 @@ pub const DEFAULT_COLUMNS: [Field; 10] = [
     Field::CellFrac,
 ];
 
+pub const BLAST_COLUMNS: [Field; 12] = [
+    Field::Target,      //  1.  qseqid      query or source (gene) sequence id
+    Field::Query,       //  2.  sseqid      subject or target (reference genome) sequence id
+    Field::CellFrac,    //  3.  pident      percentage of identical positions
+    Field::CellFrac,    //  4.  length      alignment length (sequence overlap)
+    Field::CellFrac,    //  5.  mismatch    number of mismatches
+    Field::CellFrac,    //  6.  gapopen     number of gap openings
+    Field::QueryStart,  //  7.  qstart      start of alignment in query
+    Field::QueryEnd,    //  8.  qend        end of alignment in query
+    Field::TargetStart, //  9.  sstart      start of alignment in subject
+    Field::TargetEnd,   // 10.  send        end of alignment in subject
+    Field::Evalue,      // 11.  evalue      expect value
+    Field::Score,       // 12.  bitscore    bit score
+];
+
 #[derive(Builder, Default)]
 #[builder(setter(strip_option), default)]
 pub struct OutputStageStats {

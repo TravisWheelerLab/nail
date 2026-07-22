@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - added fields `profile_name`, `target_name` to struct `AlignmentBuilder`
+- added struct `AlignmentStats` 
+
+### Changed
+- struct `Alignment` now has field `stats: AlignmentStats`
+- struct `DisplayStrings` now derives `PartialEq`
+- function `map_posterior_probability_to_bin_byte()` renamed to `map_posterior_probability_to_bin_byte_utf8()`
+
+<!-- ************* -->
 
 ## [0.5.1] - 2026-7-10
 
