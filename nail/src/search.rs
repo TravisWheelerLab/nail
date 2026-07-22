@@ -10,14 +10,15 @@ use crate::io::Seeds;
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    seed_progressive, seed_static, DefaultAlignStage, DefaultCloudSearchStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline,
+    seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage, DefaultCloudSearchStage,
+    FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
 };
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
-use crate::util::term::*;
 use crate::util::{guess_query_format_from_query_file, FileFormat};
+use crate::util::{term::*, PathExt};
 
 use anyhow::{bail, Context};
+use libnail::output::output_tabular::TableFormat;
 use libnail::structs::Profile;
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
@@ -124,6 +125,24 @@ pub fn build_pipeline(
         .collect(),
     );
 
+    let mut output = OutputStage::new(args.pipeline_args.e_value_threshold)?;
+
+    if args.ali_to_stdout {
+        output.add(AlignmentOutput::new(stdout()))
+    } else if let Some(path) = &args.io_args.ali_results_path {
+        output.add(AlignmentOutput::new(path.open(true)?))
+    }
+
+    if let Some(path) = &args.io_args.tbl_results_path {
+        let format = match args.io_args.tbl_format {
+            crate::args::TableFormat::Nail => TableFormat::new(&DEFAULT_COLUMNS),
+            crate::args::TableFormat::Blast => TableFormat::new(&BLAST_COLUMNS),
+        }
+        .context("failed to build TableFormat")?;
+
+        output.add(TableOutput::new(path.open(true)?, format));
+    }
+
     Ok(Pipeline {
         profiles,
         prf: None,
@@ -135,9 +154,7 @@ pub fn build_pipeline(
         align: Box::new(
             DefaultAlignStage::new(args).context("failed to create DefaultAlignStage")?,
         ),
-        output: Arc::new(Mutex::new(
-            OutputStage::new(args).context("failed to create OutputStage")?,
-        )),
+        output: Arc::new(Mutex::new(output)),
         stats,
     })
 }

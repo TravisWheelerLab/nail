@@ -277,6 +277,8 @@ impl<'a> AlignmentBuilder<'a> {
         let (display_strings, stats) = match (self.trace, self.profile, self.target) {
             (Some(trace), Some(profile), Some(target)) => {
                 let mut stats = AlignmentStats::default();
+                stats.length = trace.core_len();
+
                 let mut display = DisplayStrings::default();
 
                 let mut prev_state = Trace::INVALID_STATE;

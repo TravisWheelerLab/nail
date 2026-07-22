@@ -1,12 +1,12 @@
 use std::{
-    io::{stdout, Write},
+    io::Write,
     time::{Duration, Instant},
 };
 
 use derive_builder::Builder;
 use libnail::output::output_tabular::{Field, TableFormat};
 
-use crate::{args::SearchArgs, pipeline::StageResult, util::PathExt};
+use crate::pipeline::StageResult;
 
 use super::PipelineResult;
 
@@ -24,18 +24,18 @@ pub const DEFAULT_COLUMNS: [Field; 10] = [
 ];
 
 pub const BLAST_COLUMNS: [Field; 12] = [
-    Field::Target,      //  1.  qseqid      query or source (gene) sequence id
-    Field::Query,       //  2.  sseqid      subject or target (reference genome) sequence id
-    Field::CellFrac,    //  3.  pident      percentage of identical positions
-    Field::CellFrac,    //  4.  length      alignment length (sequence overlap)
-    Field::CellFrac,    //  5.  mismatch    number of mismatches
-    Field::CellFrac,    //  6.  gapopen     number of gap openings
-    Field::QueryStart,  //  7.  qstart      start of alignment in query
-    Field::QueryEnd,    //  8.  qend        end of alignment in query
-    Field::TargetStart, //  9.  sstart      start of alignment in subject
-    Field::TargetEnd,   // 10.  send        end of alignment in subject
-    Field::Evalue,      // 11.  evalue      expect value
-    Field::Score,       // 12.  bitscore    bit score
+    Field::Query,         //  1.  qseqid      query or source (gene) sequence id
+    Field::Target,        //  2.  sseqid      subject or target (reference genome) sequence id
+    Field::Pid,           //  3.  pident      percentage of identical positions
+    Field::Length,        //  4.  length      alignment length (sequence overlap)
+    Field::MismatchCount, //  5.  mismatch    number of mismatches
+    Field::GapOpenCount,  //  6.  gapopen     number of gap openings
+    Field::QueryStart,    //  7.  qstart      start of alignment in query
+    Field::QueryEnd,      //  8.  qend        end of alignment in query
+    Field::TargetStart,   //  9.  sstart      start of alignment in subject
+    Field::TargetEnd,     // 10.  send        end of alignment in subject
+    Field::Evalue,        // 11.  evalue      expect value
+    Field::Score,         // 12.  bitscore    bit score
 ];
 
 #[derive(Builder, Default)]
@@ -62,7 +62,7 @@ pub trait PipelineOutput: Send {
 
 // ---
 
-struct TableOutput<W>
+pub struct TableOutput<W>
 where
     W: Write + Send,
 {
@@ -75,10 +75,10 @@ impl<W> TableOutput<W>
 where
     W: Write + Send,
 {
-    pub fn new(buf: W) -> Self {
+    pub fn new(buf: W, format: TableFormat) -> Self {
         Self {
             buf,
-            table_format: TableFormat::new(&DEFAULT_COLUMNS).expect("failed to build table format"),
+            table_format: format,
             header_written: false,
         }
     }
@@ -105,7 +105,7 @@ where
 
 // ---
 
-struct AlignmentOutput<W>
+pub struct AlignmentOutput<W>
 where
     W: Write + Send,
 {
@@ -141,23 +141,18 @@ pub struct OutputStage {
 }
 
 impl OutputStage {
-    pub fn new(args: &SearchArgs) -> anyhow::Result<Self> {
-        let mut output: Vec<Box<dyn PipelineOutput>> = vec![];
-
-        if args.ali_to_stdout {
-            output.push(Box::new(AlignmentOutput::new(stdout())))
-        } else if let Some(path) = &args.io_args.ali_results_path {
-            output.push(Box::new(AlignmentOutput::new(path.open(true)?)))
-        }
-
-        if let Some(path) = &args.io_args.tbl_results_path {
-            output.push(Box::new(TableOutput::new(path.open(true)?)));
-        }
-
+    pub fn new(e_value_threshold: f64) -> anyhow::Result<Self> {
         Ok(Self {
-            output,
-            e_value_threshold: args.pipeline_args.e_value_threshold,
+            output: vec![],
+            e_value_threshold,
         })
+    }
+
+    pub fn add<O>(&mut self, output: O)
+    where
+        O: PipelineOutput + 'static,
+    {
+        self.output.push(Box::new(output))
     }
 
     pub fn run(&mut self, pipeline_results: &[PipelineResult]) -> anyhow::Result<OutputStageStats> {

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactored pipeline output:
     - struct `OutputStage` refactored using generic `PipelineOutput`
     - struct `Pipeline` now locks output via `Arc<Mutex<OutputStage>>` instead of independently locked writers
+
 ### Removed
 - removed enum `pipeline::output_stage::HeaderStatus`
 - removed field `lock_time` from struct `OutputStageStats`
