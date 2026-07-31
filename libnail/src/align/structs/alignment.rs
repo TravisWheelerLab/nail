@@ -44,6 +44,7 @@ pub struct CellStats {
     pub fraction: f32,
 }
 
+#[derive(Default)]
 pub struct DisplayStrings {
     /// The display for the profile portion of the alignment
     pub profile_string: String,
@@ -53,6 +54,40 @@ pub struct DisplayStrings {
     pub middle_string: String,
     /// The display for position-specific posterior probability bins
     pub posterior_string: String,
+}
+
+#[derive(Default)]
+pub struct AlignmentStats {
+    // The length of the alignment
+    pub length: usize,
+    // The number of exact matches
+    pub n_match: usize,
+    // The number of mismatches/substitutions
+    pub n_mismatch: usize,
+    // The number of gap openings
+    pub n_gap_open: usize,
+    // The total number of gaps
+    pub n_gap: usize,
+}
+
+impl AlignmentStats {
+    pub fn pid_with_gaps(&self) -> anyhow::Result<f32> {
+        if self.length == 0 {
+            bail!("alignment length 0 in AlignmentStats::pid_with_gaps()")
+        }
+
+        Ok(self.n_match as f32 / self.length as f32)
+    }
+
+    pub fn pid_no_gaps(&self) -> anyhow::Result<f32> {
+        if self.length == 0 {
+            bail!("alignment length 0 in AlignmentStats::pid_no_gaps()")
+        } else if self.n_gap > self.length {
+            bail!("n_gap > length in AlignmentStats::pid_no_gaps()")
+        }
+
+        Ok(self.n_match as f32 / (self.length - self.n_gap) as f32)
+    }
 }
 
 pub struct Alignment {
@@ -68,6 +103,8 @@ pub struct Alignment {
     pub cell_stats: Option<CellStats>,
     /// The strings used for alignment display
     pub display_strings: Option<DisplayStrings>,
+    ///
+    pub stats: Option<AlignmentStats>,
 }
 
 impl AsRef<Alignment> for &Alignment {
@@ -87,7 +124,7 @@ impl AsRef<Alignment> for &Alignment {
 /// 0.85 - 0.95 -> "9"
 ///
 /// 0.95 - 1.00 -> "*"
-fn map_posterior_probability_to_bin_byte(probability: f32) -> u8 {
+fn map_posterior_probability_to_bin_byte_utf8(probability: f32) -> u8 {
     let bin = (probability * 10.0).round();
     UTF8_NUMERIC[bin as usize]
 }
@@ -115,6 +152,8 @@ impl ScoreParams {
 pub struct AlignmentBuilder<'a> {
     target: Option<&'a Sequence>,
     profile: Option<&'a Profile>,
+    profile_name: Option<String>,
+    target_name: Option<String>,
     trace: Option<&'a Trace>,
     database_size: Option<usize>,
     forward_score: Option<Bits>,
@@ -133,8 +172,18 @@ impl<'a> AlignmentBuilder<'a> {
         self
     }
 
+    pub fn with_profile_name(mut self, name: &str) -> Self {
+        self.profile_name = Some(name.to_string());
+        self
+    }
+
     pub fn with_target(mut self, target: &'a Sequence) -> Self {
         self.target = Some(target);
+        self
+    }
+
+    pub fn with_target_name(mut self, name: &str) -> Self {
+        self.target_name = Some(name.to_string());
         self
     }
 
@@ -225,83 +274,101 @@ impl<'a> AlignmentBuilder<'a> {
             None => None,
         };
 
-        let display_strings = match (self.trace, self.profile, self.target) {
+        let (display_strings, stats) = match (self.trace, self.profile, self.target) {
             (Some(trace), Some(profile), Some(target)) => {
-                let mut profile_bytes = vec![];
-                let mut target_bytes = vec![];
-                let mut middle_bytes = vec![];
-                let mut posteriors = vec![];
+                let mut stats = AlignmentStats::default();
+                stats.length = trace.core_len();
 
-                trace
+                let mut display = DisplayStrings::default();
+
+                let mut prev_state = Trace::INVALID_STATE;
+                for step in trace
                     .iter()
-                    .filter(|s| {
-                        s.state == Trace::M_STATE
-                            || s.state == Trace::I_STATE
-                            || s.state == Trace::D_STATE
-                    })
-                    .for_each(|step| {
-                        posteriors.push(map_posterior_probability_to_bin_byte(step.posterior));
-                        let profile_byte = profile.consensus_seq_bytes_utf8[step.profile_idx];
-                        let target_byte = target.utf8_bytes[step.target_idx];
+                    .skip_while(|s| !s.is_core_state())
+                    .take_while(|s| s.is_core_state())
+                {
+                    display
+                        .posterior_string
+                        .push(map_posterior_probability_to_bin_byte_utf8(step.posterior) as char);
 
-                        match step.state {
-                            Trace::I_STATE => {
-                                profile_bytes.push(Alignment::PROFILE_GAP_BYTE);
-                                target_bytes.push(target_byte);
-                                middle_bytes.push(UTF8_SPACE);
-                            }
-                            Trace::D_STATE => {
-                                profile_bytes.push(profile_byte);
-                                target_bytes.push(Alignment::TARGET_GAP_BYTE);
-                                middle_bytes.push(UTF8_SPACE);
-                            }
-                            Trace::M_STATE => {
-                                let target_byte_digital = target.digital_bytes[step.target_idx];
+                    let prf_char = profile.consensus_seq_bytes_utf8[step.profile_idx] as char;
+                    let seq_char = target.utf8_bytes[step.target_idx] as char;
 
-                                profile_bytes.push(profile_byte);
-                                target_bytes.push(target_byte);
+                    match step.state {
+                        Trace::M_STATE => {
+                            display.profile_string.push(prf_char);
+                            display.target_string.push(seq_char);
 
-                                if profile_byte.to_ascii_lowercase()
-                                    == target_byte.to_ascii_lowercase()
-                                {
-                                    middle_bytes.push(profile_byte);
-                                } else if profile
-                                    .match_score(target_byte_digital as usize, step.profile_idx)
-                                    > 0.0
-                                {
-                                    middle_bytes.push(UTF8_PLUS);
+                            let matches_consensus =
+                                prf_char.to_ascii_lowercase() == seq_char.to_ascii_lowercase();
+
+                            let match_score = profile.match_score(
+                                target.digital_bytes[step.target_idx] as usize,
+                                step.profile_idx,
+                            );
+
+                            let mid_char = if matches_consensus {
+                                stats.n_match += 1;
+                                prf_char
+                            } else {
+                                stats.n_mismatch += 1;
+                                if match_score > 0.0 {
+                                    UTF8_PLUS as char
                                 } else {
-                                    middle_bytes.push(UTF8_SPACE);
+                                    UTF8_SPACE as char
                                 }
-                            }
-                            _ => {
-                                panic!("invalid trace state in AlignmentBuilder: {}", step.state)
-                            }
+                            };
+
+                            display.middle_string.push(mid_char);
                         }
-                    });
+                        Trace::I_STATE => {
+                            stats.n_gap += 1;
+                            if step.state != prev_state {
+                                stats.n_gap_open += 1;
+                            }
 
-                let profile_string = String::from_utf8(profile_bytes)?;
-                let target_string = String::from_utf8(target_bytes)?;
-                let middle_string = String::from_utf8(middle_bytes)?;
-                let posterior_string = String::from_utf8(posteriors)?;
+                            // ---
 
-                Some(DisplayStrings {
-                    profile_string,
-                    target_string,
-                    middle_string,
-                    posterior_string,
-                })
+                            display
+                                .profile_string
+                                .push(Alignment::PROFILE_GAP_BYTE as char);
+                            display.target_string.push(seq_char);
+                            display.middle_string.push(UTF8_SPACE as char);
+                        }
+                        Trace::D_STATE => {
+                            stats.n_gap += 1;
+                            if step.state != prev_state {
+                                stats.n_gap_open += 1;
+                            }
+
+                            // ---
+
+                            display.profile_string.push(prf_char);
+                            display
+                                .target_string
+                                .push(Alignment::TARGET_GAP_BYTE as char);
+                            display.middle_string.push(UTF8_SPACE as char);
+                        }
+
+                        _ => bail!("unexpected non-core state in filtered trace step iter"),
+                    }
+
+                    prev_state = step.state;
+                }
+
+                (Some(display), Some(stats))
             }
-            _ => None,
+            _ => (None, None),
         };
 
         Ok(Alignment {
-            profile_name: self.profile.map(|profile| profile.name.clone()),
-            target_name: self.target.map(|target| target.name.clone()),
+            profile_name: self.profile_name,
+            target_name: self.target_name,
             boundaries,
             scores,
             cell_stats,
             display_strings,
+            stats,
         })
     }
 }

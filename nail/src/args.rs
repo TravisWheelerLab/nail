@@ -302,6 +302,23 @@ pub struct IoArgs {
     /// Allow nail to overwrite files
     #[arg(short = 'X', long = "allow-overwrite", default_value_t = false)]
     pub allow_overwrite: bool,
+
+    /// Set the format of tabular results
+    #[arg(long, default_value = "nail", value_name = "FMT", verbatim_doc_comment)]
+    pub tbl_format: TableFormat,
+
+    /// Prefer profile accessions instead of names in output
+    #[arg(long, action)]
+    pub use_accession: bool,
+}
+
+#[derive(Default, Clone, Copy, Debug, ValueEnum)]
+pub enum TableFormat {
+    #[value(alias = "0")]
+    Nail,
+    #[default]
+    #[value(alias = "1")]
+    Blast,
 }
 
 #[derive(Args, Debug, Clone, Default)]

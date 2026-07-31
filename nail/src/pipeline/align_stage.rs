@@ -47,11 +47,15 @@ impl AlignStageStatsBuilder {
 #[derive(Clone)]
 pub struct AlignConfig {
     pub do_null_two: bool,
+    pub use_accession: bool,
 }
 
 impl Default for AlignConfig {
     fn default() -> Self {
-        Self { do_null_two: true }
+        Self {
+            do_null_two: true,
+            use_accession: false,
+        }
     }
 }
 
@@ -89,6 +93,7 @@ impl DefaultAlignStage {
             forward_p_value_threshold: args.pipeline_args.forward_pvalue_threshold,
             config: AlignConfig {
                 do_null_two: !args.expert_args.no_null_two,
+                use_accession: args.io_args.use_accession,
             },
             ..Default::default()
         })
@@ -194,7 +199,14 @@ impl AlignStage for DefaultAlignStage {
         StageResult::Passed {
             data: AlignmentBuilder::default()
                 .with_profile(profile)
+                .with_profile_name(
+                    match (self.config.use_accession, profile.accession.is_empty()) {
+                        (true, false) => &profile.accession,
+                        _ => &profile.name,
+                    },
+                )
                 .with_target(target)
+                .with_target_name(&target.name)
                 .with_database_size(self.target_count)
                 .with_cell_count(bounds.num_cells)
                 .with_forward_score(forward_score)

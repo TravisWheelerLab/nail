@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-7-31
+
+### Added
+- added fields `profile_name`, `target_name` to struct `AlignmentBuilder`
+- added struct `AlignmentStats`
+- added variants `Length`, `Pid`, `MatchCount`, `MismatchCount`, `GapOpenCount`, `GapCount`, to enum `Field`
+- added field `stats: AlignmentStats` to struct `Alignment` 
+
+### Changed
+- struct `DisplayStrings` now derives `PartialEq`
+- function `map_posterior_probability_to_bin_byte()` renamed to `map_posterior_probability_to_bin_byte_utf8()`
+
+<!-- ************* -->
 
 ## [0.5.1] - 2026-7-10
 

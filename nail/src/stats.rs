@@ -3,7 +3,7 @@ use std::{
     fmt::Debug,
     io::Write,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -18,6 +18,7 @@ use crate::{
         OutputStageStats, PipelineResult,
         StageResult::{Filtered, Passed},
     },
+    search::Queries,
     util::PathExt,
 };
 
@@ -193,14 +194,23 @@ pub struct Stats {
     counted_values: Arc<[AtomicU64; CountedValue::COUNT]>,
     computed_values: [u64; ComputedValue::COUNT],
     seed_counts_by_query: HashMap<String, u64>,
-    // TODO: this is basically getting ignored because
-    //       the Stats struct is cloned per thread
-    hit_counts_by_query: HashMap<String, u64>,
+    hit_counts_by_query: Arc<HashMap<String, AtomicUsize>>,
 }
 
 impl Stats {
-    pub fn new(n_queries: usize, n_targets: usize) -> Self {
+    pub fn new(queries: &Queries, n_targets: usize) -> Self {
         let mut stats = Self::default();
+
+        let (query_names, n_queries) = match queries {
+            Queries::Sequence(db) => (db.index.keys(), db.len()),
+            Queries::Profile(db) => (db.index.keys(), db.len()),
+        };
+
+        stats.hit_counts_by_query = Arc::new(
+            query_names
+                .map(|n| (n.to_string(), AtomicUsize::new(0)))
+                .collect::<HashMap<_, _>>(),
+        );
 
         stats.set_computed_value(ComputedValue::Queries, n_queries as u64);
         stats.set_computed_value(ComputedValue::Targets, n_targets as u64);
@@ -226,20 +236,15 @@ impl Stats {
         pipeline_results: &[PipelineResult],
         output_stats: &OutputStageStats,
     ) {
-        pipeline_results.iter().for_each(|result| {
+        pipeline_results.iter().for_each(|pl_result| {
             self.increment_count(CountedValue::Seeds);
             self.add_count(
                 CountedValue::SeedCells,
-                result.profile_length * result.target_length,
+                pl_result.profile_length * pl_result.target_length,
             );
 
-            *(self
-                .hit_counts_by_query
-                .entry(result.profile_name.clone())
-                .or_insert(0)) += 1;
-
-            if let Some(ref result) = result.cloud_result {
-                match result {
+            if let Some(ref cld_result) = pl_result.cloud_result {
+                match cld_result {
                     Filtered { stats } => {
                         self.add_count(CountedValue::CloudForwardCells, stats.forward_cells);
                         self.add_count(CountedValue::CloudBackwardCells, stats.backward_cells);
@@ -265,8 +270,8 @@ impl Stats {
                 }
             }
 
-            if let Some(ref result) = result.align_result {
-                match result {
+            if let Some(ref al_result) = pl_result.align_result {
+                match al_result {
                     Filtered { stats } => {
                         self.add_count(CountedValue::ForwardCells, stats.forward_cells);
 
@@ -290,13 +295,15 @@ impl Stats {
                         );
                         self.add_threaded_time(ThreadedTimed::Traceback, stats.traceback_time);
                         self.add_threaded_time(ThreadedTimed::NullTwo, stats.null_two_time);
+
+                        self.hit_counts_by_query[&pl_result.profile_name]
+                            .fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
         });
         self.add_count(CountedValue::PassedReport, output_stats.n_reported);
         self.add_threaded_time(ThreadedTimed::OutputWrite, output_stats.write_time);
-        self.add_threaded_time(ThreadedTimed::OutputMutex, output_stats.lock_time);
     }
 
     pub fn set_serial_time(&mut self, timed: SerialTimed, time: Duration) {
@@ -427,7 +434,10 @@ impl Stats {
             .iter()
             .map(|&q| {
                 let a = *self.seed_counts_by_query.get(q).unwrap_or(&0);
-                let b = *self.hit_counts_by_query.get(q).unwrap_or(&0);
+                let b = self
+                    .hit_counts_by_query
+                    .get(q)
+                    .map_or(0u64, |a| a.load(Ordering::Relaxed) as u64);
                 (q, a, b)
             })
             .collect();

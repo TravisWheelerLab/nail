@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use libnail::{
     align::{
         backward, cloud_search_bwd, cloud_search_fwd, forward, posterior,
@@ -30,7 +30,7 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
     let queries = read_queries(&args.query_path)?;
     let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
 
-    let mut stats = Stats::new(queries.len(), targets.len());
+    let mut stats = Stats::new(&queries, targets.len());
 
     match args.expert_args.target_database_size {
         Some(_) => {}
@@ -60,7 +60,10 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
                 .map(|seed| pipeline.run(seed))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            pipeline.output.run(&res)?;
+            match pipeline.output.lock() {
+                Ok(mut guard) => guard.run(&res)?,
+                Err(_) => bail!("mutex poisoned"),
+            };
 
             Ok(())
         })?;
@@ -72,7 +75,7 @@ pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
     let queries = read_queries(&args.query_path)?;
     let mut targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
 
-    let mut stats = Stats::new(queries.len(), targets.len());
+    let mut stats = Stats::new(&queries, targets.len());
 
     match args.expert_args.target_database_size {
         Some(_) => {}

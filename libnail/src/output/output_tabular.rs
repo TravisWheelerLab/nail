@@ -43,6 +43,12 @@ pub enum Field {
     Evalue,
     CellFrac,
     CellCount,
+    Length,
+    Pid,
+    MatchCount,
+    MismatchCount,
+    GapOpenCount,
+    GapCount,
 }
 
 impl Field {
@@ -59,6 +65,17 @@ impl Field {
             Field::Evalue => alignment.scores.e_value.field_string(),
             Field::CellFrac => alignment.cell_stats.as_ref()?.fraction.field_string(),
             Field::CellCount => alignment.cell_stats.as_ref()?.count.to_string(),
+            Field::Pid => alignment
+                .stats
+                .as_ref()?
+                .pid_with_gaps()
+                .map_or(Default::default(), |p| p * 100.0)
+                .field_string(),
+            Field::Length => alignment.stats.as_ref()?.length.to_string(),
+            Field::MatchCount => alignment.stats.as_ref()?.n_match.to_string(),
+            Field::MismatchCount => alignment.stats.as_ref()?.n_mismatch.to_string(),
+            Field::GapOpenCount => alignment.stats.as_ref()?.n_gap_open.to_string(),
+            Field::GapCount => alignment.stats.as_ref()?.n_gap.to_string(),
         })
     }
 

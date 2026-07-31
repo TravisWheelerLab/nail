@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::stdout;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::args::{SearchArgs, SeedMode};
@@ -10,14 +10,15 @@ use crate::io::Seeds;
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    seed_progressive, seed_static, DefaultAlignStage, DefaultCloudSearchStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline,
+    seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage, DefaultCloudSearchStage,
+    FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
 };
 use crate::stats::{SerialTimed, Stats, ThreadedTimed};
-use crate::util::term::*;
 use crate::util::{guess_query_format_from_query_file, FileFormat};
+use crate::util::{term::*, PathExt};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
+use libnail::output::output_tabular::TableFormat;
 use libnail::structs::Profile;
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
@@ -124,6 +125,24 @@ pub fn build_pipeline(
         .collect(),
     );
 
+    let mut output = OutputStage::new(args.pipeline_args.e_value_threshold)?;
+
+    if args.ali_to_stdout {
+        output.add(AlignmentOutput::new(stdout()))
+    } else if let Some(path) = &args.io_args.ali_results_path {
+        output.add(AlignmentOutput::new(path.open(true)?))
+    }
+
+    if let Some(path) = &args.io_args.tbl_results_path {
+        let format = match args.io_args.tbl_format {
+            crate::args::TableFormat::Nail => TableFormat::new(&DEFAULT_COLUMNS),
+            crate::args::TableFormat::Blast => TableFormat::new(&BLAST_COLUMNS),
+        }
+        .context("failed to build TableFormat")?;
+
+        output.add(TableOutput::new(path.open(true)?, format));
+    }
+
     Ok(Pipeline {
         profiles,
         prf: None,
@@ -135,7 +154,7 @@ pub fn build_pipeline(
         align: Box::new(
             DefaultAlignStage::new(args).context("failed to create DefaultAlignStage")?,
         ),
-        output: OutputStage::new(args).context("failed to create OutputStage")?,
+        output: Arc::new(Mutex::new(output)),
         stats,
     })
 }
@@ -159,7 +178,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         now.elapsed().as_secs_f64()
     );
 
-    let mut stats = Stats::new(queries.len(), targets.len());
+    let mut stats = Stats::new(&queries, targets.len());
 
     match args.expert_args.target_database_size {
         Some(_) => {}
@@ -201,7 +220,19 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
                 .map(|seed| pipeline.run(seed))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let output_stats = pipeline.output.run(&res)?;
+            let lock_now = Instant::now();
+            let (output_stats, lock_time) = match pipeline.output.lock() {
+                Ok(mut guard) => {
+                    let lock_time = lock_now.elapsed();
+                    (guard.run(&res)?, lock_time)
+                }
+                Err(_) => bail!("mutex poisoned"),
+            };
+
+            pipeline
+                .stats
+                .add_threaded_time(ThreadedTimed::OutputMutex, lock_time);
+
             pipeline.stats.add_sample(&res, &output_stats);
 
             pipeline
