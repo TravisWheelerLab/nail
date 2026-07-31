@@ -13,11 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 ### Security
 -->
-
 ## [Unreleased]
 
+## [0.7.0] - 2026-7-31
+
 ### Added
-- added CLI params `--use_accession`, `--tbl-format` 
+- added CLI params `--use-accession`, `--tbl-format` 
 - added field `use_accession` to struct `AlignConfig`
 - added trait `PipelineOutput`
 - added structs `TableOutput`, `AlignmentOutput` (both are `impl PipelineOutput`)
@@ -31,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - removed enum `pipeline::output_stage::HeaderStatus`
 - removed field `lock_time` from struct `OutputStageStats`
+
+### Fixed
+- fixed "max seqs report" hit (per query) count
 
 <!-- ************* -->
 
