@@ -178,7 +178,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         now.elapsed().as_secs_f64()
     );
 
-    let mut stats = Stats::new(queries.len(), targets.len());
+    let mut stats = Stats::new(&queries, targets.len());
 
     match args.expert_args.target_database_size {
         Some(_) => {}
