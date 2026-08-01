@@ -540,7 +540,7 @@ pub fn handle_clap_error(e: clap::Error) -> ! {
             let args: Vec<String> = std::env::args().collect();
 
             let is_terminal = std::io::stdout().is_terminal();
-            let is_short_help_zebra = args[2] == "-hz";
+            let is_short_help_zebra = args.get(2).is_some_and(|a| a == "-hz");
 
             if is_terminal && is_short_help_zebra {
                 print_help_summary_zebra(&e);
