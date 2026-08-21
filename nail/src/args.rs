@@ -324,84 +324,74 @@ pub enum TableFormat {
 #[derive(Args, Debug, Clone, Default)]
 pub struct PipelineArgs {
     /// (cloud search) local score pruning threshold
-    #[arg(
-        short = 'A',
-        default_value_t = 10.0,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// Cells are pruned when (S_cell < S_max - A), where S_cell is the cell
+    /// score, S_max is the maximum cell score along the anti-diagonal, and
+    /// A is the local pruning threshold parameter.
+    ///
+    /// Scores are in natural log space during dynamic programming, so with
+    /// A = 10, cells are pruned when they correspond to a ~20,000 fold
+    /// reduction in probability.
+    #[arg(short = 'A', default_value_t = 10.0, value_name = "X")]
     pub alpha: f32,
 
     /// (cloud search) global score pruning threshold
-    #[arg(
-        short = 'B',
-        default_value_t = 16.0,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// Cells are pruned when (S_cell < S_global_max - B), where S_cell is the
+    /// cell score, S_global_max is the global maximum cell score computed
+    /// across all anti-diagonals, and B is the global score pruning threshold
+    /// parameter.
+    ///
+    /// Scores are in natural log space during dynamic programming, so with
+    /// B = 16, cells are pruned when they correspond to a ~9 million fold
+    /// reduction in probability
+    #[arg(short = 'B', default_value_t = 16.0, value_name = "X")]
     pub beta: f32,
 
     /// (cloud search) at minimum, compute N anti-diagonals
-    #[arg(
-        short = 'G',
-        default_value_t = 5,
-        value_name = "N",
-        verbatim_doc_comment
-    )]
+    #[arg(short = 'G', default_value_t = 5, value_name = "N")]
     pub gamma: usize,
 
     /// (cloud search) allow at most N attempts to recover disjoint clouds
-    #[arg(
-        short = 'a',
-        default_value_t = 5,
-        value_name = "N",
-        verbatim_doc_comment
-    )]
+    ///
+    /// When the forward and backward clouds fail to intserect, nail restarts
+    /// cloud search using more permissive pruning parameters (α, ɓ, γ). This
+    /// parameter sets an upper limit on the number of attempts nail will make
+    /// to recover. The parameters are scaled according to the -f argumment
+    /// (default: 0.5).
+    #[arg(short = 'a', default_value_t = 5, value_name = "N")]
     pub cloud_max_join_attempts: usize,
 
-    /// (cloud search) when cloud search fails, scale cloud search parameters (α, ɓ, γ) by 1.0 + X
-    #[arg(
-        short = 'f',
-        default_value_t = 0.5,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    /// (cloud search) when cloud search fails, scale cloud search parameters
+    /// (α, ɓ, γ) by 1.0 + X
+    #[arg(short = 'f', default_value_t = 0.5, value_name = "X")]
     pub cloud_param_scale_factor: f32,
 
     /// (seeding filter) filter hits with P-value > X
-    #[arg(
-        short = 'S',
-        default_value_t = 1e-4,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// This filter works via a reasonable approximation of P-values for hits
+    /// produced by MMseqs2: E_align = S * Z, where S is the seed filter P-value
+    /// threshold, and Z is the number of taret sequences in the search. The
+    /// call that nail internally makes to 'mmseqs align' is handed the parameter
+    /// '-e E_align'
+    #[arg(short = 'S', default_value_t = 1e-4, value_name = "X")]
     pub seed_pvalue_threshold: f64,
 
     /// (cloud search filter) filter hits with P-value > X
-    #[arg(
-        short = 'C',
-        default_value_t = 1e-2,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    #[arg(short = 'C', default_value_t = 1e-2, value_name = "X")]
     pub cloud_pvalue_threshold: f64,
 
     /// (forward filter) filter hits with P-value > X
-    #[arg(
-        short = 'F',
-        default_value_t = 1e-4,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// The forward filter catches cases where the Forward score across the
+    /// entire merged cloud (after cloud search) produces a bad P-value. When
+    /// this happens, nail discards the search and doesn't compute Backward or
+    /// alignment trace recovery.
+    #[arg(short = 'F', default_value_t = 1e-4, value_name = "X")]
     pub forward_pvalue_threshold: f64,
 
     /// (reporting filter) filter hits with E-value > X
-    #[arg(
-        short = 'E',
-        default_value_t = 10.0,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    #[arg(short = 'E', default_value_t = 10.0, value_name = "X")]
     pub e_value_threshold: f64,
 
     /// Produce alignment seeds and terminate
@@ -412,6 +402,11 @@ pub struct PipelineArgs {
 #[derive(Args, Debug, Clone, Default)]
 pub struct ExpertArgs {
     /// Override the number of comparisons used for E-value calculation
+    ///
+    /// In the p7HMM alignment model, E-value computation is simply: E = P * Z,
+    /// where Z is the number of searches per query (i.e. the number of target
+    /// sequences). This flag can be useful when you want to pretend you're doing
+    /// a larger or smaller search.
     #[arg(short = 'Z', value_name = "N")]
     pub target_database_size: Option<usize>,
 
