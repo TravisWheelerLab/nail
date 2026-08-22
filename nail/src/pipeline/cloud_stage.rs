@@ -138,7 +138,7 @@ impl CloudSearchStage for DefaultCloudSearchStage {
 
             match self.fwd_cloud.anti_diagonal_relationship(&self.bwd_cloud) {
                 Disjoint(_) => {
-                    if num_attempts >= 4 {
+                    if num_attempts + 1 >= self.max_attempts {
                         return StageResult::Filtered {
                             stats: stats.build().unwrap(),
                         };
