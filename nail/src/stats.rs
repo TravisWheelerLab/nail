@@ -75,7 +75,7 @@ impl Debug for SerialTimed {
         let str = match self {
             SerialTimed::Total => "total",
             SerialTimed::Setup => "setup",
-            SerialTimed::Seeding => "seeding (mmseqs)",
+            SerialTimed::Seeding => "seeding",
             SerialTimed::Alignment => "alignment",
         };
 
@@ -107,22 +107,30 @@ impl Debug for SetupTimed {
 
 #[repr(usize)]
 #[derive(Clone, Copy, EnumIter, EnumCount)]
-pub enum MmseqsTimed {
+pub enum SeedTimed {
     Total,
+    DbWrite,
     Prefilter,
+    Slice,
     Align,
+    Decide,
+    Merge,
     Convertalis,
     Index,
 }
 
-impl Debug for MmseqsTimed {
+impl Debug for SeedTimed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
-            MmseqsTimed::Total => "total",
-            MmseqsTimed::Prefilter => "prefilter",
-            MmseqsTimed::Align => "align",
-            MmseqsTimed::Convertalis => "convertalis",
-            MmseqsTimed::Index => "seed index",
+            SeedTimed::Total => "total",
+            SeedTimed::DbWrite => "db write",
+            SeedTimed::Prefilter => "prefilter",
+            SeedTimed::Slice => "slice",
+            SeedTimed::Align => "align",
+            SeedTimed::Decide => "decide",
+            SeedTimed::Merge => "merge",
+            SeedTimed::Convertalis => "convertalis",
+            SeedTimed::Index => "seed index",
         };
 
         write!(f, "{}", str)
@@ -223,7 +231,7 @@ impl Debug for CountedValue {
 pub struct Stats {
     serial_times: [Duration; SerialTimed::COUNT],
     setup_times: [Duration; SetupTimed::COUNT],
-    mmseqs_times: [Duration; MmseqsTimed::COUNT],
+    seed_times: [Duration; SeedTimed::COUNT],
     threaded_times: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     threaded_times_num_samples: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     counted_values: Arc<[AtomicU64; CountedValue::COUNT]>,
@@ -258,12 +266,12 @@ impl Stats {
         self.setup_times[timed as usize] = time;
     }
 
-    pub fn set_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
-        self.mmseqs_times[timed as usize] = time;
+    pub fn set_seed_time(&mut self, timed: SeedTimed, time: Duration) {
+        self.seed_times[timed as usize] = time;
     }
 
-    pub fn add_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
-        self.mmseqs_times[timed as usize] += time;
+    pub fn add_seed_time(&mut self, timed: SeedTimed, time: Duration) {
+        self.seed_times[timed as usize] += time;
     }
 
     pub fn set_seed_counts(&mut self, counts: HashMap<String, u64>) {
@@ -355,8 +363,8 @@ impl Stats {
         self.threaded_times_num_samples[timed as usize].fetch_add(1, Ordering::SeqCst);
     }
 
-    fn mmseqs_time_total(&self, timed: MmseqsTimed) -> Duration {
-        self.mmseqs_times[timed as usize]
+    fn seed_time_total(&self, timed: SeedTimed) -> Duration {
+        self.seed_times[timed as usize]
     }
 
     fn serial_time_total(&self, timed: SerialTimed) -> Duration {
@@ -569,10 +577,10 @@ impl Stats {
         )?;
         Self::write_leaves(
             out,
-            MmseqsTimed::iter()
+            SeedTimed::iter()
                 .skip(1)
-                .map(|t| (format!("{t:?}"), self.mmseqs_time_total(t))),
-            self.mmseqs_time_total(MmseqsTimed::Total),
+                .map(|t| (format!("{t:?}"), self.seed_time_total(t))),
+            self.seed_time_total(SeedTimed::Total),
         )?;
 
         branch(

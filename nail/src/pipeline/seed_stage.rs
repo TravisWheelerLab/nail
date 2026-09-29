@@ -14,7 +14,7 @@ use crate::{
     },
     pipeline::StageResult,
     search::Queries,
-    stats::Stats,
+    stats::{SeedTimed, Stats},
     util::PathExt,
 };
 
@@ -39,6 +39,7 @@ pub fn seed_static(
 
     // ---
 
+    let now = Instant::now();
     write_mmseqs_sequence_database(seqs, &db_paths.target_db)
         .context("failed to write mmseqs target DB")?;
 
@@ -48,6 +49,8 @@ pub fn seed_static(
         Queries::Profile(hmm) => write_mmseqs_profile_database(hmm, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
     }
+
+    stats.set_seed_time(SeedTimed::DbWrite, now.elapsed());
 
     let now = Instant::now();
     run_mmseqs_prefilter(
@@ -59,7 +62,7 @@ pub fn seed_static(
     )
     .context("mmseqs prefilter failed")?;
 
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Prefilter, now.elapsed());
+    stats.set_seed_time(SeedTimed::Prefilter, now.elapsed());
 
     // ---
 
@@ -74,7 +77,7 @@ pub fn seed_static(
     )
     .context("mmseqs align failed")?;
 
-    stats.add_mmseqs_time(crate::stats::MmseqsTimed::Align, now.elapsed());
+    stats.add_seed_time(SeedTimed::Align, now.elapsed());
 
     // ---
 
@@ -98,7 +101,7 @@ pub fn seed_static(
     )
     .context("mmseqs convertalis failed")?;
 
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Convertalis, now.elapsed());
+    stats.set_seed_time(SeedTimed::Convertalis, now.elapsed());
 
     // ---
 
@@ -106,8 +109,8 @@ pub fn seed_static(
     let seeds =
         Seeds::from_path(align_tsv, args.seed_args.max_seeds).context("failed to build seeds")?;
 
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
+    stats.set_seed_time(SeedTimed::Index, now.elapsed());
+    stats.set_seed_time(SeedTimed::Total, time_start.elapsed());
 
     Ok(seeds)
 }
@@ -125,6 +128,7 @@ pub fn seed_progressive(
 
     // ---
 
+    let now = Instant::now();
     write_mmseqs_sequence_database(seqs, &db_paths.target_db)
         .context("failed to write mmseqs target DB")?;
 
@@ -134,6 +138,8 @@ pub fn seed_progressive(
         Queries::Profile(hmm) => write_mmseqs_profile_database(hmm, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
     }
+
+    stats.set_seed_time(SeedTimed::DbWrite, now.elapsed());
 
     let now = Instant::now();
     run_mmseqs_prefilter(
@@ -145,7 +151,7 @@ pub fn seed_progressive(
     )
     .context("mmseqs prefilter failed")?;
 
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Prefilter, now.elapsed());
+    stats.set_seed_time(SeedTimed::Prefilter, now.elapsed());
 
     // ---
 
@@ -185,6 +191,7 @@ pub fn seed_progressive(
 
         prog_iter_dir.create_dir()?;
 
+        let now = Instant::now();
         {
             // note: scoped to drop file handles and force a write
             let mut prog_pfdb = prog_pdb_path.open(true)?;
@@ -225,6 +232,8 @@ pub fn seed_progressive(
             }
         }
 
+        stats.add_seed_time(SeedTimed::Slice, now.elapsed());
+
         let prog_adb_path = prog_iter_dir.join("adb");
 
         let now = Instant::now();
@@ -238,8 +247,9 @@ pub fn seed_progressive(
         )
         .context("mmseqs align failed")?;
 
-        stats.add_mmseqs_time(crate::stats::MmseqsTimed::Align, now.elapsed());
+        stats.add_seed_time(SeedTimed::Align, now.elapsed());
 
+        let now = Instant::now();
         let mut prog_adb =
             PrefilterDb::from_path(prog_adb_path).context("failed to open prog align DB")?;
 
@@ -284,6 +294,8 @@ pub fn seed_progressive(
             }
         }
 
+        stats.add_seed_time(SeedTimed::Decide, now.elapsed());
+
         i += 1;
         n_take *= 2;
         prog_adbs.push(prog_adb);
@@ -291,6 +303,7 @@ pub fn seed_progressive(
 
     // --
 
+    let now = Instant::now();
     {
         // note: scoped to drop file handles and force a write
         let adb_dir = db_paths
@@ -331,6 +344,8 @@ pub fn seed_progressive(
         }
     }
 
+    stats.set_seed_time(SeedTimed::Merge, now.elapsed());
+
     // ---
 
     let align_tsv = match &args.io_args.seeds_output_path {
@@ -353,7 +368,7 @@ pub fn seed_progressive(
     )
     .context("mmseqs convertalis failed")?;
 
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Convertalis, now.elapsed());
+    stats.set_seed_time(SeedTimed::Convertalis, now.elapsed());
 
     // ---
 
@@ -362,8 +377,8 @@ pub fn seed_progressive(
     let seeds =
         Seeds::from_path(align_tsv, args.seed_args.max_seeds).context("failed to build seeds")?;
 
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Index, now.elapsed());
-    stats.set_mmseqs_time(crate::stats::MmseqsTimed::Total, time_start.elapsed());
+    stats.set_seed_time(SeedTimed::Index, now.elapsed());
+    stats.set_seed_time(SeedTimed::Total, time_start.elapsed());
 
     Ok(seeds)
 }
