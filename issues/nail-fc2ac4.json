@@ -1,0 +1,30 @@
+{
+  "id": "nail-fc2ac4",
+  "title": "Write the mmseqs target db in parallel",
+  "body": "db write is 15.5 s on the mgy run, 3.2% of the run and the largest serial item. write_mmseqs_sequence_database (mmseqs.rs:433) iterates 2.4M records through Database::get, a seek plus read_exact per record, parses each into utf8 and digital byte vectors with a map lookup per residue, and writes through a BufWriter, all on one thread.\n\nFix: rayon over index ranges, each producing a byte buffer and per-record lengths, then one sequential write that assigns the offsets. Writing about 700 MB sequentially is near 1 s on an SSD, so the floor is close to that. The query db write can run beside it on another thread. Expected: 15 s to 1 or 2 s.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-1964b2",
+  "blocked_by": [
+    "nail-7ea5c0"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T05:20:35.412018534Z",
+  "updated_at": "2026-09-29T05:20:35.412018534Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
