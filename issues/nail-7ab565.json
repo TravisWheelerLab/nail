@@ -1,0 +1,28 @@
+{
+  "id": "nail-7ab565",
+  "title": "Debug build panics on the fixtures: profile_idx <= profile_length in dp_matrix.rs:831",
+  "body": "With debug assertions on (any non-release build), this fails on dev at 837ba60:\n\nnail search fixtures/query.hmm fixtures/target.fa --seeds fixtures/a.seeds --mmseqs-path /bin/true -t 1\n\nMessage: assertion failed: profile_idx <= self.profile_length, at libnail/src/align/structs/dp_matrix.rs:831, reached from libnail backward.rs via nail/src/pipeline/align_stage.rs:151. Release builds skip the assert and run to completion, writing 408 hits. Every seed in a.seeds has prf_end within its profile's LENG, so the seeds file is not the cause. Either the assert is wrong or backward indexes past the profile length.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T01:27:31.751301596Z",
+  "updated_at": "2026-09-29T01:27:31.751301596Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bdb967d",
+      "branch": "runtime-tree"
+    },
+    "closed": null
+  }
+}
