@@ -3,7 +3,7 @@
   "title": "Print per-iteration rows under the align leaf in prog seed mode",
   "body": "In --seed-mode prog each pass runs one mmseqs align over a shrinking active set with n_take doubling, and the tree sums them into one leaf. The word is iteration, not round.\n\nRecord each iteration's align duration (a Vec on Stats, since the enum array is fixed size) and print one indented row per iteration under align, with '[N iterations]' on the align line.\n\nJack will judge on real output whether the rows are too busy. If they go, the bracketed count stays.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-b00b59",
@@ -12,13 +12,13 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/415c993d",
-  "lease_expires": "2026-09-29T01:53:45.354983618Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.459955182Z",
-  "updated_at": "2026-09-29T01:41:52.536583885Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-09-29T01:41:52.544172863Z",
+  "closed_at": "2026-09-29T01:41:52.544172863Z",
+  "close_reason": "committed on runtime-tree",
+  "resolution": "done",
   "notes": [
     {
       "at": "2026-09-29T01:41:52.536583195Z",
@@ -33,6 +33,9 @@
       "commit": "bdb967d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "8d8153e",
+      "branch": "runtime-tree"
+    }
   }
 }
