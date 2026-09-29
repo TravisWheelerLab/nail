@@ -1,0 +1,31 @@
+{
+  "id": "nail-b5a599",
+  "title": "Audit the code against the settled rules and file cleanup issues",
+  "body": "Once Design and Conventions are written, re-check each divergence from the 2026-09-28 survey against the final text. File one cleanup issue per divergence, or per file where one sweep fixes several, and note here anything accepted as is. The survey reports are in the notes.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-5385c1",
+  "blocked_by": [
+    "nail-215254",
+    "nail-166084"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T00:14:50.73665939Z",
+  "updated_at": "2026-09-29T00:14:50.73665939Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "c97c1f2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
