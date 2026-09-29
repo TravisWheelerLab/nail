@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.395993367Z",
-  "updated_at": "2026-09-29T05:20:35.448649148Z",
+  "updated_at": "2026-09-29T05:20:35.456541429Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -22,6 +22,13 @@
       "at": "2026-09-29T05:20:35.448648568Z",
       "author": "Jack Roddy/415c993d",
       "text": "Runtime tree from the mgy run (all Pfam vs one MGnify recall shard, 48 threads), dev at 432ff65:\n\nruntime: 481.81s (100.00%)\n └─ setup:       8.92s ( 1.85%)\n     ├─ query index:      1.53s (17.12%)\n     ├─ target index:     1.16s (12.97%)\n     ├─ pipeline build:   6.23s (69.89%)\n     └─ [misc.]:          0.00s ( 0.02%)\n └─ seeding:   297.03s (61.65%)\n     ├─ db write:     15.47s ( 5.48%)\n     ├─ prefilter:   225.04s (79.67%)\n     ├─ slice:         1.83s ( 0.65%)\n     ├─ align:        36.13s (12.79%)   [12 iterations]\n     │   ├─ 1:         2.92s\n     │   ├─ 2:         3.21s\n     │   ├─ 3:         2.63s\n     │   ├─ 4:         2.66s\n     │   ├─ 5:         2.81s\n     │   ├─ 6:         2.53s\n     │   ├─ 7:         2.62s\n     │   ├─ 8:         2.72s\n     │   ├─ 9:         3.09s\n     │   ├─ 10:        3.88s\n     │   ├─ 11:        3.08s\n     │   └─ 12:        3.99s\n     ├─ decide:        1.29s ( 0.46%)\n     ├─ merge:         0.28s ( 0.10%)\n     ├─ convertalis:   0.65s ( 0.23%)\n     ├─ seed index:    1.64s ( 0.58%)\n     └─ [misc.]:       0.15s ( 0.05%)\n └─ alignment: 175.71s (36.47%)   [48 threads, cpu 7,842.90s, 93.0% busy]\n     │                       wall        %         cpu\n     │                     ------   ------   ---------\n     ├─ memory init         1.41s    0.80%      63.11s\n     ├─ cloud search       74.26s   42.26%   3,314.70s\n     ├─ forward            34.29s   19.52%   1,530.64s\n     ├─ backward           39.69s   22.59%   1,771.53s\n     ├─ posterior           9.76s    5.56%     435.74s\n     ├─ optimal accuracy    9.69s    5.51%     432.53s\n     ├─ traceback           0.64s    0.37%      28.74s\n     ├─ null two            3.36s    1.91%     150.10s\n     ├─ output (write)      0.14s    0.08%       6.30s\n     ├─ output (mutex)      0.00s    0.00%       0.21s\n     └─ [misc.]             2.45s    1.39%     109.30s\n └─ [misc.]:     0.16s ( 0.03%)",
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    {
+      "at": "2026-09-29T05:20:35.456540929Z",
+      "author": "Jack Roddy/415c993d",
+      "text": "Serial seconds and share of the 481.8 s run: db write 15.5 (3.2%), pipeline build 6.2 (1.3%), slice+decide+merge 3.4 (0.7%), query+target index 2.7 (0.6%), seed index 1.6 (0.3%), convertalis 0.7 (0.1%). All serial: 30.1 s, 6.2%. Removing every one entirely buys 6%.\n\nBelow the two big items, the mechanisms (2026-09-28 code survey):\n- PrefilterDb re-opens the file on every get and next_n (mmseqs.rs:177), validates every record with an open+seek+1-byte read in from_path (153-161), scans bytes for newlines by hand, and does all of it on one thread between align calls. Slice writes a record for Terminated queries too (TODO at seed_stage.rs:187). A held handle or mmap, memchr, and rayon over queries fixes slice, decide and merge together; worth about 3 s.\n- Seeds::from_path allocates a String and a Vec per TSV line, serial.\n- Index passes: single-threaded, CHUNKS=1 in from_path; the HMM index does a strum match per line; the HMM file is then read a second time to parse profiles. A single pass that indexes and parses would remove the second read.\n- Convertalis and the merge could go entirely if nail read the per-iteration align dbs into Seeds directly; gain about 1 s, cost is parsing mmseqs's alignment record. Not worth it on these numbers.\n\nParallel side, for proportion: prefilter is 225 s (47%), all mmseqs, untouched by anything serial. Alignment at 93% busy idles about 12 s.",
       "commit": "432ff65",
       "branch": "dev"
     }
