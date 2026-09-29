@@ -238,6 +238,7 @@ pub struct Stats {
     computed_values: [u64; ComputedValue::COUNT],
     seed_counts_by_query: HashMap<String, u64>,
     hit_counts_by_query: Arc<HashMap<String, AtomicUsize>>,
+    num_threads: usize,
 }
 
 impl Stats {
@@ -260,6 +261,10 @@ impl Stats {
         stats.set_computed_value(ComputedValue::Alignments, (n_queries * n_targets) as u64);
 
         stats
+    }
+
+    pub fn set_num_threads(&mut self, num_threads: usize) {
+        self.num_threads = num_threads;
     }
 
     pub fn set_setup_time(&mut self, timed: SetupTimed, time: Duration) {
@@ -583,18 +588,20 @@ impl Stats {
             self.seed_time_total(SeedTimed::Total),
         )?;
 
+        let wall = self.serial_time_total(SerialTimed::Alignment);
+        let cpu = self.threaded_time_total(ThreadedTimed::Total);
+        let busy = Self::pct(cpu, wall * self.num_threads as u32) * 100.0;
         branch(
             out,
             format!("{:?}:", SerialTimed::Alignment),
-            self.serial_string(SerialTimed::Alignment),
+            format!(
+                "{}   [{} threads, cpu {}, {busy:.1}% busy]",
+                self.serial_string(SerialTimed::Alignment),
+                self.num_threads,
+                Self::format_secs(cpu),
+            ),
         )?;
-        Self::write_leaves(
-            out,
-            ThreadedTimed::iter()
-                .skip(1)
-                .map(|t| (format!("{t:?}"), self.threaded_time_total(t))),
-            self.threaded_time_total(ThreadedTimed::Total),
-        )?;
+        self.write_alignment_leaves(out, wall, cpu)?;
 
         branch(
             out,
@@ -603,6 +610,80 @@ impl Stats {
         )?;
 
         Ok(())
+    }
+
+    fn write_alignment_leaves(
+        &self,
+        out: &mut impl Write,
+        wall: Duration,
+        cpu: Duration,
+    ) -> anyhow::Result<()> {
+        let mut rows: Vec<(String, Duration)> = ThreadedTimed::iter()
+            .skip(1)
+            .map(|t| (format!("{t:?}"), self.threaded_time_total(t)))
+            .filter(|(_, t)| !t.is_zero())
+            .collect();
+        let timed_sum: Duration = rows.iter().map(|(_, t)| *t).sum();
+        rows.push(("[misc.]".to_string(), cpu.saturating_sub(timed_sum)));
+
+        let rows: Vec<(String, String, String, String)> = rows
+            .into_iter()
+            .map(|(label, leaf_cpu)| {
+                let share = Self::pct(leaf_cpu, cpu);
+                (
+                    label,
+                    format!("{:.2}s", wall.as_secs_f64() * share),
+                    format!("{:.2}%", share * 100.0),
+                    Self::format_secs(leaf_cpu),
+                )
+            })
+            .collect();
+
+        let width = |header: &str, col: fn(&(String, String, String, String)) -> &String| {
+            rows.iter()
+                .map(|r| col(r).len())
+                .max()
+                .unwrap_or(0)
+                .max(header.len())
+        };
+        let label_w = width("", |r| &r.0);
+        let wall_w = width("wall", |r| &r.1);
+        let pct_w = width("%", |r| &r.2);
+        let cpu_w = width("cpu", |r| &r.3);
+
+        writeln!(
+            out,
+            "     │  {:label_w$}   {:>wall_w$}   {:>pct_w$}   {:>cpu_w$}",
+            "", "wall", "%", "cpu"
+        )?;
+        writeln!(
+            out,
+            "     │  {:label_w$}   {}   {}   {}",
+            "",
+            "-".repeat(wall_w),
+            "-".repeat(pct_w),
+            "-".repeat(cpu_w)
+        )?;
+
+        let last = rows.len() - 1;
+        rows.iter()
+            .enumerate()
+            .try_for_each(|(i, (label, wall, pct, cpu))| {
+                let glyph = if i == last { "└─" } else { "├─" };
+                writeln!(
+                    out,
+                    "     {glyph} {label:label_w$}   {wall:>wall_w$}   {pct:>pct_w$}   {cpu:>cpu_w$}"
+                )
+            })?;
+
+        Ok(())
+    }
+
+    fn format_secs(time: Duration) -> String {
+        let secs = time.as_secs_f64();
+        let whole = Self::format_num(secs.trunc() as u64);
+        let frac = (secs.fract() * 100.0).round() as u64;
+        format!("{whole}.{frac:02}s")
     }
 
     fn write_leaves(

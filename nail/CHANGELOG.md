@@ -20,11 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added variant `Setup` to enum `stats::SerialTimed`
 - added a setup branch (query index, target index, pipeline build) and a top-level `[misc.]` to the `-s` runtime tree, so it accounts for the whole wall time
 - added leaves `db write`, `slice`, `decide`, `merge` to the seeding branch of the `-s` runtime tree
+- added method `Stats::set_num_threads()`
 
 ### Changed
 - `build_pipeline()` now takes `&Queries` and runs before seeding
 - renamed enum `stats::MmseqsTimed` to `SeedTimed`, and methods `Stats::{set_mmseqs_time(), add_mmseqs_time()}` to `set_seed_time()`, `add_seed_time()`
 - the seeding branch of the `-s` runtime tree is labelled `seeding` instead of `seeding (mmseqs)`
+- the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before
 
 ### Removed
 - removed variant `HmmBuild` from enum `stats::ThreadedTimed`

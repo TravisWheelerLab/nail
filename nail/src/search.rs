@@ -186,6 +186,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     })?;
 
     let mut stats = Stats::new(&queries, targets.len());
+    stats.set_num_threads(args.num_threads);
     stats.set_setup_time(SetupTimed::QueryIndex, query_index_time);
     stats.set_setup_time(SetupTimed::TargetIndex, target_index_time);
 
