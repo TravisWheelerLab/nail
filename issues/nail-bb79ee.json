@@ -15,11 +15,19 @@
   "lease_expires": "2026-09-29T01:53:45.354983618Z",
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.459955182Z",
-  "updated_at": "2026-09-29T01:38:45.354983618Z",
+  "updated_at": "2026-09-29T01:41:52.536583885Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-09-29T01:41:52.536583195Z",
+      "author": "Jack Roddy/415c993d",
+      "text": "Committed on runtime-tree. Rows are wall only, no share. Jack to judge on real prog-mode output whether they stay; if cut, keep the [N iterations] bracket.",
+      "commit": "8d8153e",
+      "branch": "runtime-tree"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "bdb967d",
