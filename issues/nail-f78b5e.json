@@ -1,0 +1,28 @@
+{
+  "id": "nail-f78b5e",
+  "title": "Alignment leaves show derived wall, share and cpu under a column header",
+  "body": "The alignment leaves print the sum of per-thread durations, which reads as a bug beside the branch wall.\n\nPrint instead: wall = share × alignment wall (share is what threaded_time_pct already returns), the share, and cpu (the thread sum). The branch line carries '[T threads, cpu Ns, P% busy]' where busy = cpu / (wall × threads). No idle row; busy already says it.\n\nThe header sits on the tree rail with a dashed rule:\n\n └─ alignment: 201.34s (36.13%)   [48 threads, cpu 9,610s, 99.4% busy]\n     │                        wall        %      cpu\n     │                     -------   ------   ------\n     ├─ cloud search       113.02s   56.13%   5,425s\n     ├─ backward            34.20s   16.99%   1,642s",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-b00b59",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T01:19:52.467236507Z",
+  "updated_at": "2026-09-29T01:19:52.467236507Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bdb967d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
