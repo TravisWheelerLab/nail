@@ -1,0 +1,28 @@
+{
+  "id": "nail-166084",
+  "title": "Write the Conventions section of CLAUDE.md",
+  "body": "The arbitrary but fixed choices, each settled in a word: abbreviation policy (prf/seq/fwd/bwd versus full words, and where each is allowed), naming affixes (_idx, is_, with_, from_), bail! and panic messages, test naming and return type, doc line style, extension trait naming, builders by hand or derive_builder. About ten lines in CLAUDE.md. Anything rustfmt or clippy already enforces is out of scope. The conventions the code already follows are in the notes.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-5385c1",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T00:14:50.72926273Z",
+  "updated_at": "2026-09-29T00:14:50.72926273Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "c97c1f2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
