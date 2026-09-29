@@ -1,0 +1,28 @@
+{
+  "id": "nail-05cb55",
+  "title": "Add a setup branch and a root [misc.] to the runtime tree",
+  "body": "Add SerialTimed::Setup covering everything from process start to the first mmseqs call, with its own enum (SetupTimed: QueryIndex, TargetIndex, PipelineBuild) and a [misc.] leaf for arg validation, the mmseqs check and opening output files.\n\nMove build_pipeline (search.rs:105) and the --only-seed early return ahead of seed(), so the build sits inside setup. build_pipeline takes queries, targets, stats and args, not seeds, so nothing else moves.\n\nAdd a root [misc.] so runtime equals setup + seeding + alignment + [misc.].\n\nKeep the 'indexing ... done (Ns)' progress lines; they can print the duration the timer records.\n\nDelete the dead ThreadedTimed::HmmBuild variant (stats.rs:101) while in the enums.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-b00b59",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T01:19:52.445242484Z",
+  "updated_at": "2026-09-29T01:19:52.445242484Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bdb967d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
