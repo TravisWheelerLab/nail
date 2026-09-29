@@ -13,11 +13,19 @@
   "lease_expires": "2026-09-29T01:37:31.070993683Z",
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.445242484Z",
-  "updated_at": "2026-09-29T01:22:31.070993683Z",
+  "updated_at": "2026-09-29T01:27:31.773210642Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-09-29T01:27:31.773210222Z",
+      "author": "Jack Roddy/415c993d",
+      "text": "Done on branch runtime-tree. build_pipeline takes &Queries so seed() can borrow pipeline.targets and pipeline.stats afterwards; a timed_step() helper in search.rs replaced the four hand-written progress blocks and returns the duration. For --only-seed the pipeline is never built, so setup is not recorded and no tree prints, as before. Verified on the fixtures with --seeds and --mmseqs-path /bin/true in a release build; the debug build hits a pre-existing assert (own issue).",
+      "commit": "bdb967d",
+      "branch": "runtime-tree"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "bdb967d",
