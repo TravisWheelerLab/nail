@@ -1,0 +1,28 @@
+{
+  "id": "nail-b00b59",
+  "title": "Runtime tree accounts for all wall time",
+  "body": "The -s runtime tree has two branches, seeding and alignment, and neither the top level nor the seeding branch sums to its wall. Query indexing, target indexing and build_pipeline are untimed or printed and discarded. The mmseqs db writes and the prog-mode bookkeeping fall into seeding's [misc.]. The alignment leaves print thread-second sums that read as a bug beside the branch wall.\n\nDone when every branch's leaves plus [misc.] sum to the branch wall, runtime equals the sum of its branches, and the alignment leaves show derived wall time.\n\nFormat, settled 2026-09-28: the tree stays. Extra data points go in square brackets. Only the alignment branch gets a column header, with a dashed rule, carried on the tree rail. No new output file, no event log, no timestamps. The target tree is in the notes.\n\nBehavior does not change apart from build_pipeline moving ahead of seed(). The progress println!s in search.rs stay as user feedback.\n\nOpen: --stats-results-path (args.rs:421) is validated at args.rs:161 and never written. Either wire it to write the same tree to a file or remove it.",
+  "type": "milestone",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T01:19:52.437356894Z",
+  "updated_at": "2026-09-29T01:19:52.437356894Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bdb967d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
