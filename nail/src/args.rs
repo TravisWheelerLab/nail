@@ -158,7 +158,6 @@ impl SearchArgs {
             [
                 &self.io_args.ali_results_path,
                 &self.io_args.seeds_output_path,
-                &self.dev_args.stats_results_path,
             ]
             .into_iter()
             .try_for_each(|path| {
@@ -417,10 +416,6 @@ pub struct ExpertArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct DevArgs {
-    /// Where to place stats output
-    #[arg(long, value_name = "PATH", hide = true)]
-    pub stats_results_path: Option<PathBuf>,
-
     /// Compute the full DP matrices
     #[arg(long, action, hide = true)]
     pub full_dp: bool,
