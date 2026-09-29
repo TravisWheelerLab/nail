@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::stdout;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::args::{SearchArgs, SeedMode};
 use crate::io::Seeds;
@@ -13,7 +13,7 @@ use crate::pipeline::{
     seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage, DefaultCloudSearchStage,
     FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
 };
-use crate::stats::{SerialTimed, Stats, ThreadedTimed};
+use crate::stats::{SerialTimed, SetupTimed, Stats, ThreadedTimed};
 use crate::util::{guess_query_format_from_query_file, FileFormat};
 use crate::util::{term::*, PathExt};
 
@@ -105,7 +105,7 @@ pub fn seed(
 }
 
 pub fn build_pipeline(
-    queries: Queries,
+    queries: &Queries,
     targets: Fasta,
     stats: Stats,
     args: &mut SearchArgs,
@@ -159,46 +159,64 @@ pub fn build_pipeline(
     })
 }
 
+fn timed_step<T>(
+    label: &str,
+    step: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<(T, Duration)> {
+    let now = Instant::now();
+    println!("{label}...");
+    let result = step()?;
+    let elapsed = now.elapsed();
+    println!(
+        "\x1b[A{:<28}done ({:.2}s)",
+        format!("{label}..."),
+        elapsed.as_secs_f64()
+    );
+    Ok((result, elapsed))
+}
+
 pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let start_time = Instant::now();
 
-    let now = Instant::now();
-    println!("indexing query database...");
-    let queries = read_queries(&args.query_path)?;
-    println!(
-        "\x1b[Aindexing query database...  done ({:.2}s)",
-        now.elapsed().as_secs_f64()
-    );
+    let (queries, query_index_time) =
+        timed_step("indexing query database", || read_queries(&args.query_path))?;
 
-    let now = Instant::now();
-    println!("indexing target database...");
-    let targets = Fasta::from_path(&args.target_path).context("failed to index target fasta")?;
-    println!(
-        "\x1b[Aindexing target database... done ({:.2}s)",
-        now.elapsed().as_secs_f64()
-    );
+    let (targets, target_index_time) = timed_step("indexing target database", || {
+        Fasta::from_path(&args.target_path).context("failed to index target fasta")
+    })?;
 
     let mut stats = Stats::new(&queries, targets.len());
+    stats.set_setup_time(SetupTimed::QueryIndex, query_index_time);
+    stats.set_setup_time(SetupTimed::TargetIndex, target_index_time);
 
     match args.expert_args.target_database_size {
         Some(_) => {}
         None => args.expert_args.target_database_size = Some(targets.len()),
     }
 
-    let now = Instant::now();
-    println!("seeding...");
-    let seeds = seed(&queries, &targets, &mut stats, &mut args)?;
-    println!(
-        "\x1b[Aseeding...                  done ({:.2}s)",
-        now.elapsed().as_secs_f64()
-    );
-
     if args.pipeline_args.only_seed {
+        timed_step("seeding", || {
+            seed(&queries, &targets, &mut stats, &mut args)
+        })?;
         return Ok(());
     }
 
-    let mut pipeline =
-        build_pipeline(queries, targets, stats, &mut args).context("failed to build pipeline")?;
+    let (mut pipeline, build_time) = timed_step("building pipeline", || {
+        build_pipeline(&queries, targets, stats, &mut args).context("failed to build pipeline")
+    })?;
+    pipeline
+        .stats
+        .set_setup_time(SetupTimed::PipelineBuild, build_time);
+    pipeline
+        .stats
+        .set_setup_time(SetupTimed::Total, start_time.elapsed());
+    pipeline
+        .stats
+        .set_serial_time(SerialTimed::Setup, start_time.elapsed());
+
+    let (seeds, _) = timed_step("seeding", || {
+        seed(&queries, &pipeline.targets, &mut pipeline.stats, &mut args)
+    })?;
 
     let align_timer = Instant::now();
     println!("running nail pipeline...");
@@ -247,7 +265,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
 
     println!(
-        "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
+        "\x1b[A{:<28}done ({:.2}s)\n",
+        "running nail pipeline...",
         align_timer.elapsed().as_secs_f64()
     );
 

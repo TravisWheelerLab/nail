@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -->
 ## [Unreleased]
 
+### Added
+- added enum `stats::SetupTimed`
+- added variant `Setup` to enum `stats::SerialTimed`
+- added a setup branch (query index, target index, pipeline build) and a top-level `[misc.]` to the `-s` runtime tree, so it accounts for the whole wall time
+
+### Changed
+- `build_pipeline()` now takes `&Queries` and runs before seeding
+
+### Removed
+- removed variant `HmmBuild` from enum `stats::ThreadedTimed`
+
 ### Fixed
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
 

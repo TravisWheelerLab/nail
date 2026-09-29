@@ -43,7 +43,7 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let pipeline = build_pipeline(queries, targets, stats, &mut args)?;
+    let pipeline = build_pipeline(&queries, targets, stats, &mut args)?;
     let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
     seeds

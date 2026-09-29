@@ -65,8 +65,44 @@ impl std::iter::Sum for Bytes {
 #[derive(Clone, Copy, EnumIter, EnumCount)]
 pub enum SerialTimed {
     Total,
+    Setup,
     Seeding,
     Alignment,
+}
+
+impl Debug for SerialTimed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            SerialTimed::Total => "total",
+            SerialTimed::Setup => "setup",
+            SerialTimed::Seeding => "seeding (mmseqs)",
+            SerialTimed::Alignment => "alignment",
+        };
+
+        write!(f, "{}", str)
+    }
+}
+
+#[repr(usize)]
+#[derive(Clone, Copy, EnumIter, EnumCount)]
+pub enum SetupTimed {
+    Total,
+    QueryIndex,
+    TargetIndex,
+    PipelineBuild,
+}
+
+impl Debug for SetupTimed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            SetupTimed::Total => "total",
+            SetupTimed::QueryIndex => "query index",
+            SetupTimed::TargetIndex => "target index",
+            SetupTimed::PipelineBuild => "pipeline build",
+        };
+
+        write!(f, "{}", str)
+    }
 }
 
 #[repr(usize)]
@@ -98,7 +134,6 @@ impl Debug for MmseqsTimed {
 pub enum ThreadedTimed {
     Total,
     MemoryInit,
-    HmmBuild,
     CloudSearch,
     Forward,
     Backward,
@@ -117,7 +152,6 @@ impl Debug for ThreadedTimed {
             ThreadedTimed::OutputWrite => "output (write)",
             ThreadedTimed::OutputMutex => "output (mutex)",
             ThreadedTimed::MemoryInit => "memory init",
-            ThreadedTimed::HmmBuild => "hmm build",
             ThreadedTimed::CloudSearch => "cloud search",
             ThreadedTimed::Forward => "forward",
             ThreadedTimed::Backward => "backward",
@@ -188,6 +222,7 @@ impl Debug for CountedValue {
 #[derive(Clone, Default)]
 pub struct Stats {
     serial_times: [Duration; SerialTimed::COUNT],
+    setup_times: [Duration; SetupTimed::COUNT],
     mmseqs_times: [Duration; MmseqsTimed::COUNT],
     threaded_times: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
     threaded_times_num_samples: Arc<[AtomicU64; ThreadedTimed::COUNT]>,
@@ -217,6 +252,10 @@ impl Stats {
         stats.set_computed_value(ComputedValue::Alignments, (n_queries * n_targets) as u64);
 
         stats
+    }
+
+    pub fn set_setup_time(&mut self, timed: SetupTimed, time: Duration) {
+        self.setup_times[timed as usize] = time;
     }
 
     pub fn set_mmseqs_time(&mut self, timed: MmseqsTimed, time: Duration) {
@@ -329,60 +368,6 @@ impl Stats {
         Duration::from_nanos(nanos)
     }
 
-    fn mmseqs_time_pct(&self, timed: MmseqsTimed) -> f64 {
-        let total_nanos = Self::nanos(self.mmseqs_times[MmseqsTimed::Total as usize]) as f64;
-        let nanos = Self::nanos(self.mmseqs_times[timed as usize]) as f64;
-
-        nanos / total_nanos
-    }
-
-    fn mmseqs_untimed_pct(&self) -> f64 {
-        let total_nanos = Self::nanos(self.mmseqs_time_total(MmseqsTimed::Total)) as f64;
-        let untimed_nanos = Self::nanos(self.mmseqs_untimed_total()) as f64;
-
-        untimed_nanos / total_nanos
-    }
-
-    fn mmseqs_untimed_total(&self) -> Duration {
-        let total = self.mmseqs_time_total(MmseqsTimed::Total);
-
-        let timed_sum = self.mmseqs_times[1..].iter().sum();
-
-        total - timed_sum
-    }
-
-    fn serial_time_pct(&self, timed: SerialTimed) -> f64 {
-        let total_nanos = Self::nanos(self.serial_times[SerialTimed::Total as usize]) as f64;
-        let nanos = Self::nanos(self.serial_times[timed as usize]) as f64;
-
-        nanos / total_nanos
-    }
-
-    fn threaded_time_pct(&self, timed: ThreadedTimed) -> f64 {
-        let total_nanos = Self::nanos(self.threaded_time_total(ThreadedTimed::Total)) as f64;
-        let nanos = Self::nanos(self.threaded_time_total(timed)) as f64;
-
-        nanos / total_nanos
-    }
-
-    fn threaded_untimed_pct(&self) -> f64 {
-        let total_nanos = Self::nanos(self.threaded_time_total(ThreadedTimed::Total)) as f64;
-        let untimed_nanos = Self::nanos(self.threaded_untimed_total()) as f64;
-
-        untimed_nanos / total_nanos
-    }
-
-    fn threaded_untimed_total(&self) -> Duration {
-        let total = self.threaded_time_total(ThreadedTimed::Total);
-
-        let timed_sum = self.threaded_times[1..]
-            .iter()
-            .map(|t| Duration::from_nanos(t.load(Ordering::SeqCst)))
-            .sum();
-
-        total - timed_sum
-    }
-
     fn computed_value(&self, computed: ComputedValue) -> u64 {
         self.computed_values[computed as usize]
     }
@@ -403,19 +388,35 @@ impl Stats {
         self.counted_values[counted as usize].fetch_add(count as u64, Ordering::SeqCst);
     }
 
+    fn serial_untimed_total(&self) -> Duration {
+        let total = self.serial_time_total(SerialTimed::Total);
+        let timed_sum = self.serial_times[1..].iter().sum();
+
+        total.saturating_sub(timed_sum)
+    }
+
     pub fn serial_string(&self, timed: SerialTimed) -> String {
-        let width = format!(
-            "{:.2}",
-            self.serial_time_total(SerialTimed::Total).as_secs_f64()
-        )
-        .len();
+        self.serial_duration_string(self.serial_time_total(timed))
+    }
+
+    fn serial_duration_string(&self, time: Duration) -> String {
+        let total = self.serial_time_total(SerialTimed::Total);
+        let width = format!("{:.2}", total.as_secs_f64()).len();
 
         format!(
             "{:w$.2}s ({:>5.2}%)",
-            self.serial_time_total(timed).as_secs_f64(),
-            self.serial_time_pct(timed) * 100.0,
+            time.as_secs_f64(),
+            Self::pct(time, total) * 100.0,
             w = width,
         )
+    }
+
+    fn pct(part: Duration, total: Duration) -> f64 {
+        if total.is_zero() {
+            0.0
+        } else {
+            part.as_secs_f64() / total.as_secs_f64()
+        }
     }
 
     pub fn write_max_seqs_report(&self, args: &SearchArgs) -> anyhow::Result<()> {
@@ -534,84 +535,94 @@ impl Stats {
     }
 
     pub fn write_runtime(&self, out: &mut impl Write) -> anyhow::Result<()> {
-        writeln!(out, "runtime: {}", self.serial_string(SerialTimed::Total),)?;
-
-        // ---
-
-        writeln!(
-            out,
-            " └─ seeding (mmseqs):   {}",
-            self.serial_string(SerialTimed::Seeding)
-        )?;
-
-        let max_width = MmseqsTimed::iter()
-            .map(|t| format!("{t:?}: {:.2}", self.mmseqs_time_total(t).as_secs_f64()).len())
-            .max()
-            .unwrap_or(0);
-
-        MmseqsTimed::iter()
-            .skip(1)
-            .filter(|t| !self.mmseqs_time_total(*t).is_zero())
-            .try_for_each(|t| {
-                let label_width = format!("{t:?}").len();
-
-                writeln!(
-                    out,
-                    "     ├─ {t:?}: {:>w$.2}s ({:5.2}%)",
-                    self.mmseqs_time_total(t).as_secs_f64(),
-                    self.mmseqs_time_pct(t) * 100.0,
-                    w = max_width - label_width
-                )
-            })?;
+        writeln!(out, "runtime: {}", self.serial_string(SerialTimed::Total))?;
 
         let misc = "[misc.]";
-        let last_label_width = misc.len();
-        writeln!(
+        let branch_width = SerialTimed::iter()
+            .map(|t| format!("{t:?}").len())
+            .max()
+            .unwrap_or(0)
+            .max(misc.len())
+            + 1;
+
+        let branch = |out: &mut dyn Write, label: String, time: String| {
+            writeln!(out, " └─ {label:<branch_width$} {time}")
+        };
+
+        branch(
             out,
-            "     └─ {misc}: {:>w$.2}s ({:5.2}%)",
-            self.mmseqs_untimed_total().as_secs_f64(),
-            self.mmseqs_untimed_pct() * 100.0,
-            w = max_width - last_label_width
+            format!("{:?}:", SerialTimed::Setup),
+            self.serial_string(SerialTimed::Setup),
+        )?;
+        Self::write_leaves(
+            out,
+            SetupTimed::iter()
+                .skip(1)
+                .map(|t| (format!("{t:?}"), self.setup_times[t as usize])),
+            self.setup_times[SetupTimed::Total as usize],
         )?;
 
-        // ---
-
-        writeln!(
+        branch(
             out,
-            " └─ alignment:          {}",
-            self.serial_string(SerialTimed::Alignment)
+            format!("{:?}:", SerialTimed::Seeding),
+            self.serial_string(SerialTimed::Seeding),
+        )?;
+        Self::write_leaves(
+            out,
+            MmseqsTimed::iter()
+                .skip(1)
+                .map(|t| (format!("{t:?}"), self.mmseqs_time_total(t))),
+            self.mmseqs_time_total(MmseqsTimed::Total),
         )?;
 
-        let max_width = ThreadedTimed::iter()
-            .map(|t| format!("{t:?}: {:.2}", self.threaded_time_total(t).as_secs_f64()).len())
+        branch(
+            out,
+            format!("{:?}:", SerialTimed::Alignment),
+            self.serial_string(SerialTimed::Alignment),
+        )?;
+        Self::write_leaves(
+            out,
+            ThreadedTimed::iter()
+                .skip(1)
+                .map(|t| (format!("{t:?}"), self.threaded_time_total(t))),
+            self.threaded_time_total(ThreadedTimed::Total),
+        )?;
+
+        branch(
+            out,
+            format!("{misc}:"),
+            self.serial_duration_string(self.serial_untimed_total()),
+        )?;
+
+        Ok(())
+    }
+
+    fn write_leaves(
+        out: &mut impl Write,
+        leaves: impl Iterator<Item = (String, Duration)>,
+        total: Duration,
+    ) -> anyhow::Result<()> {
+        let mut rows: Vec<(String, Duration)> = leaves.filter(|(_, t)| !t.is_zero()).collect();
+        let timed_sum: Duration = rows.iter().map(|(_, t)| *t).sum();
+        rows.push(("[misc.]".to_string(), total.saturating_sub(timed_sum)));
+
+        let max_width = rows
+            .iter()
+            .map(|(label, t)| format!("{label}: {:.2}", t.as_secs_f64()).len())
             .max()
             .unwrap_or(0);
 
-        ThreadedTimed::iter()
-            .skip(1)
-            .filter(|t| !self.threaded_time_total(*t).is_zero())
-            .try_for_each(|timed| {
-                let label_width = format!("{timed:?}").len();
-
-                writeln!(
-                    out,
-                    "     ├─ {timed:?}: {:>w$.2}s ({:5.2}%)",
-                    self.threaded_time_total(timed).as_secs_f64(),
-                    self.threaded_time_pct(timed) * 100.0,
-                    w = max_width - label_width
-                )
-            })?;
-
-        let last_label = "[misc.]";
-        let last_label_width = last_label.len();
-
-        writeln!(
-            out,
-            "     └─ {last_label}: {:>w$.2}s ({:5.2}%)",
-            self.threaded_untimed_total().as_secs_f64(),
-            self.threaded_untimed_pct() * 100.0,
-            w = max_width - last_label_width
-        )?;
+        let last = rows.len() - 1;
+        rows.iter().enumerate().try_for_each(|(i, (label, t))| {
+            let glyph = if i == last { "└─" } else { "├─" };
+            writeln!(
+                out,
+                "     {glyph} {label}: {:>w$.2}s ({:5.2}%)",
+                t.as_secs_f64(),
+                Self::pct(*t, total) * 100.0,
+                w = max_width - label.len()
+            )
+        })?;
 
         Ok(())
     }
