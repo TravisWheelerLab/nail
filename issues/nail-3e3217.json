@@ -1,0 +1,28 @@
+{
+  "id": "nail-3e3217",
+  "title": "Maybe: enforce conventions mechanically (clippy config, CI fmt and clippy job)",
+  "body": "A maybe. Jack has not set up a clippy config or a fmt/clippy CI job before and wants to see what it looks like in practice before committing to it. Scope if taken: clippy.toml or [workspace.lints] in Cargo.toml, and a workflow step running cargo fmt --check and cargo clippy on push. The release workflow runs neither today. Spike first: show what the config and a failing CI run look like on this repo.",
+  "type": "spike",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": "nail-5385c1",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T00:14:50.743989671Z",
+  "updated_at": "2026-09-29T00:14:50.743989671Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "c97c1f2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
