@@ -1,0 +1,28 @@
+{
+  "id": "nail-215254",
+  "title": "Write the Design section of CLAUDE.md",
+  "body": "The few design decisions with an outsized effect on performance and on how the rest of the code gets written: the libnail/nail boundary, the machine-first DP layer, abstraction only after the second implementation, and error flow from leaf to main. Three or four paragraphs in CLAUDE.md. Jack decides: whether new features default to nail, whether HMMER is the tiebreaker on numerics, whether libnail keeps anyhow or grows typed errors, whether a single-impl trait is banned. A draft is in the notes.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-5385c1",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T00:14:50.721451265Z",
+  "updated_at": "2026-09-29T00:14:50.721451265Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "c97c1f2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
