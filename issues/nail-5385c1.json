@@ -1,0 +1,28 @@
+{
+  "id": "nail-5385c1",
+  "title": "Settle how Rust is written in nail",
+  "body": "Done when CLAUDE.md has a Design section and a Conventions section, and every known divergence from them is either its own issue or accepted in a note on the audit issue. The children are the work.",
+  "type": "milestone",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T00:14:38.336071398Z",
+  "updated_at": "2026-09-29T00:14:38.336071398Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "c97c1f2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
