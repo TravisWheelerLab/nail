@@ -3,20 +3,20 @@
   "title": "Time the untimed seeding work and rename MmseqsTimed to SeedTimed",
   "body": "Seeding's [misc.] was 19 s on a full Pfam against one MGnify shard, because writing the mmseqs query and target databases (mmseqs.rs:433-575, called from seed_stage.rs:42-50 and 128-136) and the prog-mode slicing, deciding and merging (seed_stage.rs:115-369) have no variant.\n\nAdd DbWrite, and for prog mode Slice, Decide and Merge, so [misc.] shrinks to noise. Rename the enum to SeedTimed, since half of it is no longer an mmseqs call, and drop '(mmseqs)' from the branch label.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-b00b59",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/415c993d",
-  "lease_expires": "2026-09-29T01:49:03.806910647Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.452502809Z",
-  "updated_at": "2026-09-29T01:37:04.212059202Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-09-29T01:37:04.219668552Z",
+  "closed_at": "2026-09-29T01:37:04.219668552Z",
+  "close_reason": "committed on runtime-tree",
+  "resolution": "done",
   "notes": [
     {
       "at": "2026-09-29T01:37:04.212058492Z",
@@ -31,6 +31,9 @@
       "commit": "bdb967d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "6f6c77d",
+      "branch": "runtime-tree"
+    }
   }
 }
