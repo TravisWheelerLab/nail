@@ -13,11 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T00:14:50.721451265Z",
-  "updated_at": "2026-09-29T00:14:50.721451265Z",
+  "updated_at": "2026-09-29T00:15:41.119625411Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-09-29T00:15:41.119624571Z",
+      "author": "Jack Roddy/415c993d",
+      "text": "Draft Design section, from the 2026-09-28 survey. The claims that features default to nail and that HMMER is the tiebreaker are inferences from the code, not decisions Jack has made.\n\nlibnail is a numeric core and nail is the program around it, and that line is the main design decision. libnail computes over plain data: Profile, Sequence, the DP matrices and clouds are structs with public fields, and the algorithms are free functions in align/ that take them by reference and fill a matrix or return a score. Nothing in libnail spawns a thread, opens a file, reads an argument, or dispatches through dyn. It threads &mut through the recurrence and shares nothing. nail owns all of that: rayon, the per-thread pipeline clone, the output lock, the mmseqs subprocess, the CLI. A new feature lands on whichever side its state lives on, and the answer is usually nail.\n\nThe DP layer is written for the machine first. Scores are f32 inside the loops and become Nats or Bits only at the function boundary. Everything is log-space with -f32::INFINITY as the absent value and a table-driven log_add. Matrices use 1-based indexing with pad cells so the recurrence reads like HMMER's, and typed index keys (CoreCell, Emission, Ad) rather than bare usize, so a misplaced index fails to compile. Invariants are debug_assert!, free in release. An impossible state panics rather than returning an error. Allocate once, shrink_to_fit, #[inline] the accessors, and use unsafe only for a discriminant transmute with a \"// safety:\" comment above it. HMMER3 is the reference implementation: when the math is in doubt, match HMMER and say so in a comment.\n\nAbstraction is added after the second implementation, not before. The matrix types share traits because three layouts exist. The stage traits in nail exist because the pipeline swaps stages at runtime, and they are the only dyn in the codebase. A trait with one impl is a mistake to be undone. Behavior on foreign types goes in an extension trait with a blanket impl, not a wrapper type. Encapsulation is reserved for types with an invariant to protect, such as the sparse matrix and the profile builder. Everything else is a public field.\n\nErrors are anyhow from the leaf to one line in main that prints the chain. Each layer adds .context() naming the operation and the path, so the printed chain reads as a story rather than a stack.\n\nWhere the code argues with this draft today:\n- AlignStage and IndexInner each have one impl.\n- 24 println! in libnail non-test code (dump helpers in util.rs, dp_matrix.rs, cloud.rs, needleman_wunsch.rs), not feature-gated.\n- trace.rs uses usize state consts (M_STATE = 1 ...) beside the CoreState enum in dp_matrix.rs.\n- libnail has 4 thiserror leaf errors (sequence.rs:16,22; nail util.rs:65,97). Fine if parse errors are the intended exception.\n- 4 todo!() in libnail (alphabet.rs:166-167 DNA/RNA, trace.rs:137, profile.rs:1373 in a test). A todo is a missing feature, not an impossible state.",
+      "commit": "c97c1f2",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "c97c1f2",
