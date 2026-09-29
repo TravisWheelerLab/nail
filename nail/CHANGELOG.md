@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -->
 ## [Unreleased]
 
+### Fixed
+- fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
+
 ## [0.7.1] - 2026-7-31
 
 ### Fixed
