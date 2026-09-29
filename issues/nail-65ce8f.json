@@ -1,0 +1,28 @@
+{
+  "id": "nail-65ce8f",
+  "title": "Build profiles in parallel for hmm queries",
+  "body": "build_pipeline constructs profiles serially for hmm queries. The par_iter path is commented out at search.rs:116-117 while sequence queries use par_iter. At 20,795 Pfam profiles this is likely most of the 9.2 s untimed setup gap on the MGnify run.\n\nFind out why it was commented out, then restore it.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T01:19:52.475877171Z",
+  "updated_at": "2026-09-29T01:19:52.475877171Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bdb967d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
