@@ -1,0 +1,28 @@
+{
+  "id": "nail-b76d96",
+  "title": "Help text for -a is wrong and -a 0 panics",
+  "body": "args.rs:355 says 'allow at most N attempts to recover disjoint clouds', which reads as retries on top of a first attempt. It is the total number of attempts. -a 0 reaches unreachable! at cloud_stage.rs:154 instead of an error.\n\nReword the help to say total attempts and reject 0 in SearchArgs::validate(). This cost an overnight cloud-search run.",
+  "type": "bug",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T01:19:58.979185219Z",
+  "updated_at": "2026-09-29T01:19:58.979185219Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bdb967d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
