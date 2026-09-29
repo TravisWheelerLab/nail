@@ -1,0 +1,28 @@
+{
+  "id": "nail-ec7764",
+  "title": "Alignment stage idles about 7% of thread time",
+  "body": "On the mgy run the alignment branch reports 93.0% busy over 175.7 s with 48 threads, so about 12 s of thread idle, more than any serial item but the db write. The likely cause is tail imbalance: search.rs runs par_chunks(100) over seeds grouped by query, so the last chunks leave threads waiting. Smaller chunks or interleaving queries would recover part of it. Measure by chunk size before changing anything.",
+  "type": "task",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "nail-1964b2",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-09-29T05:20:35.42733491Z",
+  "updated_at": "2026-09-29T05:20:35.42733491Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
