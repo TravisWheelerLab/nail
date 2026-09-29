@@ -239,6 +239,13 @@ pub struct Stats {
     seed_counts_by_query: HashMap<String, u64>,
     hit_counts_by_query: Arc<HashMap<String, AtomicUsize>>,
     num_threads: usize,
+    align_iterations: Vec<Duration>,
+}
+
+struct Leaf {
+    label: String,
+    time: Duration,
+    sub: Vec<(String, Duration)>,
 }
 
 impl Stats {
@@ -265,6 +272,10 @@ impl Stats {
 
     pub fn set_num_threads(&mut self, num_threads: usize) {
         self.num_threads = num_threads;
+    }
+
+    pub fn add_align_iteration(&mut self, time: Duration) {
+        self.align_iterations.push(time);
     }
 
     pub fn set_setup_time(&mut self, timed: SetupTimed, time: Duration) {
@@ -569,9 +580,11 @@ impl Stats {
         )?;
         Self::write_leaves(
             out,
-            SetupTimed::iter()
-                .skip(1)
-                .map(|t| (format!("{t:?}"), self.setup_times[t as usize])),
+            SetupTimed::iter().skip(1).map(|t| Leaf {
+                label: format!("{t:?}"),
+                time: self.setup_times[t as usize],
+                sub: vec![],
+            }),
             self.setup_times[SetupTimed::Total as usize],
         )?;
 
@@ -582,9 +595,19 @@ impl Stats {
         )?;
         Self::write_leaves(
             out,
-            SeedTimed::iter()
-                .skip(1)
-                .map(|t| (format!("{t:?}"), self.seed_time_total(t))),
+            SeedTimed::iter().skip(1).map(|t| Leaf {
+                label: format!("{t:?}"),
+                time: self.seed_time_total(t),
+                sub: match t {
+                    SeedTimed::Align => self
+                        .align_iterations
+                        .iter()
+                        .enumerate()
+                        .map(|(i, time)| ((i + 1).to_string(), *time))
+                        .collect(),
+                    _ => vec![],
+                },
+            }),
             self.seed_time_total(SeedTimed::Total),
         )?;
 
@@ -688,29 +711,54 @@ impl Stats {
 
     fn write_leaves(
         out: &mut impl Write,
-        leaves: impl Iterator<Item = (String, Duration)>,
+        leaves: impl Iterator<Item = Leaf>,
         total: Duration,
     ) -> anyhow::Result<()> {
-        let mut rows: Vec<(String, Duration)> = leaves.filter(|(_, t)| !t.is_zero()).collect();
-        let timed_sum: Duration = rows.iter().map(|(_, t)| *t).sum();
-        rows.push(("[misc.]".to_string(), total.saturating_sub(timed_sum)));
+        let mut rows: Vec<Leaf> = leaves.filter(|l| !l.time.is_zero()).collect();
+        let timed_sum: Duration = rows.iter().map(|l| l.time).sum();
+        rows.push(Leaf {
+            label: "[misc.]".to_string(),
+            time: total.saturating_sub(timed_sum),
+            sub: vec![],
+        });
 
         let max_width = rows
             .iter()
-            .map(|(label, t)| format!("{label}: {:.2}", t.as_secs_f64()).len())
+            .map(|l| format!("{}: {:.2}", l.label, l.time.as_secs_f64()).len())
             .max()
             .unwrap_or(0);
 
         let last = rows.len() - 1;
-        rows.iter().enumerate().try_for_each(|(i, (label, t))| {
+        rows.iter().enumerate().try_for_each(|(i, leaf)| {
             let glyph = if i == last { "└─" } else { "├─" };
+            let note = match leaf.sub.len() {
+                0 => String::new(),
+                1 => "   [1 iteration]".to_string(),
+                n => format!("   [{n} iterations]"),
+            };
             writeln!(
                 out,
-                "     {glyph} {label}: {:>w$.2}s ({:5.2}%)",
-                t.as_secs_f64(),
-                Self::pct(*t, total) * 100.0,
-                w = max_width - label.len()
-            )
+                "     {glyph} {}: {:>w$.2}s ({:5.2}%){note}",
+                leaf.label,
+                leaf.time.as_secs_f64(),
+                Self::pct(leaf.time, total) * 100.0,
+                w = max_width - leaf.label.len()
+            )?;
+
+            let rail = if i == last { " " } else { "│" };
+            let sub_last = leaf.sub.len().saturating_sub(1);
+            leaf.sub
+                .iter()
+                .enumerate()
+                .try_for_each(|(j, (label, time))| {
+                    let glyph = if j == sub_last { "└─" } else { "├─" };
+                    writeln!(
+                        out,
+                        "     {rail}   {glyph} {label}: {:>w$.2}s",
+                        time.as_secs_f64(),
+                        w = max_width.saturating_sub(4 + label.len())
+                    )
+                })
         })?;
 
         Ok(())
@@ -734,5 +782,38 @@ impl Stats {
             result.push(ch);
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_tree_iterations() -> anyhow::Result<()> {
+        let mut stats = Stats::default();
+        stats.set_num_threads(2);
+        stats.set_serial_time(SerialTimed::Total, Duration::from_secs(20));
+        stats.set_serial_time(SerialTimed::Seeding, Duration::from_secs(10));
+        stats.set_seed_time(SeedTimed::Total, Duration::from_secs(10));
+        stats.set_seed_time(SeedTimed::Prefilter, Duration::from_secs(3));
+        for secs in [1, 2, 3] {
+            let time = Duration::from_secs(secs);
+            stats.add_seed_time(SeedTimed::Align, time);
+            stats.add_align_iteration(time);
+        }
+
+        let mut out = vec![];
+        stats.write_runtime(&mut out)?;
+        let tree = String::from_utf8(out)?;
+        println!("{tree}");
+        let tree = tree.split_whitespace().collect::<Vec<_>>().join(" ");
+
+        assert!(tree.contains("├─ align: 6.00s (60.00%) [3 iterations]"));
+        assert!(tree.contains("│ ├─ 1: 1.00s"));
+        assert!(tree.contains("│ └─ 3: 3.00s"));
+        assert!(tree.contains("└─ [misc.]: 1.00s (10.00%)"));
+
+        Ok(())
     }
 }

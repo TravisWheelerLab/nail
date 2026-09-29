@@ -247,7 +247,9 @@ pub fn seed_progressive(
         )
         .context("mmseqs align failed")?;
 
-        stats.add_seed_time(SeedTimed::Align, now.elapsed());
+        let align_time = now.elapsed();
+        stats.add_seed_time(SeedTimed::Align, align_time);
+        stats.add_align_iteration(align_time);
 
         let now = Instant::now();
         let mut prog_adb =
