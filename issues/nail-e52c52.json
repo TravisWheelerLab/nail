@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-08T20:44:28.985414531Z",
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.419797876Z",
-  "updated_at": "2026-10-08T21:03:19.798210655Z",
+  "updated_at": "2026-10-08T22:03:11.545658407Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -22,6 +22,13 @@
       "at": "2026-10-08T21:03:19.798209885Z",
       "author": "Jack Roddy/2aff5e6c",
       "text": "Measured 2026-10-08 on the 16-core box at 4 threads. Caveat: mmseqs here is an aarch64 binary run through qemu-aarch64-static, so absolute times are inflated by an unknown factor; ratios hold. Fixed cost per mmseqs align call, measured with an empty prefilter db: 68 ms wall against 100k targets, 240 ms against a 2,455,940-record db built from mgy.0001.fa. A slice with all 20,795 query records present but every record empty (what the slice writes for Terminated queries) costs 95 ms, so empty records are free too. Against the 100k leftover run's own six per-iteration slices, wall time tracks alignments calculated: 4.15M aln 73.8 s, 3.65M 49.5 s, 515k 8.9 s, 249k 5.3 s, 81k 2.6 s, 21.5k 1.7 s. 20,795 synthetic random pairs cost 0.53 s, so real candidates cost 2 to 3 times more per alignment than quick rejects. Conclusion: the startup hypothesis is refuted; the flat 2.5 to 4 s per iteration on the mgy run is alignment work. The likely reason it is flat is that n_take doubles while the active set roughly halves, so alignments per iteration stay near constant, and later iterations align deeper candidates of the queries with the most hits. Fewer iterations would not cut it and would likely add alignments. Verifying the flat-work reading needs per-iteration alignment counts from the 48-thread box; mmseqs prints 'N alignments calculated' per call, which nail discards. Scripts and outputs are in tmp-claude/2026-10-08-align-fixed-cost.",
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    {
+      "at": "2026-10-08T22:03:11.545657797Z",
+      "author": "Jack Roddy/2aff5e6c",
+      "text": "Rerun 2026-10-08 with a native x86-64 mmseqs (same version 8cc5ce3), 4 threads. Fixed cost per align call with an empty prefilter db: 3 to 4 ms against 100k targets, 45 ms against 2,455,940 targets (64 ms at 1 thread), so the fixed part grows with target count and is about 18 ns per target record, consistent with reading the 45 MB target index. A slice with 20,795 empty records costs 8 ms. Per-iteration slices from the 100k run: 4.15M aln 9.28 s, 3.65M 6.35 s, 515k 1.03 s, 249k 0.56 s, 81k 0.24 s, 21.5k 0.14 s, about 2.2 us wall per alignment at 4 threads. 20,795 random pairs 63 ms. Emulation had inflated everything 5 to 8 times. On the mgy run 12 calls cost at most 12 x 45 ms = 0.5 s of the 36 s align total. Iteration count is not the lever.",
       "commit": "432ff65",
       "branch": "dev"
     }
