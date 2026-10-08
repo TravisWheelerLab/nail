@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-08T20:44:28.985414531Z",
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.419797876Z",
-  "updated_at": "2026-10-08T22:08:17.442093356Z",
+  "updated_at": "2026-10-08T22:08:17.451030348Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -29,6 +29,13 @@
       "at": "2026-10-08T22:03:11.545657797Z",
       "author": "Jack Roddy/2aff5e6c",
       "text": "Rerun 2026-10-08 with a native x86-64 mmseqs (same version 8cc5ce3), 4 threads. Fixed cost per align call with an empty prefilter db: 3 to 4 ms against 100k targets, 45 ms against 2,455,940 targets (64 ms at 1 thread), so the fixed part grows with target count and is about 18 ns per target record, consistent with reading the 45 MB target index. A slice with 20,795 empty records costs 8 ms. Per-iteration slices from the 100k run: 4.15M aln 9.28 s, 3.65M 6.35 s, 515k 1.03 s, 249k 0.56 s, 81k 0.24 s, 21.5k 0.14 s, about 2.2 us wall per alignment at 4 threads. 20,795 random pairs 63 ms. Emulation had inflated everything 5 to 8 times. On the mgy run 12 calls cost at most 12 x 45 ms = 0.5 s of the 36 s align total. Iteration count is not the lever.",
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    {
+      "at": "2026-10-08T22:08:17.451029808Z",
+      "author": "Jack Roddy/2aff5e6c",
+      "text": "Rescoped 2026-10-08 after the measurement above. The fixed cost per call is 45 ms, so the open question is why the 12 iterations on the mgy run cost 2.5 to 4 s each with no trend. Reading to test: alignments per iteration stay near constant because n_take doubles while the active set roughly halves, and the survivors' deeper candidates are real hits that cost 2 to 3 times a quick reject. Jack tests on the 48-thread box. How, without a code change: run nail with the tmp dir kept so prog-seed/N/pdb survives for each iteration, then replay each slice with tmp-claude/2026-10-08-align-fixed-cost/time-align.sh (args: label qdb tdb pdb outdir evalue threads), which prints the 'alignments calculated' count mmseqs reports and the wall time. nail itself captures mmseqs stdout in util.rs run() and prints it only on failure. If the counts are flat the issue closes with that fact; if they fall and the time does not, the cost is inside mmseqs per call and the next step is to look at what align does per query record.",
       "commit": "432ff65",
       "branch": "dev"
     }
