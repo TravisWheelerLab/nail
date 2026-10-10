@@ -3,21 +3,30 @@
   "title": "Evaluate libsail for parsing and indexing nail's inputs",
   "body": "Decide whether libsail replaces nail's own fasta and p7hmm parsing and indexing (nail/src/io/). Blocks the serial-overhead work under this milestone, since the target db write, the profile parse and the index passes are all built on that code.\n\nWhat the current code does, for comparison: a single-threaded index pass in 1 MiB reads, line by line, with a strum string match per line for HMM files and an IndexMap<String, Offset> keyed by name; records are then read back one at a time by seek plus read_exact and parsed on demand. The parallel index build exists (Index::build is generic over CHUNKS, tested up to 32) but from_path hard-codes CHUNKS=1.",
   "type": "spike",
-  "status": "in_progress",
+  "status": "open",
   "priority": 2,
   "labels": [],
   "parent": "nail-1964b2",
   "blocked_by": [],
   "related": [],
-  "assignee": "Jack Roddy/2aff5e6c",
-  "lease_expires": "2026-10-08T22:29:30.680805388Z",
+  "assignee": null,
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.404070225Z",
-  "updated_at": "2026-10-08T22:14:30.680805388Z",
+  "updated_at": "2026-10-10T07:26:50.385659733Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "bf8d48d3",
+      "at": "2026-10-10T07:26:50.385658973Z",
+      "author": "Jack Roddy/2aff5e6c",
+      "text": "released at session end",
+      "commit": "432ff65",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "432ff65",

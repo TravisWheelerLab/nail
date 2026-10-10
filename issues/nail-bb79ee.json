@@ -21,6 +21,7 @@
   "resolution": "done",
   "notes": [
     {
+      "id": "5b8e879d",
       "at": "2026-09-29T01:41:52.536583195Z",
       "author": "Jack Roddy/415c993d",
       "text": "Committed on runtime-tree. Rows are wall only, no share. Jack to judge on real prog-mode output whether they stay; if cut, keep the [N iterations] bracket.",

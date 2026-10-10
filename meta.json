@@ -1,6 +1,6 @@
 {
   "prefix": "nail",
-  "schema_version": 1,
+  "schema_version": 3,
   "created_at": "2026-09-28T22:41:40.142362315Z",
   "lease_minutes": 15,
   "stale_after": 50

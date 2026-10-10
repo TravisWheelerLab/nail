@@ -19,6 +19,7 @@
   "resolution": "done",
   "notes": [
     {
+      "id": "3201fe6d",
       "at": "2026-09-29T01:37:04.212058492Z",
       "author": "Jack Roddy/415c993d",
       "text": "Committed on runtime-tree. Timers verified by reading the diff only: every new timer is on an mmseqs code path and mmseqs is not installed on this machine. First real prog-mode run should check that seeding's [misc.] is now small.",
