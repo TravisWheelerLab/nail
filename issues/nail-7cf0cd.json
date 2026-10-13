@@ -1,7 +1,7 @@
 {
   "id": "nail-7cf0cd",
-  "title": "libnail test test_hmm_from_blosum62 fails on dev",
-  "body": "cargo test -p libnail on dev at 837ba60: structs::profile::tests::test_hmm_from_blosum62 panics; the other 21 libnail tests pass. cargo test stops there, so nail's tests only run with -p nail (37 pass). Not yet diagnosed.",
+  "title": "`test_hmm_from_blosum62` panics in libnail",
+  "body": "On `dev` at `837ba60`, `cargo test -p libnail` panics in `structs::profile::tests::test_hmm_from_blosum62`. The other 21 libnail tests pass. A plain `cargo test` stops at the failure, so nail's 37 tests run only under `cargo test -p nail`. Nobody has diagnosed it.",
   "type": "bug",
   "status": "open",
   "priority": 2,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:27:31.758933822Z",
-  "updated_at": "2026-09-29T01:27:31.758933822Z",
+  "updated_at": "2026-10-13T23:10:56.219682623Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
