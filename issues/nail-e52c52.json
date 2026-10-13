@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.419797876Z",
-  "updated_at": "2026-10-13T23:11:41.120302626Z",
+  "updated_at": "2026-10-13T23:11:41.128701348Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -31,9 +31,10 @@
       "id": "8b9ec3b1",
       "at": "2026-10-08T22:03:11.545657797Z",
       "author": "Jack Roddy/2aff5e6c",
-      "text": "Rerun 2026-10-08 with a native x86-64 mmseqs (same version 8cc5ce3), 4 threads. Fixed cost per align call with an empty prefilter db: 3 to 4 ms against 100k targets, 45 ms against 2,455,940 targets (64 ms at 1 thread), so the fixed part grows with target count and is about 18 ns per target record, consistent with reading the 45 MB target index. A slice with 20,795 empty records costs 8 ms. Per-iteration slices from the 100k run: 4.15M aln 9.28 s, 3.65M 6.35 s, 515k 1.03 s, 249k 0.56 s, 81k 0.24 s, 21.5k 0.14 s, about 2.2 us wall per alignment at 4 threads. 20,795 random pairs 63 ms. Emulation had inflated everything 5 to 8 times. On the mgy run 12 calls cost at most 12 x 45 ms = 0.5 s of the 36 s align total. Iteration count is not the lever.",
+      "text": "Rerun with a native x86-64 mmseqs, version `8cc5ce3`, at 4 threads on the 16-core box.\n\n| prefilter db | targets | alignments | wall |\n|---|---|---|---|\n| empty | 100,000 | 0 | 3 to 4 ms |\n| empty | 2,455,940 | 0 | 45 ms |\n| empty, at 1 thread | 2,455,940 | 0 | 64 ms |\n| 20,795 empty records | 100,000 | 0 | 8 ms |\n| 20,795 random pairs | 100,000 | 20,795 | 63 ms |\n| iteration slice 0 | 100,000 | 4,149,229 | 9.28 s |\n| iteration slice 1 | 100,000 | 3,647,173 | 6.35 s |\n| iteration slice 2 | 100,000 | 515,289 | 1.03 s |\n| iteration slice 3 | 100,000 | 249,239 | 0.56 s |\n| iteration slice 4 | 100,000 | 81,410 | 0.24 s |\n| iteration slice 5 | 100,000 | 21,552 | 0.14 s |\n\nThe iteration slices come from the leftover 100k-target run in `nail-benchmarks/data/tmp-nail`. The fixed cost grows with the number of targets, at about 18 ns per target record. That fits mmseqs reading the 45 MB target index on every call, though nobody has profiled it. Wall time tracks the alignment count at about 2.2 µs per alignment. On the mgy run the 12 calls cost at most 12 × 45 ms, which is 0.5 s of the 36 s align total. The iteration count is not the lever.",
       "commit": "432ff65",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T23:11:41.128701148Z"
     },
     {
       "id": "4dc7c08c",
