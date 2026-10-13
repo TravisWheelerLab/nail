@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.437356894Z",
-  "updated_at": "2026-10-13T23:11:41.154164941Z",
+  "updated_at": "2026-10-13T23:11:41.162628712Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -31,9 +31,10 @@
       "id": "0bdbad44",
       "at": "2026-09-29T01:48:41.498449765Z",
       "author": "Jack Roddy/415c993d",
-      "text": "All four children merged to dev (fast-forward to 8d8153e); --stats-results-path removed in the following commit. Left open until a real prog-mode run with mmseqs checks: seeding [misc.] small; branches sum to runtime; iteration rows readable; derived alignment walls sum to the branch wall with busy near 100%.",
+      "text": "All four children are on `dev`, fast-forwarded to `8d8153e`, and `432ff65` removed `--stats-results-path`. The milestone stays open until a real run in progressive seeding mode with mmseqs checks four things:\n\n- seeding's `[misc.]` is small\n- the branches sum to runtime\n- the iteration rows are readable\n- the derived alignment walls sum to the branch wall, with busy near 100%",
       "commit": "432ff65",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T23:11:41.162628492Z"
     }
   ],
   "stamps": {
