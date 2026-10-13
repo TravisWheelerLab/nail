@@ -1,7 +1,7 @@
 {
   "id": "nail-166084",
-  "title": "Write the Conventions section of CLAUDE.md",
-  "body": "The arbitrary but fixed choices, each settled in a word: abbreviation policy (prf/seq/fwd/bwd versus full words, and where each is allowed), naming affixes (_idx, is_, with_, from_), bail! and panic messages, test naming and return type, doc line style, extension trait naming, builders by hand or derive_builder. About ten lines in CLAUDE.md. Anything rustfmt or clippy already enforces is out of scope. The conventions the code already follows are in the notes.",
+  "title": "What goes in the Conventions section of `CLAUDE.md`?",
+  "body": "`CLAUDE.md` has no Conventions section. Conventions here are the choices that are arbitrary but need fixing, each settled in a word, in about ten lines. Anything `rustfmt` or `clippy` already enforces is out of scope. The conventions the code follows today are in the notes.\n\n## Open\n\n- abbreviations such as `prf`, `seq`, `fwd` and `bwd` against full words, and where each is allowed\n- the affixes `_idx`, `is_`, `with_` and `from_`\n- the wording of `bail!` and panic messages\n- test names and their return type\n- the style of doc lines\n- names for extension traits\n- builders written by hand or with `derive_builder`",
   "type": "decision",
   "status": "open",
   "priority": 2,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T00:14:50.72926273Z",
-  "updated_at": "2026-09-29T00:15:41.127796376Z",
+  "updated_at": "2026-10-13T23:10:56.251681704Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
