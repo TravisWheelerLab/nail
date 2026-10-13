@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.419797876Z",
-  "updated_at": "2026-10-13T23:11:41.128701348Z",
+  "updated_at": "2026-10-13T23:11:41.137106459Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -40,9 +40,10 @@
       "id": "4dc7c08c",
       "at": "2026-10-08T22:08:17.451029808Z",
       "author": "Jack Roddy/2aff5e6c",
-      "text": "Rescoped 2026-10-08 after the measurement above. The fixed cost per call is 45 ms, so the open question is why the 12 iterations on the mgy run cost 2.5 to 4 s each with no trend. Reading to test: alignments per iteration stay near constant because n_take doubles while the active set roughly halves, and the survivors' deeper candidates are real hits that cost 2 to 3 times a quick reject. Jack tests on the 48-thread box. How, without a code change: run nail with the tmp dir kept so prog-seed/N/pdb survives for each iteration, then replay each slice with tmp-claude/2026-10-08-align-fixed-cost/time-align.sh (args: label qdb tdb pdb outdir evalue threads), which prints the 'alignments calculated' count mmseqs reports and the wall time. nail itself captures mmseqs stdout in util.rs run() and prints it only on failure. If the counts are flat the issue closes with that fact; if they fall and the time does not, the cost is inside mmseqs per call and the next step is to look at what align does per query record.",
+      "text": "How to get the counts on the 48-thread box with no code change. Run nail with its tmp dir kept, so `prog-seed/<N>/pdb` survives for each iteration. Then replay each slice with `time-align.sh`, which prints the wall time and the \"alignments calculated\" count that mmseqs reports:\n\n```bash\ntime-align.sh <label> <qdb> <tdb> <pdb> <outdir> <evalue> [threads]\n```\n\n`<evalue>` is the seed p-value threshold times the target count, as `run_mmseqs_align` computes it. The script lives in `tmp-claude/2026-10-08-align-fixed-cost` on the 16-core box and needs copying over. nail itself captures mmseqs's stdout in `run()` in `util.rs` and prints it only on failure, so a normal run loses the count.",
       "commit": "432ff65",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T23:11:41.137106269Z"
     }
   ],
   "stamps": {
