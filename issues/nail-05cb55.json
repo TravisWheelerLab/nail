@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.445242484Z",
-  "updated_at": "2026-10-13T23:11:59.530317095Z",
+  "updated_at": "2026-10-13T23:11:59.538839586Z",
   "closed_at": "2026-09-29T01:34:03.799835022Z",
   "close_reason": "Landed in `ca4f33d`. The note on this issue has the details.",
   "resolution": "done",
@@ -22,9 +22,10 @@
       "id": "ab97b886",
       "at": "2026-09-29T01:27:31.773210222Z",
       "author": "Jack Roddy/415c993d",
-      "text": "Done on branch runtime-tree. build_pipeline takes &Queries so seed() can borrow pipeline.targets and pipeline.stats afterwards; a timed_step() helper in search.rs replaced the four hand-written progress blocks and returns the duration. For --only-seed the pipeline is never built, so setup is not recorded and no tree prints, as before. Verified on the fixtures with --seeds and --mmseqs-path /bin/true in a release build; the debug build hits a pre-existing assert (own issue).",
+      "text": "Done on branch `runtime-tree`. `build_pipeline` takes `&Queries`, so `seed()` can borrow `pipeline.targets` and `pipeline.stats` afterwards. A helper `timed_step()` in `search.rs` replaced the four hand-written progress blocks and returns the duration. With `--only-seed` nail never builds the pipeline, so it records no setup and prints no tree, as before. Checked on the fixtures with `--seeds` and `--mmseqs-path /bin/true` in a release build. The debug build hits an assert that predates this change, filed as nail-7ab565.",
       "commit": "bdb967d",
-      "branch": "runtime-tree"
+      "branch": "runtime-tree",
+      "edited_at": "2026-10-13T23:11:59.538839366Z"
     }
   ],
   "stamps": {
