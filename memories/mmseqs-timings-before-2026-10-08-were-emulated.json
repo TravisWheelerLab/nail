@@ -1,8 +1,8 @@
 {
   "slug": "mmseqs-timings-before-2026-10-08-were-emulated",
-  "text": "Until 2026-10-08 the mmseqs at ~/bin/mmseqs on the 16-core x86_64 box was an aarch64 static build run through qemu-aarch64-static via binfmt_misc, about 5 to 8 times slower than native. Jack replaced it with the x86-64 build (same version 8cc5ce3) on 2026-10-08. Any mmseqs timing recorded on this box before then, including the Sep 28 100k-target run in nail-benchmarks/data/tmp-nail, was emulated.",
+  "text": "Until 2026-10-08, `~/bin/mmseqs` on the 16-core x86_64 box was an aarch64 static build. It ran through `binfmt_misc` and `/usr/bin/qemu-aarch64-static`, 5 to 8 times slower than native. Jack replaced it with the x86-64 build of the same version, `8cc5ce3`. Every mmseqs timing taken on this box before then was emulated, including the Sep 28 run on 100k targets in `nail-benchmarks/data/tmp-nail`.",
   "created_at": "2026-10-08T22:03:11.561191648Z",
-  "updated_at": "2026-10-08T22:03:11.561191648Z",
+  "updated_at": "2026-10-13T23:11:59.595874032Z",
   "stamp": {
     "commit": "432ff65",
     "branch": "dev"
