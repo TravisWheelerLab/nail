@@ -1,0 +1,10 @@
+{
+  "slug": "local-mmseqs-target-db-for-measurements",
+  "text": "`tmp-claude/2026-10-08-align-fixed-cost/mgy-db/tdb` is an mmseqs target db of 2,455,940 records, the target count of the 48-thread mgy run, built with the native mmseqs from the start of `nail-benchmarks/data/mgnify/mgy.0001.fa`. `time-align.sh` in the same directory times one `mmseqs align` call and prints the alignment count.",
+  "created_at": "2026-10-13T23:07:21.465810584Z",
+  "updated_at": "2026-10-13T23:07:21.465810584Z",
+  "stamp": {
+    "commit": "432ff65",
+    "branch": "dev"
+  }
+}
