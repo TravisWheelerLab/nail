@@ -1,7 +1,7 @@
 {
   "id": "nail-5385c1",
-  "title": "Settle how Rust is written in nail",
-  "body": "Done when CLAUDE.md has a Design section and a Conventions section, and every known divergence from them is either its own issue or accepted in a note on the audit issue. The children are the work.",
+  "title": "Written rules for nail's Rust",
+  "body": "`CLAUDE.md` says how nail is branched, released, formatted and tested, and nothing about how its Rust is written. The children write a Design section and a Conventions section, then reconcile the code with them.\n\nThe milestone is done when both sections exist and every known divergence from them has its own issue or is accepted in a note on nail-b5a599.",
   "type": "milestone",
   "status": "open",
   "priority": 2,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T00:14:38.336071398Z",
-  "updated_at": "2026-09-29T00:14:38.336071398Z",
+  "updated_at": "2026-10-13T23:10:56.235781133Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
