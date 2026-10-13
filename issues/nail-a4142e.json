@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.452502809Z",
-  "updated_at": "2026-10-13T23:11:59.547153669Z",
+  "updated_at": "2026-10-13T23:11:59.555318482Z",
   "closed_at": "2026-09-29T01:37:04.219668552Z",
   "close_reason": "Landed in `6f6c77d`.",
   "resolution": "done",
@@ -22,9 +22,10 @@
       "id": "3201fe6d",
       "at": "2026-09-29T01:37:04.212058492Z",
       "author": "Jack Roddy/415c993d",
-      "text": "Committed on runtime-tree. Timers verified by reading the diff only: every new timer is on an mmseqs code path and mmseqs is not installed on this machine. First real prog-mode run should check that seeding's [misc.] is now small.",
+      "text": "Committed on `runtime-tree`. The timers were checked by reading the diff only. Every new timer sits on an mmseqs code path, and mmseqs was not installed on that machine. The first real run in progressive seeding mode should confirm that seeding's `[misc.]` is small.",
       "commit": "6f6c77d",
-      "branch": "runtime-tree"
+      "branch": "runtime-tree",
+      "edited_at": "2026-10-13T23:11:59.555318282Z"
     }
   ],
   "stamps": {
