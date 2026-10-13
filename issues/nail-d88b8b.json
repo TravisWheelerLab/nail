@@ -1,0 +1,28 @@
+{
+  "id": "nail-d88b8b",
+  "title": "The help text for `-a` describes retries instead of total attempts",
+  "body": "`args.rs:354` documents `-a`, the field `cloud_max_join_attempts`, as \"allow at most N attempts to recover disjoint clouds\". That reads as N retries after a first attempt. nail treats N as the total number of attempts.\n\n## Proposal\n\nReword the help to say that N counts every attempt, the first included.",
+  "type": "bug",
+  "status": "open",
+  "priority": 1,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T23:10:56.194466578Z",
+  "updated_at": "2026-10-13T23:10:56.194466578Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
