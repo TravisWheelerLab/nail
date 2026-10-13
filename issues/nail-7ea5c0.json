@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.404070225Z",
-  "updated_at": "2026-10-10T07:26:50.385659733Z",
+  "updated_at": "2026-10-13T23:07:21.440217849Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-10-10T07:26:50.385658973Z",
       "author": "Jack Roddy/2aff5e6c",
       "text": "released at session end",
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    {
+      "id": "174582c9",
+      "at": "2026-10-13T23:07:21.440217059Z",
+      "author": "Jack Roddy/2aff5e6c",
+      "text": "Outcome. `libsail` was read at 0.4.0 and nail on `dev` at `432ff65`.\n\n## libsail's types do not replace `Sequence` and `Profile`\n\n`FastaRecord` holds a name, a description and residue bytes. `HmmRecord` holds the header and the model as HMMER's negative log probabilities. libnail's `Sequence` holds digital bytes with a sentinel at each end. `Profile` holds tables that `ProfileBuilder::build` derives: log-odds match scores against background, entry transitions from an occupancy recursion, ambiguity scores and a consensus. No parse can produce those, so a conversion step exists either way. Traits in libnail standing in for the two types would abstract over fields the DP code never reads.\n\n## nail uses libsail's framing and indexing and parses records itself\n\nThe design under discussion is a struct named `Framed<S: Source>` in `libsail`, holding a byte source and an `Index`. Its `record(n)` returns the raw bytes of record `n`. `IndexedFasta`, `IndexedHmm` and `IndexedStockholm` become wrappers over it, so `sail` keeps its call sites. nail wraps it in its own `Fasta` and `P7Hmm` and parses the bytes into `Sequence` and `Profile`. That work is nail-167dd7.\n\n## Rejected\n\n- `Indexed<P: Parse, D: Delimit, S: Source>`. nail uses no delimiter of its own, so the type parameter buys it nothing. Dropping `Format` from `Index` would also remove the check in `IndexedFasta::with_index` that refuses an index built for another format.\n- `Indexed<P: Parse, S: Source>` with type aliases. Jack turned it down as a new abstraction that `Framed` makes unnecessary.\n\n## mmseqs databases are a separate question\n\nAn mmseqs database stores null-terminated records and takes its offsets from a `.index` file, so scanning for a delimiter is the wrong way to frame it. `Index::new(format, offsets)` could take offsets loaded from that file, but `Format` has no variant for it. The prefilter database is also split over `pdb.0` to `pdb.3`, which one `Source` does not cover. Whether `libsail` takes this on is for sail's tracker.\n\n## The serial fixes do not wait on this\n\nnail-fc2ac4 and nail-65ce8f add parallelism around the existing parsers and change no parsing code. `write_mmseqs_sequence_database` iterates with the serial `Database::iter`. `build_pipeline` calls `p7hmm.iter()` with the `par_iter()` line commented out beside it. A later move to `Framed` keeps the same rayon loop.",
       "commit": "432ff65",
       "branch": "dev"
     }
