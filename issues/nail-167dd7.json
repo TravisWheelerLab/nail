@@ -1,0 +1,28 @@
+{
+  "id": "nail-167dd7",
+  "title": "nail reads its fasta and hmm inputs through libsail's `Framed`",
+  "body": "`nail/src/io` frames, indexes and parses nail's inputs itself. `Database<R: RecordParser>` in `database.rs` builds an `IndexMap<String, Offset>` keyed by record name. It holds one `File` and reads a record back with a seek and a `read_exact` into a shared buffer, so `get(&mut self, key: &str)` takes `&mut self`. `Fasta` is `Database<FastaParser>` and `P7Hmm` is `Database<P7HmmParser>`. Parallel iteration in `impl_rayon.rs` clones the `Database` once per split, and each clone reopens the file.\n\n## Proposal\n\nThe design under discussion with the sail side adds a struct named `Framed<S: Source>` to `libsail`. It holds a byte source and an `Index`, and `record(n)` returns the raw bytes of record `n`. nail wraps it:\n\n```rust\npub struct Fasta(Framed<MmapSource>);\n\nimpl Fasta {\n    pub fn open(path: impl AsRef<Path>) -> Result<Self>;\n    pub fn len(&self) -> usize;\n    pub fn position(&self, name: &[u8]) -> Result<Option<usize>>;\n    pub fn get(&self, n: usize) -> Result<Sequence>;\n}\n```\n\n`open` maps the file and builds the name index. `get` reads `record(n)` and parses it with `Sequence::from_fasta(&[u8])`, which takes over the body of `FastaParser::parse`. `P7Hmm` is the same struct over `Format::Hmm`, with the body of `P7HmmParser::parse` moved to a function that builds a `Profile` from record bytes. `get` takes `&self`, so parallel iteration needs no clones:\n\n```rust\n(0..db.len()).into_par_iter().map(|i| db.get(i))\n```\n\n## Cost\n\n- `database.rs`, `fasta.rs`, `p7hmm.rs` and `impl_rayon.rs` under `nail/src/io` are removed.\n- nail gains a dependency on `libsail`.\n- A lookup by name becomes `position` followed by `get`. Callers such as `targets.get(&seed.seq)` change.\n- A file truncated while it is mapped raises SIGBUS. nail's inputs are read-only, and nail's docs need one line saying so.\n\n## Open\n\n- `Framed` does not exist yet. This issue waits on `libsail` shipping it, and foam cannot record a dependency on another repository.\n- `Index::build` walks a streaming `Reader`, which copies the mapped bytes through a buffer. Nobody has measured whether that is slower than nail's own index pass.",
+  "type": "task",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T23:07:08.309170681Z",
+  "updated_at": "2026-10-13T23:07:08.309170681Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "432ff65",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
