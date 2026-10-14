@@ -353,13 +353,13 @@ pub struct PipelineArgs {
     #[arg(short = 'G', default_value_t = 5, value_name = "N")]
     pub gamma: usize,
 
-    /// (cloud search) allow at most N attempts to recover disjoint clouds
+    /// (cloud search) make at most N cloud search attempts in total
     ///
-    /// When the forward and backward clouds fail to intserect, nail restarts
-    /// cloud search using more permissive pruning parameters (α, ɓ, γ). This
-    /// parameter sets an upper limit on the number of attempts nail will make
-    /// to recover. The parameters are scaled according to the -f argumment
-    /// (default: 0.5).
+    /// When the forward and backward clouds fail to intersect, nail restarts
+    /// cloud search using more permissive pruning parameters (α, ɓ, γ). N
+    /// counts the first attempt too, so nail never restarts when N is 1. N
+    /// must be at least 1. The parameters are scaled according to the -f
+    /// argument (default: 0.5).
     #[arg(short = 'a', default_value_t = 5, value_name = "N")]
     pub cloud_max_join_attempts: usize,
 
