@@ -15,7 +15,7 @@
   "lease_expires": "2026-10-14T21:18:41.040101298Z",
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.412018534Z",
-  "updated_at": "2026-10-14T21:03:41.040101298Z",
+  "updated_at": "2026-10-14T21:04:21.387937816Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -26,6 +26,14 @@
       "author": "Jack Roddy/95b307ba",
       "text": "Rewrote the body. The old one described `Database::iter` with a seek and a `read_exact` per record, which `92de7c5` removed. It also counted the whole 15.5 s db write leaf as the target db, when part of the leaf is the query profile db, now nail-811f24.",
       "commit": "a8a28e5",
+      "branch": "dev"
+    },
+    {
+      "id": "1ae18cae",
+      "at": "2026-10-14T21:04:21.387937026Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Split of the target db write, on 2,455,940 targets with libsail 0.4.2 and a warm cache, 3 runs each. Parsing every record with `Fasta::iter` alone takes 3.71 to 3.73 s. The writer loop, parse included, takes 4.34 to 4.37 s, so formatting and writing the four files cost about 0.63 s. `Fasta::par_iter` at 8 threads parses all of them in 0.48 s. A copy of the loop writes files byte-identical to what nail wrote in the full run. Those files are kept in `tmp-claude/2026-10-14-serial-overhead/tdb-reference` as the reference for the rewrite.",
+      "commit": "9b68e76",
       "branch": "dev"
     }
   ],
