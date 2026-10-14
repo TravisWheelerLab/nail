@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T19:50:39.592930959Z",
-  "updated_at": "2026-10-14T19:50:39.592930959Z",
+  "updated_at": "2026-10-14T19:58:18.224188923Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "2a64c30c",
+      "at": "2026-10-14T19:58:18.224188343Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Dropping the check is rejected, by Jack. nail tells records apart by position, so a repeated name would run without error. A reader of the tabular output could not tell two such records apart, and nothing in the output would show the problem. The comment on the loop in `Records::map` now says this. A fix makes the check cheaper and keeps it.",
+      "commit": "92de7c5",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "92de7c5",
