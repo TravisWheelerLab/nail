@@ -72,6 +72,19 @@ Entries match the ones already there:
 `CARGO_MANIFEST_DIR`. No test needs `mmseqs`. Both Cargo profiles build at
 opt-level 3, so the first test build is slow.
 
+## Correctness
+
+nail has to stay correct, and that comes before speed. Work in small steps,
+and do not move on until a change is known to be correct.
+
+Jack reads every test that is added or changed, line by line, before it is
+committed. Show each one in full and explain what it checks.
+
+Some parts of nail are complicated and hard to test. Existing code may be wrong
+in places. Assume it is correct. Record any evidence that part of it may be
+wrong in foam, however small, as a note on the issue being worked or as an
+issue of its own.
+
 ## Platforms
 
 Linux, macOS and Windows on x86_64 and aarch64; CI builds all of them. Nothing
