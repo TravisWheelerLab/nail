@@ -15,7 +15,7 @@
   "lease_expires": "2026-10-14T20:33:26.551213601Z",
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.475877171Z",
-  "updated_at": "2026-10-14T20:18:26.551213601Z",
+  "updated_at": "2026-10-14T20:31:05.893958335Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -34,6 +34,14 @@
       "author": "Jack Roddy/2aff5e6c",
       "text": "Commit `3a964e5` commented out the `par_iter()` line in `search.rs`, with the message \"It was a race condition on file handles.\" The same commit rewrote `Database` in `database.rs` and its rayon impl in `impl_rayon.rs`, and `dev.rs` uses `p7hmm.par_iter()` today. The commented line looks like a leftover from debugging that race. Nobody has checked that the fixed `Database` is safe for it. The libsail evaluation closed without touching this, since the fix changes no parsing code.",
       "commit": "432ff65",
+      "branch": "dev"
+    },
+    {
+      "id": "3fc4f3de",
+      "at": "2026-10-14T20:31:05.893957435Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Restored `p7hmm.par_iter()` in `build_pipeline`, uncommitted. A full run of 20,795 Pfam profiles against 2,455,940 targets at `-t 8` took the pipeline build from 3.07 s to 0.40 s, and setup from 6.52 s to 1.45 s. Both runs wrote 3,031,623 lines to `results.tbl`, and the two files are identical once sorted. Their row order differs, from line 4 on. `par_iter().collect()` keeps the profiles in file order, so the row order most likely comes from the parallel alignment stage writing rows as threads finish. Nobody has run the old code twice to confirm that its order also varies.",
+      "commit": "a8a28e5",
       "branch": "dev"
     }
   ],
