@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T18:26:01.372017629Z",
+  "updated_at": "2026-10-14T18:44:42.910613709Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -71,6 +71,14 @@
       "at": "2026-10-14T18:26:01.372016899Z",
       "author": "Jack Roddy/2680c5a4",
       "text": "Decided: nail uses `Framed::map` for both inputs, as the Proposal says. Jack's reasons:\n\n- Profile sets are expected to stay small and target sets to be arbitrarily large. On the target fasta, `map` read records back in about 10% less time than `open`.\n- `ProfileBuilder::build` takes nearly all the profile read time and will probably be optimized, which would change the profile comparison again.\n- nail is the first heavy user of `libsail`'s mmap path, so bugs in it should surface here.\n\nThe costs accepted are an RSS that includes the mapped file's pages, and SIGBUS if an input is truncated while nail runs.",
+      "commit": "9a671f7",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "dfb4539a",
+      "at": "2026-10-14T18:44:42.910612729Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Decided: nail refuses a repeated record name in every input, targets included, even once seeds carry positions. Jack's reason: nail would pair each hit with the right record, but the tabular output would show two different targets under one name, and a reader cannot tell them apart. `Records::map` keeps the name index and the check for targets, which cost about 0.8 s and 90 MiB on the mgy fasta.",
       "commit": "9a671f7",
       "branch": "libsail-io"
     }
