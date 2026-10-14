@@ -89,7 +89,7 @@ pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
             .par_iter()
             .map(|s| Profile::from_blosum_62_and_seq(&s?))
             .collect::<anyhow::Result<Vec<_>>>(),
-        Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
+        Queries::Profile(profiles) => Ok(profiles.to_vec()),
     }
     .context("failed to build profiles")?;
 

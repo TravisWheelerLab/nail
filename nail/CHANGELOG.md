@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - field `Pipeline::prf` is now `Option<(usize, Profile)>`
 - `Stats::new()` now returns `anyhow::Result<Self>`
 - field `Pipeline::targets` is now `Arc<Fasta>`
+- variant `Queries::Profile` now holds the parsed profiles as `Arc<Vec<Profile>>` instead of a `P7Hmm`, and `read_queries()` parses them
+- `write_mmseqs_profile_database()` now takes `&[Profile]` instead of `&P7Hmm`
+- the `query index` leaf of the `-s` runtime tree now includes parsing hmm queries, which moved out of `pipeline build`
 - the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before
 
 ### Removed

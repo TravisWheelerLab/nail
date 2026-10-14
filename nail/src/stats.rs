@@ -254,10 +254,7 @@ impl Stats {
 
         let n_queries = queries.len();
         let query_names = (0..n_queries)
-            .map(|n| match queries {
-                Queries::Sequence(db) => db.name(n),
-                Queries::Profile(db) => db.name(n),
-            })
+            .map(|n| queries.name(n))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         stats.hit_counts_by_query = Arc::new(

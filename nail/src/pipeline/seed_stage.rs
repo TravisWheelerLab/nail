@@ -46,7 +46,7 @@ pub fn seed_static(
     match queries {
         Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
-        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm, &db_paths.query_db)
+        Queries::Profile(profiles) => write_mmseqs_profile_database(profiles, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
     }
 
@@ -135,7 +135,7 @@ pub fn seed_progressive(
     match queries {
         Queries::Sequence(fasta) => write_mmseqs_sequence_database(fasta, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
-        Queries::Profile(hmm) => write_mmseqs_profile_database(hmm, &db_paths.query_db)
+        Queries::Profile(profiles) => write_mmseqs_profile_database(profiles, &db_paths.query_db)
             .context("failed to write mmseqs query DB")?,
     }
 

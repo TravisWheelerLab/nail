@@ -7,13 +7,11 @@ use std::{
     process::Command,
 };
 
-use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO};
+use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
 
 use crate::{
     args::SearchArgs,
-    io::{
-        ReadSeekExt, ReadState, {Fasta, P7Hmm},
-    },
+    io::{Fasta, ReadSeekExt, ReadState},
     util::{CommandExt, PathExt},
 };
 
@@ -488,7 +486,7 @@ pub fn write_mmseqs_sequence_database(
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: &P7Hmm,
+    profiles: &[Profile],
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
@@ -518,7 +516,6 @@ pub fn write_mmseqs_profile_database(
     let mut header_offset = 0usize;
 
     for (prf_cnt, prf) in profiles.iter().enumerate() {
-        let prf = prf?;
         for prf_idx in 1..=prf.length {
             for byte in (0..20)
                 .map(|residue| Nats(prf.match_score(residue, prf_idx)))

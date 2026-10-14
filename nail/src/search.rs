@@ -26,7 +26,7 @@ use thread_local::ThreadLocal;
 
 pub enum Queries {
     Sequence(Fasta),
-    Profile(P7Hmm),
+    Profile(Arc<Vec<Profile>>),
 }
 
 impl Queries {
@@ -40,7 +40,7 @@ impl Queries {
     pub fn name(&self, n: usize) -> anyhow::Result<String> {
         match self {
             Queries::Sequence(q) => q.name(n),
-            Queries::Profile(q) => q.name(n),
+            Queries::Profile(q) => Ok(q[n].name.clone()),
         }
     }
 }
@@ -54,8 +54,12 @@ pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries = P7Hmm::from_path(&path).context("failed to index query hmm")?;
-            Ok(Queries::Profile(queries))
+            let p7hmm = P7Hmm::from_path(&path).context("failed to index query hmm")?;
+            let profiles = p7hmm
+                .par_iter()
+                .collect::<anyhow::Result<Vec<_>>>()
+                .context("failed to parse query hmm")?;
+            Ok(Queries::Profile(Arc::new(profiles)))
         }
         _ => {
             panic!()
@@ -117,16 +121,16 @@ pub fn build_pipeline(
     stats: Stats,
     args: &mut SearchArgs,
 ) -> anyhow::Result<Pipeline> {
-    let profiles: Arc<Vec<Profile>> = Arc::new(
-        match queries {
-            Queries::Sequence(fasta) => fasta
+    let profiles: Arc<Vec<Profile>> = match queries {
+        Queries::Sequence(fasta) => Arc::new(
+            fasta
                 .par_iter()
                 .map(|s| Profile::from_blosum_62_and_seq(&s?))
-                .collect::<anyhow::Result<Vec<_>>>(),
-            Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
-        }
-        .context("failed to build profiles")?,
-    );
+                .collect::<anyhow::Result<Vec<_>>>()
+                .context("failed to build profiles")?,
+        ),
+        Queries::Profile(profiles) => Arc::clone(profiles),
+    };
 
     let mut output = OutputStage::new(args.pipeline_args.e_value_threshold)?;
 
