@@ -7,13 +7,15 @@
   "priority": 3,
   "labels": [],
   "parent": "nail-df3f53",
-  "blocked_by": [],
+  "blocked_by": [
+    "nail-62baa5"
+  ],
   "related": [],
   "assignee": null,
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T22:07:16.846098238Z",
-  "updated_at": "2026-10-14T22:50:22.347109198Z",
+  "updated_at": "2026-10-14T22:50:22.356684446Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
