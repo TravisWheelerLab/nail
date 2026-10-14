@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T18:21:58.987403308Z",
+  "updated_at": "2026-10-14T18:26:01.372017629Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -63,6 +63,14 @@
       "at": "2026-10-14T18:21:58.987402558Z",
       "author": "Jack Roddy/2680c5a4",
       "text": "Measured the same for `P7Hmm` on `nail-benchmarks/data/pfam.hmm`, 20,795 models in 1.5 GiB, with a warm page cache, using the `hmm` binary in `tmp-claude/2026-10-14-index-build/`. A `verify` run built every `Profile` from both nail's framing and `Framed::open`, in file order, and all 20,795 pairs were equal.\n\nIndex build, fastest of three interleaved runs:\n\n| build | seconds | peak RSS |\n|---|---|---|\n| `P7Hmm::from_path` | 0.843 | 5.7 MiB |\n| `Framed::open` | 0.071 | 3.4 MiB |\n| `Framed::map` | 0.087 | 1,559 MiB |\n| `Framed::map`, then `name_index` | 0.089 | 1,559 MiB |\n\nBuilding every `Profile`, read time only, fastest of three:\n\n| threads | nail `iter` | nail `par_iter` | `open` | `map` |\n|---|---|---|---|---|\n| 1 | 2.898 s | 2.873 s | 2.885 s | 2.817 s |\n| 8 | | 0.373 s | 0.373 s | 0.371 s |\n\n`ProfileBuilder::build` takes nearly all the read time, so the framing makes no difference there. The index build does. On 8 threads nail spends 0.85 s indexing and 0.37 s building profiles, against 0.07 s and 0.37 s through `Framed::open`. `build_pipeline` today calls the serial `iter`, 3.75 s in total on this file.\n\nThe scan in `Framed::map` touches every page of the file, so the process's RSS includes the whole mapped file once the index is built. Those pages are clean and reclaimable, but a batch scheduler that limits jobs by RSS would count them.",
+      "commit": "9a671f7",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "bd43c181",
+      "at": "2026-10-14T18:26:01.372016899Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Decided: nail uses `Framed::map` for both inputs, as the Proposal says. Jack's reasons:\n\n- Profile sets are expected to stay small and target sets to be arbitrarily large. On the target fasta, `map` read records back in about 10% less time than `open`.\n- `ProfileBuilder::build` takes nearly all the profile read time and will probably be optimized, which would change the profile comparison again.\n- nail is the first heavy user of `libsail`'s mmap path, so bugs in it should surface here.\n\nThe costs accepted are an RSS that includes the mapped file's pages, and SIGBUS if an input is truncated while nail runs.",
       "commit": "9a671f7",
       "branch": "libsail-io"
     }
