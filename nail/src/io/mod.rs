@@ -1,6 +1,3 @@
-mod database;
-pub use database::*;
-
 mod fasta;
 pub use fasta::*;
 
@@ -12,8 +9,6 @@ pub use p7hmm::*;
 
 mod seeds;
 pub use seeds::*;
-
-mod impl_rayon;
 
 mod util;
 pub use util::*;

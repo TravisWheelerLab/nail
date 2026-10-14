@@ -1,18 +1,10 @@
 use std::path::Path;
 
-use crate::io::{util::ByteBufferExt, Offset, Records};
-
-use libnail::structs::{
-    profile::{ProfileBuilder, Transition},
-    Profile,
-};
-
-use anyhow::{bail, Context};
+use libnail::structs::Profile;
 use libsail::format::Format;
 use rayon::prelude::*;
-use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
-use super::{Delimiter, RecordParser};
+use crate::io::Records;
 
 /// A p7hmm file and where each of its models sits in it.
 pub struct P7Hmm(Records);
@@ -31,374 +23,27 @@ impl P7Hmm {
         self.0.name(n)
     }
 
+    /// The `n`th model.
+    pub fn get(&self, n: usize) -> anyhow::Result<Profile> {
+        self.0.parse(n, Profile::from_p7hmm)
+    }
+
     pub fn iter(&self) -> impl ExactSizeIterator<Item = anyhow::Result<Profile>> + '_ {
-        (0..self.len()).map(|n| self.0.parse(n, P7HmmParser::parse))
+        (0..self.len()).map(|n| self.get(n))
     }
 
     pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = anyhow::Result<Profile>> + '_ {
-        (0..self.len())
-            .into_par_iter()
-            .map(|n| self.0.parse(n, P7HmmParser::parse))
+        (0..self.len()).into_par_iter().map(|n| self.get(n))
     }
-}
-
-#[derive(Clone)]
-enum P7HmmParserState {
-    Name,
-    Delim,
-}
-
-#[derive(Clone)]
-pub struct P7HmmParser {
-    state: P7HmmParserState,
-    name: String,
-    offset: Offset,
-}
-
-impl RecordParser for P7HmmParser {
-    const DELIM: &'static [u8] = b"//";
-    const DELIM_TYPE: Delimiter = Delimiter::Terminating;
-    type Record = Profile;
-
-    fn new(start_pos: u64) -> Self {
-        Self {
-            state: P7HmmParserState::Name,
-            name: String::new(),
-            offset: Offset {
-                start: start_pos,
-                n_bytes: 0,
-            },
-        }
-    }
-
-    fn offset(&mut self, line: &[u8], line_start: u64) -> Option<(String, Offset)> {
-        use P7HmmParserState::*;
-
-        self.offset.n_bytes += line.len();
-
-        let first_word = match line.first_word() {
-            Ok(w) => w,
-            Err(_) => return None,
-        };
-
-        let mut ret = None;
-        match (&self.state, first_word.parse()) {
-            (Name, Ok(P7HeaderFlag::Name)) => {
-                let name_start = line[P7HeaderFlag::Name.as_ref().len()..]
-                    .iter()
-                    .position(|b| !b.is_ascii_whitespace())
-                    .map(|i| i + P7HeaderFlag::Name.as_ref().len())
-                    .expect("missing name in p7HMM");
-
-                self.name.push_str(
-                    line.word_from(name_start)
-                        .expect("failed to parse name in p7HMM line"),
-                );
-
-                self.state = Delim;
-            }
-            (Delim, Ok(P7HeaderFlag::Terminate)) => {
-                ret = Some((self.name.as_str().to_owned(), self.offset.clone()));
-
-                self.state = Name;
-                self.name.clear();
-                // if the line has a newline at the end, we want to add one
-                let maybe_one = (line[line.len() - 1] != b'\n') as u64;
-                self.offset.start = line_start + line.len() as u64 + maybe_one;
-                self.offset.n_bytes = 0;
-            }
-            _ => {}
-        }
-        ret
-    }
-
-    fn parse(buf: &[u8]) -> anyhow::Result<Self::Record> {
-        enum ParseState {
-            Header,
-            Model,
-        }
-
-        #[derive(Debug)]
-        enum ModelState {
-            Comp,
-            Mat,
-            Ins,
-            Trans,
-        }
-
-        let mut emission_buf = [0.0; Profile::MAX_ALPHABET_SIZE];
-        let mut trans_buf = [0.0; Profile::NUM_STATE_TRANSITIONS - 1];
-        let mut swap_buf = [0.0; Profile::NUM_STATE_TRANSITIONS - 1];
-        let mut state = ParseState::Header;
-        let mut model_state = ModelState::Comp;
-
-        let mut prf = ProfileBuilder::default();
-        let mut pos = 0;
-        for line in buf.split(|b| *b == b'\n').filter(|b| !b.is_empty()) {
-            match state {
-                ParseState::Header => {
-                    let flag = line
-                        .first_word()?
-                        .parse::<P7HeaderFlag>()
-                        .unwrap_or_default();
-
-                    let value = std::str::from_utf8(&line[flag.as_ref().len()..])?.trim();
-
-                    match flag {
-                        P7HeaderFlag::Name => {
-                            prf.name(value.to_string());
-                        }
-                        P7HeaderFlag::Accession => {
-                            prf.accession(value.to_string());
-                        }
-                        P7HeaderFlag::Length => {
-                            prf.length(value.parse().with_context(|| {
-                                format!("failed to parse HMM length: \"{}\"", value)
-                            })?);
-                        }
-                        P7HeaderFlag::Alphabet => {
-                            if value != "amino" {
-                                bail!("non-amino HMM alphabet found: \"{}\"", value);
-                            };
-                        }
-                        P7HeaderFlag::Stats => {
-                            let stats: Vec<&str> = value.split_whitespace().collect();
-
-                            if stats[1] == "FORWARD" {
-                                prf.fwd_tau(stats[2].parse().with_context(|| {
-                                    format!("failed to parse HMM Forward tau: \"{}\"", stats[2])
-                                })?);
-                                prf.fwd_lambda(stats[3].parse().with_context(|| {
-                                    format!("failed to parse HMM Forward lambda: \"{}\"", stats[3])
-                                })?);
-                            }
-                        }
-                        P7HeaderFlag::Hmm => state = ParseState::Model,
-                        _ => {
-                            // ignore most flags for now
-                        }
-                    }
-                }
-                ParseState::Model => {
-                    match model_state {
-                        ModelState::Comp => {
-                            if line.first_word()? == "COMPO" {
-                                // note: we don't actually use the
-                                //       composition in the p7HMM
-                                //  why: HMMER doesn't
-                                model_state = ModelState::Ins;
-                            }
-                        }
-                        ModelState::Mat => {
-                            let pos_pos = match line.first_non_whitespace_pos() {
-                                Some(pos) => pos,
-                                // line was empty
-                                None => continue,
-                            };
-                            let pos_str = match line.word_from(pos_pos)? {
-                                "//" => {
-                                    break;
-                                }
-                                s => s,
-                            };
-
-                            let new_pos = pos_str.parse::<usize>()?;
-
-                            if new_pos != pos + 1 {
-                                bail!("non-linear HMM positions: {pos}->{new_pos}");
-                            } else {
-                                pos = new_pos
-                            }
-
-                            parse_p7hmm_floats_into::<{ Profile::MAX_ALPHABET_SIZE }>(
-                                std::str::from_utf8(&line[pos_pos + pos_str.len()..])?,
-                                &mut emission_buf,
-                            )?;
-
-                            prf.mat_emission(pos, emission_buf);
-                            model_state = ModelState::Ins;
-                        }
-                        ModelState::Ins => {
-                            // note: we don't actually use the
-                            //       insert emissions in the p7HMM
-                            //  why: HMMER doesn't
-                            model_state = ModelState::Trans;
-                        }
-                        ModelState::Trans => {
-                            parse_p7hmm_floats_into::<{ Profile::NUM_STATE_TRANSITIONS - 1 }>(
-                                std::str::from_utf8(line)?,
-                                &mut trans_buf,
-                            )?;
-
-                            // map p7HMM transition order to Profile order
-                            P7HmmTransition::iter().for_each(|t| {
-                                swap_buf[Transition::from(t) as usize] = trans_buf[t as usize]
-                            });
-
-                            prf.transition(pos, swap_buf);
-
-                            model_state = ModelState::Mat;
-                        }
-                    }
-                }
-            }
-        }
-
-        prf.build()
-    }
-}
-
-#[derive(Default, PartialEq, EnumString, AsRefStr)]
-#[strum(serialize_all = "UPPERCASE")]
-enum P7HeaderFlag {
-    #[default]
-    #[strum(serialize = "")]
-    None,
-    #[strum(serialize = "HMMER3/f")]
-    Format,
-    Name,
-    #[strum(serialize = "ACC")]
-    Accession,
-    #[strum(serialize = "DESC")]
-    Description,
-    #[strum(serialize = "LENG")]
-    Length,
-    #[strum(serialize = "MAXL")]
-    MaxLength,
-    #[strum(serialize = "ALPH")]
-    Alphabet,
-    #[strum(serialize = "RF")]
-    Reference,
-    #[strum(serialize = "MM")]
-    Mask,
-    #[strum(serialize = "CONS")]
-    ConsensusResidue,
-    #[strum(serialize = "CS")]
-    ConsensusStructure,
-    Map,
-    Date,
-    #[strum(serialize = "COM")]
-    Command,
-    Nseq,
-    Effn,
-    #[strum(serialize = "CKSUM")]
-    Checksum,
-    #[strum(serialize = "GA")]
-    GatheringThresholds,
-    #[strum(serialize = "TC")]
-    TrustedCutoffs,
-    #[strum(serialize = "NC")]
-    NoiseCutoffs,
-    Stats,
-    Hmm,
-    #[strum(serialize = "//")]
-    Terminate,
-}
-
-#[repr(usize)]
-#[derive(Clone, Copy, Debug, EnumIter)]
-enum P7HmmTransition {
-    MM = 0,
-    MI = 1,
-    MD = 2,
-    IM = 3,
-    II = 4,
-    DM = 5,
-    DD = 6,
-}
-
-impl From<P7HmmTransition> for Transition {
-    fn from(p: P7HmmTransition) -> Self {
-        use P7HmmTransition::*;
-        match p {
-            MM => Transition::MM,
-            IM => Transition::IM,
-            MI => Transition::MI,
-            DM => Transition::DM,
-            II => Transition::II,
-            MD => Transition::MD,
-            DD => Transition::DD,
-        }
-    }
-}
-
-fn negexp(x: f32) -> f32 {
-    (-x).exp()
-}
-
-fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> anyhow::Result<()> {
-    let mut tokens = floats.split_whitespace();
-
-    out.iter_mut()
-        .take(N)
-        .try_for_each(|item| -> anyhow::Result<()> {
-            *item = match tokens.next() {
-                Some("*") => 0.0,
-                Some(s) => s.parse().map(negexp)?,
-                None => bail!("expected {N} floats, got fewer"),
-            };
-
-            Ok(())
-        })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{read_to_string, File},
-        io::{Cursor, Read},
-        path::Path,
-    };
+    use std::{fs::read_to_string, path::Path};
 
-    use crate::io::DefaultIndex;
+    use rayon::iter::ParallelIterator;
 
     use super::*;
-
-    pub fn p7hmm_offset_starts_from_bytes(hmm: &[u8]) -> Vec<u64> {
-        hmm.windows(10)
-            .enumerate()
-            .filter_map(|(i, w)| (w == b"HMMER3/f [").then_some(i as u64))
-            .collect()
-    }
-
-    ///
-
-    macro_rules! p7hmm_index_test_start {
-        ($name:ident, $chunks:expr) => {
-            #[test]
-            fn $name() -> anyhow::Result<()> {
-                test_starts::<$chunks>()
-            }
-        };
-    }
-
-    fn test_starts<const C: usize>() -> anyhow::Result<()> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
-        let hmm_str = read_to_string(&path)?;
-        let hmm_bytes = hmm_str.as_bytes();
-        let starts = p7hmm_offset_starts_from_bytes(&hmm_bytes);
-
-        let names = hmm_str
-            .lines()
-            .filter(|l| l.starts_with(P7HeaderFlag::Name.as_ref()))
-            .map(|l| l.split_whitespace().nth(1).unwrap())
-            .collect::<Vec<&str>>();
-
-        let index = DefaultIndex::build::<_, P7HmmParser, 15, C>(&path)?;
-        starts.iter().zip(names.iter()).for_each(|(s, n)| {
-            let o = index.get(n).unwrap();
-            assert_eq!(o.start, *s);
-        });
-
-        Ok(())
-    }
-
-    p7hmm_index_test_start!(test_p7hmm_index_start_1_chunk, 1);
-    p7hmm_index_test_start!(test_p7hmm_index_start_2_chunks, 2);
-    p7hmm_index_test_start!(test_p7hmm_index_start_4_chunks, 4);
-    p7hmm_index_test_start!(test_p7hmm_index_start_8_chunks, 8);
-    p7hmm_index_test_start!(test_p7hmm_index_start_16_chunks, 16);
-    p7hmm_index_test_start!(test_p7hmm_index_start_32_chunks, 32);
 
     #[test]
     fn test_p7hmm_iter_parse() -> anyhow::Result<()> {
@@ -409,24 +54,51 @@ mod tests {
     }
 
     #[test]
-    fn test_profile_serialize() -> anyhow::Result<()> {
-        let mut bytes = vec![];
-        let mut file =
-            File::open(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"))?;
-        file.read_to_end(&mut bytes)?;
-        let prf = P7HmmParser::parse(&bytes)?;
+    fn test_p7hmm_records_in_file_order() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
 
-        let mut buf = vec![];
+        // the name of each model, by a plain scan of the NAME lines
+        let names: Vec<String> = read_to_string(&path)?
+            .lines()
+            .filter(|line| line.starts_with("NAME"))
+            .map(|line| line.split_whitespace().nth(1).unwrap().to_string())
+            .collect();
 
-        prf.serialize(&mut buf)?;
+        let p7hmm = P7Hmm::from_path(&path)?;
+        assert_eq!(p7hmm.len(), names.len());
 
-        let de = Profile::deserialize(Cursor::new(buf))?;
+        for (n, name) in names.iter().enumerate() {
+            assert_eq!(&p7hmm.name(n)?, name);
+            assert_eq!(&p7hmm.get(n)?.name, name);
+        }
 
-        assert_eq!(prf.name, de.name);
-        assert_eq!(prf.accession, de.accession);
-        assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
-        assert_eq!(prf.core_transitions, de.core_transitions);
-        assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
         Ok(())
     }
+
+    macro_rules! database_par_iter_test {
+        ($name:ident, $func:expr, $threads:expr) => {
+            #[test]
+            fn $name() -> anyhow::Result<()> {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads($threads)
+                    .build()
+                    .unwrap()
+                    .install(|| -> anyhow::Result<()> { $func() })
+            }
+        };
+    }
+
+    fn test_parse_p7hmm() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
+        let database = P7Hmm::from_path(&path)?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    database_par_iter_test!(test_p7hmm_par_iter_parse_1_thread, test_parse_p7hmm, 1);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_2_threads, test_parse_p7hmm, 2);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_4_threads, test_parse_p7hmm, 4);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_8_threads, test_parse_p7hmm, 8);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_16_threads, test_parse_p7hmm, 16);
+    database_par_iter_test!(test_p7hmm_par_iter_parse_32_threads, test_parse_p7hmm, 32);
 }

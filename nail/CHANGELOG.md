@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Deprecated
 ### Removed
+- removed mods `io::database`, `io::impl_rayon`, with struct `Database`, trait `RecordParser` and their helpers
+- removed structs `FastaParser`, `P7HmmParser`; their parsing moved to `Sequence::from_fasta()` and `Profile::from_p7hmm()` in libnail
+- removed trait `io::ByteBufferExt`
 ### Fixed
 ### Security
 -->
@@ -25,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added per-iteration rows under the `align` leaf of the `-s` runtime tree in `--seed-mode prog`, with an iteration count on the leaf
 - added dependency `libsail` 0.4.1 with feature `mmap`
 - added struct `io::Records`
-- added methods `Fasta::name()`, `P7Hmm::name()`, `Queries::name()`
+- added methods `Fasta::name()`, `P7Hmm::name()`, `P7Hmm::get()`, `Queries::name()`
 
 ### Changed
 - `build_pipeline()` now takes `&Queries` and runs before seeding

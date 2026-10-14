@@ -1,14 +1,11 @@
 use rand::Rng;
 use rand_pcg::Lcg128Xsl64;
-use seq_io::fasta::{Reader, Record};
 use std::fmt::{Debug, Display, Formatter};
-use std::path::Path;
 
 use crate::alphabet::{
-    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, AMINO_SENTINEL, UTF8_SPACE,
-    UTF8_TO_DIGITAL_AMINO,
+    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, AMINO_SENTINEL, UTF8_TO_DIGITAL_AMINO,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Result};
 use thiserror::Error;
 
 use super::Profile;
@@ -87,67 +84,65 @@ impl Sequence {
         }
     }
 
-    pub fn amino_from_fasta<P: AsRef<Path>>(path: P) -> Result<Vec<Self>> {
-        let mut seqs: Vec<Self> = vec![];
+    /// Build a sequence from the bytes of one fasta record.
+    pub fn from_fasta(buf: &[u8]) -> anyhow::Result<Sequence> {
+        let header_newline_pos = match buf.iter().position(|&b| b == b'\n') {
+            Some(pos) => pos,
+            None => bail!("no newline in FASTA record"),
+        };
 
-        let mut reader = Reader::from_path(path).unwrap();
+        let header_bytes = &buf[1..header_newline_pos];
+        let sequence_bytes = &buf[(header_newline_pos + 1)..];
 
-        while let Some(record) = reader.next() {
-            let record = record.with_context(|| "failed to read fasta record")?;
-            let mut header_bytes = record.head().to_vec();
-            let first_space_idx = header_bytes.iter().position(|&b| b == UTF8_SPACE);
+        let name = String::from_utf8(
+            header_bytes
+                .iter()
+                .take_while(|&&b| b != b' ')
+                .cloned()
+                .collect(),
+        )?;
 
-            let error_context: fn() -> &'static str =
-                || "failed to create String from fasta header bytes";
+        let details = match name.len().cmp(&(header_newline_pos - 1)) {
+            std::cmp::Ordering::Less => Some(String::from_utf8(
+                header_bytes[(name.len() + 1)..]
+                    .iter()
+                    .take_while(|&&b| b != b'\n')
+                    .cloned()
+                    .collect(),
+            )?),
+            std::cmp::Ordering::Equal => None,
+            std::cmp::Ordering::Greater => bail!("fasta name longer than header"),
+        };
 
-            let (name, details) = match first_space_idx {
-                Some(idx) => {
-                    let details_bytes = header_bytes.split_off(idx + 1);
-                    header_bytes.pop();
-                    (
-                        String::from_utf8(header_bytes).with_context(error_context)?,
-                        Some(String::from_utf8(details_bytes).with_context(error_context)?),
-                    )
-                }
-                None => (
-                    String::from_utf8(header_bytes).with_context(error_context)?,
-                    None,
-                ),
-            };
+        let mut utf8_bytes = Vec::with_capacity(sequence_bytes.len());
+        let mut digital_bytes = Vec::with_capacity(sequence_bytes.len());
 
-            // We want position 1 of the sequence to be at index 1, so we'll buffer with 255
-            let mut utf8_bytes: Vec<u8> = vec![255];
-            let mut digital_bytes: Vec<u8> = vec![255];
+        utf8_bytes.push(255);
+        digital_bytes.push(255);
 
-            for line in record.seq_lines() {
-                for utf8_byte in line {
-                    utf8_bytes.push(*utf8_byte);
+        sequence_bytes
+            .iter()
+            .filter(|&&b| b != b'\n')
+            .try_for_each(|b| {
+                utf8_bytes.push(*b);
+                digital_bytes.push(match UTF8_TO_DIGITAL_AMINO.get(b) {
+                    Some(b) => *b,
+                    None => {
+                        bail!("byte: \"{b}\" is not in the compressed amino acid alphabet")
+                    }
+                });
+                Ok(())
+            })?;
 
-                    let digital_byte = match UTF8_TO_DIGITAL_AMINO.get(utf8_byte) {
-                        Some(b) => b,
-                        None => {
-                            return Err(UnknownUtf8SequenceByteError { byte: *utf8_byte }.into())
-                        }
-                    };
-                    digital_bytes.push(*digital_byte)
-                }
-            }
+        digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
 
-            // we put a buffer on the end for backward edge cases
-            digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
-
-            utf8_bytes.shrink_to_fit();
-            digital_bytes.shrink_to_fit();
-
-            seqs.push(Sequence {
-                name,
-                details,
-                length: digital_bytes.len() - 2,
-                digital_bytes,
-                utf8_bytes,
-            });
-        }
-        Ok(seqs)
+        Ok(Sequence {
+            name,
+            details,
+            length: utf8_bytes.len() - 1,
+            digital_bytes,
+            utf8_bytes,
+        })
     }
 
     pub fn from_digital(bytes: &[u8]) -> Result<Self> {

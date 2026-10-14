@@ -16,8 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- added methods `Sequence::from_fasta()`, `Profile::from_p7hmm()`
+
 ### Changed
 - renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names
+
+### Removed
+- removed method `Sequence::amino_from_fasta()`
+- removed dependency `seq_io`
 
 ## [0.6.0] - 2026-7-31
 
