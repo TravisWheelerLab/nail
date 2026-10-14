@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added dependency `libsail` 0.4.2 with feature `mmap`
 - added struct `io::Records`
 - added methods `Fasta::name()`, `P7Hmm::name()`, `P7Hmm::get()`, `Queries::name()`
+- added method `PipelineArgs::validate()`
 
 ### Changed
 - `build_pipeline()` now takes `&Queries` and runs before seeding
@@ -57,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
+- fixed CLI param `-a 0` reaching a panic in cloud search; validation now rejects it at startup
 - fixed `PrefilterDb::from_path()` placing a record in an empty split file of a prefilter or align db, which could stop `--seed-mode prog` with an error
 
 ## [0.7.1] - 2026-7-31

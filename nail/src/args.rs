@@ -116,6 +116,8 @@ impl SearchArgs {
             }
         }
 
+        self.pipeline_args.validate()?;
+
         if let Some(p1) = self.dev_args.bit_p {
             let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
             if p1 != p2 {
@@ -398,6 +400,16 @@ pub struct PipelineArgs {
     pub only_seed: bool,
 }
 
+impl PipelineArgs {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.cloud_max_join_attempts == 0 {
+            bail!("the argument '{YELLOW}-a{RESET}' must be at least 1")
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Args, Debug, Clone, Default)]
 pub struct ExpertArgs {
     /// Override the number of comparisons used for E-value calculation
@@ -605,5 +617,35 @@ pub fn print_help_summary_zebra(e: &clap::Error) {
 
     for (h, i) in headers.into_iter().zip(info.into_iter().skip(1)) {
         print!("{h}{i}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_cloud_join_attempts_fails_validation() {
+        let args = PipelineArgs {
+            cloud_max_join_attempts: 0,
+            ..Default::default()
+        };
+
+        let Err(err) = args.validate() else {
+            panic!("-a 0 passed validation");
+        };
+        let message = err.to_string();
+        assert!(message.contains("-a"));
+        assert!(message.contains("must be at least 1"));
+    }
+
+    #[test]
+    fn one_cloud_join_attempt_passes_validation() -> anyhow::Result<()> {
+        let args = PipelineArgs {
+            cloud_max_join_attempts: 1,
+            ..Default::default()
+        };
+
+        args.validate()
     }
 }
