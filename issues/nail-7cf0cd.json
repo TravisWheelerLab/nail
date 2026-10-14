@@ -3,20 +3,20 @@
   "title": "`test_hmm_from_blosum62` panics in libnail",
   "body": "On `dev` at `837ba60`, `cargo test -p libnail` panics in `structs::profile::tests::test_hmm_from_blosum62`. The other 21 libnail tests pass. A plain `cargo test` stops at the failure, so nail's 37 tests run only under `cargo test -p nail`. Nobody has diagnosed it.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T22:20:08.845636633Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:27:31.758933822Z",
-  "updated_at": "2026-10-14T22:07:16.836339371Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T22:38:40.253294674Z",
+  "closed_at": "2026-10-14T22:38:40.253294674Z",
+  "close_reason": "Commit `b05455b` on `dev` replaced the test with `blosum62_profile_lambda_matches_hmmbuild`, which checks lambda on 5 sequences against `hmmbuild --singlemx`, and removed `Profile::calibrate_tau`. A plain `cargo test` passes across both crates. The tau offset the experiment found is nail-7c334f.",
+  "resolution": "done",
   "notes": [
     {
       "id": "cd28fb05",
@@ -40,6 +40,9 @@
       "commit": "bdb967d",
       "branch": "runtime-tree"
     },
-    "closed": null
+    "closed": {
+      "commit": "b05455b",
+      "branch": "dev"
+    }
   }
 }
