@@ -494,13 +494,29 @@ pub fn write_mmseqs_sequence_database(
     let mut db_header = header_path.open(true)?;
     let mut db_header_index = header_index_path.open(true)?;
 
+    write_sequence_db(
+        sequences,
+        SEQUENCE_DB_BATCH_LEN,
+        &mut db,
+        &mut db_index,
+        &mut db_header,
+        &mut db_header_index,
+    )
+}
+
+fn write_sequence_db(
+    sequences: &Fasta,
+    batch_len: usize,
+    db: &mut impl Write,
+    db_index: &mut impl Write,
+    headers: &mut impl Write,
+    header_index: &mut impl Write,
+) -> anyhow::Result<()> {
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
     let mut position = 0usize;
 
-    let batch_starts: Vec<usize> = (0..sequences.len())
-        .step_by(SEQUENCE_DB_BATCH_LEN)
-        .collect();
+    let batch_starts: Vec<usize> = (0..sequences.len()).step_by(batch_len).collect();
 
     // a group of batches is built at a time, so memory
     // holds one group's bytes and not the whole db
@@ -508,21 +524,18 @@ pub fn write_mmseqs_sequence_database(
         let batches = group
             .par_iter()
             .map(|&start| {
-                let end = (start + SEQUENCE_DB_BATCH_LEN).min(sequences.len());
+                let end = (start + batch_len).min(sequences.len());
                 SequenceDbBatch::build(sequences, start..end)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         for batch in batches {
             db.write_all(&batch.db)?;
-            db_header.write_all(&batch.headers)?;
+            headers.write_all(&batch.headers)?;
 
             for (db_length, header_length) in batch.db_lengths.iter().zip(&batch.header_lengths) {
                 writeln!(db_index, "{position}\t{db_offset}\t{db_length}")?;
-                writeln!(
-                    db_header_index,
-                    "{position}\t{header_offset}\t{header_length}"
-                )?;
+                writeln!(header_index, "{position}\t{header_offset}\t{header_length}")?;
 
                 db_offset += db_length;
                 header_offset += header_length;
@@ -746,4 +759,86 @@ pub fn run_mmseqs_convertalis(
         .run()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn sequence_db_is_the_same_at_every_batch_length() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let fasta = Fasta::from_path(&path)?;
+
+        // the db as the writer built it before batching:
+        // one record at a time, in file order. text, so a
+        // failure prints lines and not bytes
+        let mut expected_db = String::new();
+        let mut expected_db_index = String::new();
+        let mut expected_headers = String::new();
+        let mut expected_header_index = String::new();
+        let mut db_offset = 0;
+        let mut header_offset = 0;
+        for n in 0..fasta.len() {
+            let seq = fasta.get(n)?;
+            expected_db += std::str::from_utf8(&seq.utf8_bytes[1..])?;
+            expected_db += "\n\0";
+            expected_db_index += &format!("{n}\t{db_offset}\t{}\n", seq.length + 2);
+            db_offset += seq.length + 2;
+
+            let header = n.to_string();
+            expected_headers += &format!("{header}\n\0");
+            expected_header_index += &format!("{n}\t{header_offset}\t{}\n", header.len() + 2);
+            header_offset += header.len() + 2;
+        }
+
+        // 1 is a batch per record, 7 leaves a last batch of
+        // one record, 400 is one batch, 401 overruns the file
+        for batch_len in [1, 7, 400, 401] {
+            // at 3 threads a group is 3 batches, and the last
+            // group is short at batch lengths 1 and 7
+            for threads in [1, 3] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()?;
+
+                let mut db = vec![];
+                let mut db_index = vec![];
+                let mut headers = vec![];
+                let mut header_index = vec![];
+                pool.install(|| {
+                    write_sequence_db(
+                        &fasta,
+                        batch_len,
+                        &mut db,
+                        &mut db_index,
+                        &mut headers,
+                        &mut header_index,
+                    )
+                })?;
+
+                let at = format!("batch length {batch_len}, {threads} threads");
+                assert_eq!(String::from_utf8(db)?, expected_db, "db at {at}");
+                assert_eq!(
+                    String::from_utf8(db_index)?,
+                    expected_db_index,
+                    ".index at {at}"
+                );
+                assert_eq!(
+                    String::from_utf8(headers)?,
+                    expected_headers,
+                    "headers at {at}"
+                );
+                assert_eq!(
+                    String::from_utf8(header_index)?,
+                    expected_header_index,
+                    "header .index at {at}"
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
