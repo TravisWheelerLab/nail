@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T17:30:43.252883723Z",
+  "updated_at": "2026-10-14T17:42:28.863802552Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "f5b5f7b8",
+      "at": "2026-10-14T17:42:28.863801922Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Decided: nail writes each record's position in its input file, as decimal digits, into the header db of each mmseqs database it builds, in place of the record's name. The position is the `n` that `Framed::record(n)` takes. `convertalis` prints those digits as `qheader` and `theader`, `Seeds` parses them as integers, and `Pipeline::run` reads the target with `get(n)`. No lookup by name happens per seed. Targets then need no name index, and `profiles` becomes a `Vec<Profile>` indexed by position. nail still prints names in its output, taken from the parsed `Sequence` and `Profile`.\n\nA user-supplied seeds file still holds names. Jack wants that in its own issue, filed once this one is done.",
+      "commit": "432ff65",
+      "branch": "libsail-io"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "432ff65",
