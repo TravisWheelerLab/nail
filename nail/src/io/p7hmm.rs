@@ -1,4 +1,6 @@
-use crate::io::{util::ByteBufferExt, Database, Offset};
+use std::path::Path;
+
+use crate::io::{util::ByteBufferExt, Offset, Records};
 
 use libnail::structs::{
     profile::{ProfileBuilder, Transition},
@@ -6,11 +8,39 @@ use libnail::structs::{
 };
 
 use anyhow::{bail, Context};
+use libsail::format::Format;
+use rayon::prelude::*;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use super::{Delimiter, RecordParser};
 
-pub type P7Hmm = Database<P7HmmParser>;
+/// A p7hmm file and where each of its models sits in it.
+pub struct P7Hmm(Records);
+
+impl P7Hmm {
+    pub fn from_path(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        Ok(Self(Records::map(path, Format::Hmm)?))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The name of the `n`th model.
+    pub fn name(&self, n: usize) -> anyhow::Result<String> {
+        self.0.name(n)
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = anyhow::Result<Profile>> + '_ {
+        (0..self.len()).map(|n| self.0.parse(n, P7HmmParser::parse))
+    }
+
+    pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = anyhow::Result<Profile>> + '_ {
+        (0..self.len())
+            .into_par_iter()
+            .map(|n| self.0.parse(n, P7HmmParser::parse))
+    }
+}
 
 #[derive(Clone)]
 enum P7HmmParserState {

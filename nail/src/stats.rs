@@ -249,17 +249,21 @@ struct Leaf {
 }
 
 impl Stats {
-    pub fn new(queries: &Queries, n_targets: usize) -> Self {
+    pub fn new(queries: &Queries, n_targets: usize) -> anyhow::Result<Self> {
         let mut stats = Self::default();
 
-        let (query_names, n_queries) = match queries {
-            Queries::Sequence(db) => (db.index.keys(), db.len()),
-            Queries::Profile(db) => (db.index.keys(), db.len()),
-        };
+        let n_queries = queries.len();
+        let query_names = (0..n_queries)
+            .map(|n| match queries {
+                Queries::Sequence(db) => db.name(n),
+                Queries::Profile(db) => db.name(n),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         stats.hit_counts_by_query = Arc::new(
             query_names
-                .map(|n| (n.to_string(), AtomicUsize::new(0)))
+                .into_iter()
+                .map(|n| (n, AtomicUsize::new(0)))
                 .collect::<HashMap<_, _>>(),
         );
 
@@ -267,7 +271,7 @@ impl Stats {
         stats.set_computed_value(ComputedValue::Targets, n_targets as u64);
         stats.set_computed_value(ComputedValue::Alignments, (n_queries * n_targets) as u64);
 
-        stats
+        Ok(stats)
     }
 
     pub fn set_num_threads(&mut self, num_threads: usize) {

@@ -111,7 +111,7 @@ impl PipelineResult {
 pub struct Pipeline {
     pub profiles: Arc<HashMap<String, Profile>>,
     pub prf: Option<Profile>,
-    pub targets: Fasta,
+    pub targets: Arc<Fasta>,
     pub cloud_search: Box<dyn CloudSearchStage>,
     pub align: Box<dyn AlignStage>,
     pub output: Arc<Mutex<OutputStage>>,

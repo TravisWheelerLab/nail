@@ -146,7 +146,7 @@ pub fn build_pipeline(
     Ok(Pipeline {
         profiles,
         prf: None,
-        targets,
+        targets: Arc::new(targets),
         cloud_search: match args.dev_args.full_dp {
             true => Box::<FullDpCloudSearchStage>::default(),
             false => Box::new(DefaultCloudSearchStage::new(args)),
@@ -185,7 +185,7 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         Fasta::from_path(&args.target_path).context("failed to index target fasta")
     })?;
 
-    let mut stats = Stats::new(&queries, targets.len());
+    let mut stats = Stats::new(&queries, targets.len())?;
     stats.set_num_threads(args.num_threads);
     stats.set_setup_time(SetupTimed::QueryIndex, query_index_time);
     stats.set_setup_time(SetupTimed::TargetIndex, target_index_time);

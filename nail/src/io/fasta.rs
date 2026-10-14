@@ -1,14 +1,52 @@
+use std::path::Path;
+
 use anyhow::bail;
 use libnail::{
     alphabet::UTF8_TO_DIGITAL_AMINO,
     structs::{Profile, Sequence},
 };
+use libsail::format::Format;
+use rayon::prelude::*;
 
-use crate::io::{ByteBufferExt, Database, Offset};
+use crate::io::{ByteBufferExt, Offset, Records};
 
 use super::{Delimiter, RecordParser};
 
-pub type Fasta = Database<FastaParser>;
+/// A fasta file and where each of its records sits in it.
+pub struct Fasta(Records);
+
+impl Fasta {
+    pub fn from_path(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        Ok(Self(Records::map(path, Format::Fasta)?))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The name of the `n`th record.
+    pub fn name(&self, n: usize) -> anyhow::Result<String> {
+        self.0.name(n)
+    }
+
+    pub fn get(&self, name: &str) -> Option<anyhow::Result<Sequence>> {
+        match self.0.position(name) {
+            Ok(Some(n)) => Some(self.0.parse(n, FastaParser::parse)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = anyhow::Result<Sequence>> + '_ {
+        (0..self.len()).map(|n| self.0.parse(n, FastaParser::parse))
+    }
+
+    pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = anyhow::Result<Sequence>> + '_ {
+        (0..self.len())
+            .into_par_iter()
+            .map(|n| self.0.parse(n, FastaParser::parse))
+    }
+}
 
 #[derive(Clone)]
 pub struct FastaParser {
