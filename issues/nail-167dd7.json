@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T18:02:26.560380541Z",
+  "updated_at": "2026-10-14T18:12:46.354092189Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -39,6 +39,14 @@
       "at": "2026-10-14T18:02:26.53951457Z",
       "author": "Jack Roddy/2680c5a4",
       "text": "Checked the `.index` assumption in `PrefilterDb::from_path` against mmseqs `8cc5ce3`, in its source and with runs on up to 8 threads. It holds. `Prefiltering.cpp` and `Alignment.cpp` write one record per query, including a query with no hits, which gets a record of just the null byte. `DBWriter::close` sorts the merged index by key. On a 24-query db built by `createdb`, the `.index` files from `prefilter` and `align` each held 24 lines with keys 0 to 23 in order, 8 of them of length 1.\n\nThe way `from_path` finds the split file for each offset holds as well, with one flaw filed as nail-b70c4b.",
+      "commit": "1326e49",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "bcbdc6bb",
+      "at": "2026-10-14T18:12:46.354091359Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Measured the index build on `tmp-claude/2026-10-08-align-fixed-cost/mgy-db/targets.fa`, 2,455,940 records in 510 MiB, with the file in the page cache. A scratch crate in `tmp-claude/2026-10-14-index-build/` compiles nail's `io` module from `nail/src/io` against `libsail` 0.4.1, and builds one index per process. Five runs of each, interleaved, single-threaded:\n\n| build | seconds | peak RSS |\n|---|---|---|\n| `Fasta::from_path` | 0.545 to 0.564 | 229 MiB |\n| `Framed::open` | 0.066 to 0.068 | 59 MiB |\n| `Framed::map` | 0.075 to 0.076 | 570 MiB |\n| `Framed::map`, then `name_index` | 0.876 to 0.899 | 659 MiB |\n\nPeak RSS is `VmHWM` from `/proc/self/status`. For `Framed::map` it includes the mapped file's pages, which sit in the page cache, so the 570 MiB holds the 510 MiB file. The buffer copy in `build_for` does not make `Framed` slower: both `Framed` builds index the file about eight times faster than nail's pass. Naming every record adds about 0.8 s and 90 MiB, which the position ids avoid for targets. A cold page cache and the cost of reading records back were not measured.",
       "commit": "1326e49",
       "branch": "libsail-io"
     }
