@@ -15,7 +15,7 @@
   "lease_expires": "2026-10-14T23:32:04.774402789Z",
   "defer_until": null,
   "created_at": "2026-10-14T22:07:16.846098238Z",
-  "updated_at": "2026-10-14T23:17:04.774402789Z",
+  "updated_at": "2026-10-14T23:17:36.786125419Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -33,6 +33,14 @@
       "at": "2026-10-14T22:39:26.056719865Z",
       "author": "Jack Roddy/95b307ba",
       "text": "Found the fit experiment: `~/Downloads/tau-calibration.zip`, files dated 2026-09-13, unpacked in `tmp-claude/2026-10-14-tau-calibration/extracted`. It ran `hmmbuild --singlemx --seed 42` on 189,921 PANTHER 19.0 sequences, recorded tau as -mu from the STATS LOCAL FORWARD line, and fit tau = a*ln(L) + b by least absolute error. Its result is tau = 1.34*ln(L) - 2.33, centred on hmmbuild: the mean error is +0.006 on the training set, -0.004 on a second seed and +0.019 on 193,872 held-out sequences. nail does not use that fit. The constants in `from_blosum_62_and_seq` came in with `a9900ba` on 2026-03-23, six months before the experiment, and work out to tau = 1.317*ln(L) - 2.537 in the same sign convention. On the experiment's own data that form sits 0.338 below hmmbuild on training, 0.348 on the second seed and 0.325 on held-out. As `fwd_tau` that is the +0.30 offset in this issue. So the offset is a stale fit and not a uni-hit against multi-hit difference: the experiment used plain hmmbuild, which calibrates in multi-hit mode.",
+      "commit": "b05455b",
+      "branch": "dev"
+    },
+    {
+      "id": "2a067b14",
+      "at": "2026-10-14T23:17:36.786124439Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Uncommitted on `dev`: `from_blosum_62_and_seq` sets `fwd_tau = -(1.34 * ln(L) - 2.33)`, the fit nail-62baa5 confirmed, replacing `KL_BLOSUM62` and the three `MAGIC_TAU` constants. On the 49-sequence SwissProt bag, nail tau minus hmmbuild's mean mu over 100 seeds is now -0.046 on average (standard deviation 0.254), where it was +0.300.",
       "commit": "b05455b",
       "branch": "dev"
     }
