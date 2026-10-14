@@ -2,17 +2,18 @@ use self::consts::*;
 
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, Write},
+    io::{BufRead, BufReader, Write},
     ops::Range,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
+use libsail::source::MmapSource;
 
 use crate::{
     args::SearchArgs,
-    io::{Fasta, ReadSeekExt, ReadState},
+    io::Fasta,
     util::{CommandExt, PathExt},
 };
 
@@ -29,6 +30,7 @@ pub mod consts {
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ByteBuffer<'a> {
     Complete(&'a [u8]),
     Partial(&'a [u8], usize),
@@ -43,11 +45,10 @@ struct Descriptor {
 }
 
 pub struct PrefilterDb {
-    file: File,
-    paths: Vec<PathBuf>,
+    /// The split files, mapped, in suffix order.
+    maps: Vec<MmapSource>,
     descriptors: Vec<Descriptor>,
     checkpoints: Vec<u64>,
-    buf: Vec<u8>,
 }
 
 impl PrefilterDb {
@@ -130,7 +131,7 @@ impl PrefilterDb {
 
         // --
 
-        let mut descriptors = offsets
+        let descriptors = offsets
             .into_iter()
             .zip(lengths)
             .map(|(offset, length)| {
@@ -149,107 +150,68 @@ impl PrefilterDb {
             })
             .collect::<Vec<_>>();
 
-        for desc in descriptors.iter_mut() {
-            let mut file = File::open(&paths[desc.file_idx])?;
-            file.seek(std::io::SeekFrom::Start(desc.offset + desc.length))?;
+        let maps = paths
+            .iter()
+            .map(|path| {
+                // SAFETY: mmseqs has finished writing the db
+                //         before nail opens it, and nail never
+                //         writes to it
+                unsafe { MmapSource::open(path) }
+                    .with_context(|| format!("failed to map {}", path.display()))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let mut b = [0u8; 1];
-            file.read_exact(&mut b)?;
-            let byte = b[0];
-            assert!(byte == 0);
+        for desc in &descriptors {
+            let bytes = maps[desc.file_idx].bytes();
+            let end = (desc.offset + desc.length) as usize;
+            if bytes.get(end) != Some(&0) {
+                bail!("a record in {} does not end in a null byte", path.display());
+            }
         }
 
-        let file = File::open(&paths[0])?;
         let checkpoints = vec![0; descriptors.len()];
-        let buf = Vec::with_capacity(2 << 11);
 
         Ok(Self {
-            file,
-            paths,
+            maps,
             descriptors,
             checkpoints,
-            buf,
         })
     }
 
-    pub fn open_file(&mut self, file_idx: usize) -> anyhow::Result<()> {
-        self.file = File::open(&self.paths[file_idx])?;
-        Ok(())
+    pub fn get(&self, prf_idx: usize) -> &[u8] {
+        let desc = self.descriptors[prf_idx];
+        let start = desc.offset as usize;
+        let end = start + desc.length as usize;
+
+        &self.maps[desc.file_idx].bytes()[start..end]
     }
 
-    pub fn get(&mut self, prf_idx: usize) -> anyhow::Result<&[u8]> {
+    pub fn next_n(&mut self, prf_idx: usize, n: usize) -> ByteBuffer<'_> {
         let desc = self.descriptors[prf_idx];
-
-        if desc.length == 0 {
-            return Ok(&[]);
-        }
-
-        self.open_file(desc.file_idx)?;
-
-        self.file.seek(std::io::SeekFrom::Start(desc.offset))?;
-        let mut taken = (&mut self.file).take(desc.length);
-
-        self.buf.clear();
-        self.buf.resize(desc.length as usize, 0);
-
-        match taken.read_with_state(&mut self.buf)? {
-            ReadState::Final(_) => Ok(&self.buf),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn next_n(&'_ mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer<'_>> {
-        if n == 0 {
-            return Ok(ByteBuffer::Empty);
-        }
-
-        let desc = self.descriptors[prf_idx];
-        self.open_file(desc.file_idx)?;
-
         let checkpoint = &mut self.checkpoints[prf_idx];
 
-        let start = desc.offset + *checkpoint;
-        let end = desc.offset + desc.length;
-        let remaining = end.saturating_sub(start);
+        let start = (desc.offset + *checkpoint) as usize;
+        let end = (desc.offset + desc.length) as usize;
+        let remaining = &self.maps[desc.file_idx].bytes()[start..end];
 
-        if remaining == 0 {
-            return Ok(ByteBuffer::Empty);
+        if n == 0 || remaining.is_empty() {
+            return ByteBuffer::Empty;
         }
 
-        self.file.seek(std::io::SeekFrom::Start(start))?;
-        let mut taken = (&mut self.file).take(remaining);
-
-        self.buf.clear();
-
-        const CHUNK_SZ: usize = 2 << 12;
         let mut record_cnt = 0;
-        loop {
-            let old_len = self.buf.len();
-            self.buf.resize(old_len + CHUNK_SZ, 0);
+        for (pos, &b) in remaining.iter().enumerate() {
+            if b == b'\n' {
+                record_cnt += 1;
+            }
 
-            let n_read = match taken.read_with_state(&mut self.buf[old_len..])? {
-                ReadState::Reading(n) | ReadState::Final(n) => n,
-                ReadState::Done => {
-                    self.buf.truncate(old_len);
-                    *checkpoint = desc.length;
-                    return Ok(ByteBuffer::Partial(&self.buf, record_cnt));
-                }
-            };
-
-            self.buf.truncate(old_len + n_read);
-
-            for (pos, &b) in self.buf.iter().enumerate().skip(old_len) {
-                if b == b'\n' {
-                    record_cnt += 1;
-                }
-
-                if record_cnt == n {
-                    *checkpoint += (pos + 1) as u64;
-                    self.buf.truncate(pos + 1);
-                    return Ok(ByteBuffer::Complete(&self.buf));
-                }
+            if record_cnt == n {
+                *checkpoint += (pos + 1) as u64;
+                return ByteBuffer::Complete(&remaining[..=pos]);
             }
         }
+
+        *checkpoint = desc.length;
+        ByteBuffer::Partial(remaining, record_cnt)
     }
 }
 
@@ -766,6 +728,60 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    // prefilter-db holds three records over three split
+    // files. pdb.0 holds record 0, "a\nb\nc\n". pdb.1 is
+    // empty, so it starts at offset 7, as pdb.2 does. pdb.2
+    // holds record 1, "d\n", and record 2, which is empty
+    fn split_prefilter_db() -> anyhow::Result<PrefilterDb> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/prefilter-db/pdb");
+        PrefilterDb::from_path(path)
+    }
+
+    #[test]
+    fn prefilter_db_gets_records_across_split_files() -> anyhow::Result<()> {
+        let db = split_prefilter_db()?;
+
+        assert_eq!(db.get(0), b"a\nb\nc\n");
+        assert_eq!(db.get(1), b"d\n");
+        assert_eq!(db.get(2), b"");
+
+        Ok(())
+    }
+
+    #[test]
+    fn prefilter_db_next_n_takes_lines_from_a_checkpoint() -> anyhow::Result<()> {
+        let mut db = split_prefilter_db()?;
+
+        // a take of zero lines does not move the checkpoint
+        assert_eq!(db.next_n(0, 0), ByteBuffer::Empty);
+        assert_eq!(db.next_n(0, 2), ByteBuffer::Complete(&b"a\nb\n"[..]));
+
+        // one line is left, so the take is partial and counts it
+        assert_eq!(db.next_n(0, 2), ByteBuffer::Partial(&b"c\n"[..], 1));
+        assert_eq!(db.next_n(0, 2), ByteBuffer::Empty);
+
+        // each record keeps its own checkpoint
+        assert_eq!(db.next_n(1, 1), ByteBuffer::Complete(&b"d\n"[..]));
+        assert_eq!(db.next_n(1, 1), ByteBuffer::Empty);
+        assert_eq!(db.next_n(2, 1), ByteBuffer::Empty);
+
+        Ok(())
+    }
+
+    #[test]
+    fn prefilter_db_refuses_a_record_without_its_null_byte() {
+        // the file is "a\n\0", and the index gives the one
+        // record a length of 2 with its null byte. so the
+        // record is "a", and the byte after it is "\n"
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/prefilter-db-unterminated/pdb");
+
+        let Err(err) = PrefilterDb::from_path(path) else {
+            panic!("a record without its null byte was accepted");
+        };
+        assert!(err.to_string().contains("does not end in a null byte"));
+    }
 
     #[test]
     fn sequence_db_is_the_same_at_every_batch_length() -> anyhow::Result<()> {

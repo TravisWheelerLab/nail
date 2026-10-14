@@ -9,6 +9,3 @@ pub use p7hmm::*;
 
 mod seeds;
 pub use seeds::*;
-
-mod util;
-pub use util::*;
