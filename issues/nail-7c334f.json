@@ -1,0 +1,28 @@
+{
+  "id": "nail-7c334f",
+  "title": "nail's closed-form tau sits about 0.3 above hmmbuild's tau for single-sequence profiles",
+  "body": "`Profile::from_blosum_62_and_seq` in `libnail/src/structs/profile.rs` builds the profile for a sequence query. It sets tau from a closed form in the sequence length L alone:\n\n```rust\nlet tau = -((-MAGIC_TAU_1 * KL_BLOSUM62) + (MAGIC_TAU_2 * (seq.length as f32).ln()) - MAGIC_TAU_3);\n```\n\nwith `KL_BLOSUM62 = 0.589`, `MAGIC_TAU_1 = 0.662`, `MAGIC_TAU_2 = 1.317` and `MAGIC_TAU_3 = 2.147`. Tau and lambda set every p-value nail reports for a sequence query.\n\nA comparison against `hmmbuild --singlemx` (HMMER 3.4) on 49 sequences, each at seeds 1 to 100, found nail's tau above hmmbuild's mean tau by 0.300 on average (standard deviation 0.242, range -0.254 to +0.814). hmmbuild's tau itself has a standard deviation of about 0.18 across seeds. The data and the method are in the note on nail-7cf0cd from 2026-10-14. At lambda near 0.7, a tau 0.3 higher multiplies every p-value by about exp(0.7 × 0.3) ≈ 1.23, making them more conservative.\n\n## Open\n\n- Whether the offset is intended. The removed `Profile::calibrate_tau` carried the comment \"HMMER uses multi-hit mode to calibrate Tau, but we are using uni-hit mode\". If the closed form was fit to nail's own uni-hit scores, hmmbuild's multi-hit tau is the wrong reference, and the offset is expected.\n- Whether the sequence-dependent part matters. hmmbuild's mean tau differs by up to 0.56 between sequences of nearly the same length, which a closed form in L cannot follow.",
+  "type": "task",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T22:07:16.846098238Z",
+  "updated_at": "2026-10-14T22:07:16.846098238Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "944417e",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
