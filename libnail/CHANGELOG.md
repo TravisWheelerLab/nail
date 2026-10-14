@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names
+- `Profile::from_blosum_62_and_seq()` sets tau to `2.33 - 1.34 ln(L)`, a fit to `hmmbuild --singlemx`; the old closed form sat about 0.34 bits above hmmbuild's tau, so p-values for sequence queries are now about 21% smaller
 
 ### Removed
 - removed method `Sequence::amino_from_fasta()`

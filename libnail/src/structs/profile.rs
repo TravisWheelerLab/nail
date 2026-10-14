@@ -788,15 +788,28 @@ impl Profile {
         //       sequence and the mean relative entropy of blosum62
         prf.fwd_lambda(std::f32::consts::LN_2 + 1.44 / total_entropy);
 
-        // tau
-        // note: this all comes from some experimentation fitting ~200k
-        //       sequences to learn a closed form solution for tau
+        // the slope of tau on ln(L), fit to the tau that
+        // `hmmbuild --singlemx` gives on 189,921 PANTHER 19.0
+        // sequences
+        const TAU_SLOPE: f32 = 1.34;
+
+        // the relative entropy of BLOSUM62, the matrix behind
+        // every single-sequence profile
         const KL_BLOSUM62: f32 = 0.589;
-        const MAGIC_TAU_1: f32 = 0.662;
-        const MAGIC_TAU_2: f32 = 1.317;
-        const MAGIC_TAU_3: f32 = 2.147;
-        let tau = -((-MAGIC_TAU_1 * KL_BLOSUM62) + (MAGIC_TAU_2 * (seq.length as f32).ln())
-            - MAGIC_TAU_3);
+
+        // the weight on the matrix's relative entropy within
+        // the intercept
+        const TAU_KL_WEIGHT: f32 = 0.662;
+
+        // the part of the intercept that does not depend on
+        // the matrix
+        const TAU_BASE: f32 = 1.94;
+
+        // the intercept of the same fit, 2.33, built from the
+        // matrix's share and the base
+        const TAU_INTERCEPT: f32 = TAU_KL_WEIGHT * KL_BLOSUM62 + TAU_BASE;
+
+        let tau = -(TAU_SLOPE * (seq.length as f32).ln() - TAU_INTERCEPT);
 
         prf.fwd_tau(tau);
 
