@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T20:18:55.618769353Z",
-  "updated_at": "2026-10-14T20:19:21.735395142Z",
+  "updated_at": "2026-10-14T20:19:30.297348092Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "bc64dcd4",
+      "at": "2026-10-14T20:19:30.297346692Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "With `--only-seed`, `search` calls `seed` and returns before `build_pipeline` runs (`search.rs`, the `only_seed` branch). On that path no parsed profiles exist, so the writer still needs a way to parse them itself.",
+      "commit": "a8a28e5",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "a8a28e5",
