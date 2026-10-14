@@ -1,7 +1,7 @@
 {
   "id": "nail-fc2ac4",
   "title": "nail writes the mmseqs target db in parallel",
-  "body": "On the mgy run the db write takes 15.5 s, 3.2% of the run and the largest serial item. `write_mmseqs_sequence_database` in `mmseqs.rs` iterates 2.4M records through the serial `Database::iter`. Each `Database::get` costs a seek and a `read_exact`, then a parse into UTF-8 and digital byte vectors with a map lookup per residue. All of it runs on one thread, including the writes through a `BufWriter`.\n\n## Proposal\n\nA rayon loop over ranges of records builds one byte buffer per range, with each record's length. One sequential write then assigns the offsets. The query db write can run beside it on another thread.\n\n## Cost\n\nA sequential write of about 700 MB takes about 1 s on an SSD, which sets the floor. The estimate is 15 s down to 1 or 2 s. Nobody has measured it.",
+  "body": "`write_mmseqs_sequence_database` in `mmseqs.rs` writes the mmseqs target db that the prefilter searches. It walks the targets with `Fasta::iter`, which parses each record with `Sequence::from_fasta` from the mapped file. For each record it writes the residues to the db, a line to the db's `.index`, the record's position as its header, and a line to the header `.index`. It runs on one thread, through four files.\n\nThe \"db write\" leaf of the `-s` tree times this writer together with the query db writer, which runs right after it. On the 8-thread run at `92de7c5` (note on nail-1964b2) the leaf took 7.31 s. A run with one Pfam profile against the same 2,455,940 targets took 4.32 s, so the target db is about 4.3 s of it. The rest is the query profile db, nail-811f24.\n\n## Proposal\n\nA rayon loop over ranges of records builds, for each range, the db bytes, the header bytes and each record's lengths. One sequential pass then writes the ranges in order and assigns the offsets for both `.index` files. The db holds only the residues, so the parse can skip the digital bytes and the name that `Sequence::from_fasta` builds. Whether that means a narrower parse here or a cheaper `from_fasta` is part of nail-2ec538.\n\n## Cost\n\nA sequential write of about 470 MB, the size of the db mmseqs built for these targets, should take about 1 s on an SSD. That sets the floor. The estimate is 4.3 s down to 1 or 2 s at 8 threads. Nobody has measured it.",
   "type": "task",
   "status": "open",
   "priority": 2,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.412018534Z",
-  "updated_at": "2026-10-13T23:11:17.938146888Z",
+  "updated_at": "2026-10-14T20:19:21.749274962Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
