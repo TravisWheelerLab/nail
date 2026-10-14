@@ -1,0 +1,28 @@
+{
+  "id": "nail-8cb666",
+  "title": "`PrefilterDb` reopens its file for every record it reads",
+  "body": "placeholder",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-1964b2",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T21:19:35.68733897Z",
+  "updated_at": "2026-10-14T21:19:35.68733897Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "f337e0f",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
