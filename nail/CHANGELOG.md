@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
+- fixed `PrefilterDb::from_path()` placing a record in an empty split file of a prefilter or align db, which could stop `--seed-mode prog` with an error
 
 ## [0.7.1] - 2026-7-31
 

@@ -134,12 +134,11 @@ impl PrefilterDb {
             .into_iter()
             .zip(lengths)
             .map(|(offset, length)| {
-                let file_idx = match prefix_sum.binary_search(&offset) {
-                    // this means the binary search found the exact offset
-                    Ok(idx) => idx,
-                    // this means the binary search landed between offsets
-                    Err(idx) => idx.saturating_sub(1),
-                };
+                // the last file starting at or before the offset:
+                // an empty split file starts where the next one
+                // does, and binary_search may return either for
+                // a record at the start of the next file
+                let file_idx = prefix_sum.partition_point(|&start| start <= offset) - 1;
 
                 let relative_offset = offset - prefix_sum[file_idx];
                 Descriptor {
