@@ -3,20 +3,20 @@
   "title": "The duplicate-name check in `Records::map` takes 2.2 s on 2.4M targets",
   "body": "`Records::map` in `nail/src/io/records.rs` maps an input with libsail's `Framed::map`, then builds the name index with `framed.name_index()`. It then refuses a file that repeats a record name. For each record `n` it allocates the name as a `String`, looks the name up with `position`, and bails if the first match is not `n`. The check exists because the index libsail replaced refused repeated names, and a lookup by name returns only the first record. The loop runs on one thread.\n\nOn the 2,455,940-record mgy target fasta, with a warm page cache on the 16-core box:\n\n| step | seconds |\n|---|---|\n| `Framed::map` | 0.07 |\n| `Framed::map` and `name_index` | 0.87 |\n| `Fasta::from_path`, which adds the duplicate check | 3.04 to 3.08 |\n\nThe duplicate check costs about 2.2 s, and it is the largest part of the 3.36 s target index in the 8-thread run on the parent issue. The timer is the scratch crate in `tmp-claude/2026-10-14-serial-overhead/index-split`.\n\n## Open\n\n- Whether libsail's name index can report a repeated name while it builds, which would make the loop unnecessary.\n- If not, whether the loop can skip the `String` allocation and run over rayon.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-1964b2",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T20:14:14.438421139Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T19:50:39.592930959Z",
-  "updated_at": "2026-10-14T20:08:27.751709606Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T20:09:14.372160597Z",
+  "closed_at": "2026-10-14T20:09:14.372160597Z",
+  "close_reason": "Commit `a8a28e5` on `dev` replaced the binary search with `refuse_repeated_names`, one `HashSet` per rayon thread sharded by name hash. The target index on 2,455,940 targets at `-t 8` went from 3.3 s to 1.0 s. A neighbour pass in libsail would remove the check entirely and is not filed yet. nail-fe0f9e tests the scaling claim on a larger box.",
+  "resolution": "done",
   "notes": [
     {
       "id": "2a64c30c",
@@ -40,6 +40,9 @@
       "commit": "92de7c5",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "a8a28e5",
+      "branch": "dev"
+    }
   }
 }
