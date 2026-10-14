@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T17:42:33.590726648Z",
+  "updated_at": "2026-10-14T17:51:16.818862687Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/2680c5a4",
       "text": "Decided: nail writes each record's position in its input file, as decimal digits, into the header db of each mmseqs database it builds, in place of the record's name. The position is the `n` that `Framed::record(n)` takes. `convertalis` prints those digits as `qheader` and `theader`, `Seeds` parses them as integers, and `Pipeline::run` reads the target with `get(n)`. No lookup by name happens per seed. Targets then need no name index, and `profiles` becomes a `Vec<Profile>` indexed by position. nail still prints names in its output, taken from the parsed `Sequence` and `Profile`.\n\nA user-supplied seeds file still holds names. Jack wants that in its own issue, filed once this one is done.",
       "commit": "432ff65",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "c65b554f",
+      "at": "2026-10-14T17:51:16.818862067Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Checked the `prf_idx` values in `seed_progressive`. They are query db keys and never touch the header db. `seed_progressive` numbers its per-query `State` entries `0..queries.len()`. `PrefilterDb::next_n` and `PrefilterDb::get` look records up by that number, and the merged align db at the end of `seed_progressive` writes it as each record's key. `write_mmseqs_sequence_database` and `write_mmseqs_profile_database` take each record's key from `enumerate()` over `Database::iter`. Once the writers number records `0..len` in file order through `Framed`, a query's key, its `prf_idx` and its position are the same number. mmseqs reads the header db only in `convertalis`, so writing positions in place of names changes only what `convertalis` prints.\n\n`PrefilterDb::from_path` ignores the key column of the `.index` file and uses each line's number as the key. That holds only if mmseqs writes one index line per query, sorted by key, with no key missing. This session did not check that against mmseqs, and nothing in nail asserts it.",
+      "commit": "1326e49",
       "branch": "libsail-io"
     }
   ],
