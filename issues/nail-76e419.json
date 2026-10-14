@@ -3,26 +3,29 @@
   "title": "hmmbuild tau on the PANTHER sets matches the original run",
   "body": "Rerun hmmbuild for the three original data sets and compare the result with the original TSVs, row by row.\n\n## Proposal\n\nFor each of training at seed 42, training at seed 21 and held-out at seed 42, run `hmmbuild --cpu 1 --singlemx --seed N -o /dev/null <out.hmm> <one-seq.fa>` on every sequence. Write `seq_id`, `length`, `tau` and `lambda` in input order, with tau as minus mu. Then match each row to the original TSV by `seq_id` and count rows whose tau or lambda differ.\n\nA smoke test on the first 20 training sequences at seed 42 matched the original exactly on every row. `--informat afa` makes no difference to the result.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-df3f53",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T23:05:25.866876999Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T22:50:22.326450365Z",
-  "updated_at": "2026-10-14T22:50:25.866876999Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T23:16:27.197105088Z",
+  "closed_at": "2026-10-14T23:16:27.197105088Z",
+  "close_reason": "The rerun reproduces the original. Each run took about 525 s on the 16-core box with 8 jobs, and no sequence failed. Matching rows by `seq_id`, all three sets have the same ids, and no id repeats. length and lambda agree on every row. tau agrees on every row except 181 of 189,921 (training, seed 42), 200 of 189,921 (training, seed 21) and 180 of 193,872 (held-out, seed 42). Each of those differs by exactly 0.0001, one unit in the fourth decimal hmmbuild prints, which looks like a rounding difference between builds or platforms. The original TSVs list rows in a different order from the input; the rerun writes them in input order. The rerun TSVs are in `tmp-claude/2026-10-14-tau-calibration/run`.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "b05455b",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "b05455b",
+      "branch": "dev"
+    }
   }
 }
