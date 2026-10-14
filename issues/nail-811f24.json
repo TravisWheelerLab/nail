@@ -3,20 +3,20 @@
   "title": "The query profile db write parses every profile a second time",
   "body": "`write_mmseqs_profile_database` in `mmseqs.rs` writes the mmseqs query db for hmm queries. It walks the queries with `P7Hmm::iter`, which parses each profile with `Profile::from_p7hmm` from the mapped file. For each match state it writes 20 scores, as bits times 8 cast to `i8`, then the consensus residue twice and three zero bytes. It runs on one thread, right after the target db write, and the \"db write\" leaf of the `-s` tree times both.\n\n`build_pipeline` in `search.rs` already parsed the same profiles into an `Arc<Vec<Profile>>` before seeding starts. The writer parses them all a second time.\n\nOn 20,795 Pfam profiles against 2,455,940 targets at `-t 8`, the db write leaf took 7.31 s, against 4.32 s with one profile. That puts the profile db at about 3 s. The figure is a difference between two runs and was not timed on its own.\n\n## Proposal\n\nPass the profiles `build_pipeline` built to the writer, so nothing parses them twice. Build each profile's bytes in parallel, then write them in order and assign the offsets in one pass, as nail-fc2ac4 proposes for the target db. The two writers can also run side by side.\n\n## Open\n\n- Whether the `Arc<Vec<Profile>>` reaches the seed stage without changing `Pipeline`'s layout.\n- Sequence queries take a different path, `write_mmseqs_sequence_database`, and are not part of this issue.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-1964b2",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T20:53:22.773004508Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T20:18:55.618769353Z",
-  "updated_at": "2026-10-14T20:38:22.773004508Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T20:57:17.71932937Z",
+  "closed_at": "2026-10-14T20:57:17.71932937Z",
+  "close_reason": "Commit on `dev` moved the parse into `read_queries`: `Queries::Profile` holds an `Arc<Vec<Profile>>`, and `build_pipeline` and `write_mmseqs_profile_database` both read it. No `seed` signature changed. On 20,795 Pfam profiles against 2,455,940 targets at `-t 8`, the db write leaf went from 7.25 s to 4.56 s, and query index grew from 0.08 s to 0.50 s. The full-run hits are identical sorted, and on 300 profiles the written query db is byte-identical. The `--only-seed` concern in the note no longer applies, since the parse happens before seeding on every path.",
+  "resolution": "done",
   "notes": [
     {
       "id": "bc64dcd4",
@@ -32,6 +32,9 @@
       "commit": "a8a28e5",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "012b26c",
+      "branch": "dev"
+    }
   }
 }
