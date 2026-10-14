@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T22:20:08.845636633Z",
   "defer_until": null,
   "created_at": "2026-09-29T01:27:31.758933822Z",
-  "updated_at": "2026-10-14T22:05:08.845636633Z",
+  "updated_at": "2026-10-14T22:07:16.836339371Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-10-14T21:52:33.819214087Z",
       "author": "Jack Roddy/95b307ba",
       "text": "Diagnosis. The panic is `todo!(\"fix this\")` inside the test itself, at `libnail/src/structs/profile.rs:1373`. No library code fails. Commit `036babf` (2025-07-25, \"removed Hmm struct\") moved the test from the deleted `hmm.rs`. It swapped `Hmm::from_blosum_62_and_sequence` for `Profile::from_blosum_62_and_seq`, commented out both assertions and put the `todo!` in their place. The old test checked two things on the `Hmm`. First, `hmm.model.composition` against 20 expected values. `Profile` has no composition field, and nothing computes one from a sequence anymore, so that half has nothing left to check. Second, `hmm.stats.forward_lambda` against 0.703323. `Profile::from_blosum_62_and_seq` computes `fwd_lambda` with the same formula, `LN_2 + 1.44 / total_entropy`, so that half could be pointed at `prf.fwd_lambda`. The old lambda assert had no `.abs()`: `(lambda_correct - lambda) < 1e-4` passes for any lambda above 0.7032, so it never checked an upper bound. Nobody has run the old test at `036babf^` to see whether it passed then.",
+      "commit": "944417e",
+      "branch": "dev"
+    },
+    {
+      "id": "07ca2433",
+      "at": "2026-10-14T22:07:16.836338441Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Seed experiment, run in `tmp-claude/2026-10-14-tau-lambda-seeds`. The bag is 48 SwissProt sequences from 30 to 5,058 residues plus the 7tm_1 consensus. Each went through `hmmbuild --singlemx --informat afa` (HMMER 3.4) at seeds 1 to 100, and through `Profile::from_blosum_62_and_seq`. Lambda: hmmbuild gives the same lambda at every seed, and nail matches it on all 49 sequences within 1.1e-5 (median 3.1e-6). For the 7tm_1 consensus hmmbuild gives 0.70332, the old golden value. Tau: hmmbuild tau moves with the seed, with a standard deviation of 0.15 to 0.21 per sequence and a median spread of 0.89 over 100 seeds. nail tau minus hmmbuild mean tau is +0.300 on average, standard deviation 0.242, range -0.254 to +0.814. nail tau falls inside the 100-seed range for 38 of 49 sequences. nail tau depends on length alone, while hmmbuild mean tau differs by up to 0.56 between sequences within 6 residues of each other in length.",
       "commit": "944417e",
       "branch": "dev"
     }
