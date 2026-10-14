@@ -3,26 +3,29 @@
   "title": "The help text for `-a` describes retries instead of total attempts",
   "body": "`args.rs:354` documents `-a`, the field `cloud_max_join_attempts`, as \"allow at most N attempts to recover disjoint clouds\". That reads as N retries after a first attempt. nail treats N as the total number of attempts.\n\n## Proposal\n\nReword the help to say that N counts every attempt, the first included.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T22:03:55.670043212Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T23:10:56.194466578Z",
-  "updated_at": "2026-10-14T21:48:55.670043212Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T21:49:19.579428569Z",
+  "closed_at": "2026-10-14T21:49:19.579428569Z",
+  "close_reason": "Commit `944417e` on `dev` rewords the `-a` help: \"make at most N cloud search attempts in total\", and the long help says N counts the first attempt and must be at least 1. The loop in `cloud_stage.rs` runs `0..max_attempts`, with attempt 0 at the unscaled parameters, which confirms the count.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "432ff65",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "944417e",
+      "branch": "dev"
+    }
   }
 }
