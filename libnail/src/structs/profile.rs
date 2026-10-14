@@ -7,18 +7,13 @@ use super::Sequence;
 use crate::alphabet::{AminoUtilsDigital, UTF8_SPACE};
 use crate::util::{LogAbuse, VecMath};
 use crate::{
-    align::{
-        forward, null_one_score,
-        structs::{BackgroundState, CoreState, DpMatrixSparse, RowBounds, Trace},
-    },
+    align::structs::{BackgroundState, CoreState, Trace},
     alphabet::{Alphabet, AminoAcid, AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES},
     util::mean_relative_entropy,
 };
 
 use anyhow::{anyhow, Context};
 use datasize::DataSize;
-use rand::SeedableRng;
-use rand_pcg::Pcg64;
 
 impl AsRef<Profile> for Profile {
     fn as_ref(&self) -> &Profile {
@@ -1032,121 +1027,6 @@ impl Profile {
         Ok(current_mre)
     }
 
-    pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {
-        self.configure_for_target_length(target_length);
-
-        let mut row_bounds = RowBounds::new(target_length);
-        row_bounds.fill_rectangle(1, 1, target_length, self.length);
-        let mut forward_matrix = DpMatrixSparse::new(target_length, self.length, &row_bounds);
-
-        // first we are going to generate n random
-        // sequences drawn from the background
-        // distribution and compute their forward scores
-        let mut scores = vec![0.0; n];
-        let mut rng = Pcg64::seed_from_u64(0);
-        (0..n).for_each(|seq_idx| {
-            forward_matrix.reuse(target_length, self.length, &row_bounds);
-            let seq = Sequence::random_amino(target_length, &mut rng);
-
-            // **NOTE: HMMER uses multi-hit mode to calibrate
-            //         Tau, but we are using uni-hit mode
-            let forward_score_nats = forward(self, &seq, &mut forward_matrix, &row_bounds);
-
-            let null_score_nats = null_one_score(target_length);
-
-            scores[seq_idx] = (forward_score_nats - null_score_nats).to_bits().value();
-        });
-
-        /// This is some black magic from a textbook:
-        ///   Statistical Models and Methods for
-        ///   Lifetime Data by Joseph F. Lawless
-        ///   
-        /// From HMMER:
-        ///   Equation 4.1.6 from [Lawless82], pg. 143, and
-        ///   its first derivative with respect to lambda,
-        ///   for finding the ML fit to Gumbel lambda parameter.
-        ///   This equation gives a result of zero for the maximum
-        ///   likelihood lambda.
-        fn lawless416(samples: &[f32], lambda: f32) -> (f32, f32) {
-            // e_sum is the sum of e^(-lambda x_i)
-            let mut e_sum = 0.0f32;
-            // x_sum is the sum of x_i
-            let mut x_sum = 0.0f32;
-            // xe_sum is the sum of x_i * e^(-lambda x_i)
-            let mut xe_sum = 0.0f32;
-            // xe_sum is the sum of x_i^2 * e^(-lambda x_i)
-            let mut xxe_sum = 0.0f32;
-
-            samples.iter().for_each(|x| {
-                e_sum += (-lambda * x).exp();
-                x_sum += x;
-                xe_sum += x * (-lambda * x).exp();
-                xxe_sum += x.powi(2) * (-lambda * x).exp();
-            });
-
-            let fx = (1.0 / lambda) - (x_sum / samples.len() as f32) + (xe_sum / e_sum);
-            let dfx = (xe_sum / e_sum).powi(2) - (xxe_sum / e_sum) - (1.0 / (lambda.powi(2)));
-
-            (fx, dfx)
-        }
-
-        // now make an initial guess at lambda
-        //
-        // from hmmer:
-        //   (Evans/Hastings/Peacock, Statistical Distributions, 2000, p.86)
-        let sum: f32 = scores.iter().sum();
-        let squared_sum: f32 = scores.iter().map(|s| s.powi(2)).sum();
-        let sample_variance: f32 =
-            (squared_sum - sum * sum / scores.len() as f32) / (scores.len() as f32 - 1.0);
-        let mut gumbel_lambda: f32 = std::f32::consts::PI / (6.0 / sample_variance).sqrt();
-
-        // now we do this Newton/Raphson root finding
-        // thing until we have converged on lambda
-        let tolerance: f32 = 1e-5;
-        let mut newton_raphson_success = false;
-        for _ in 0..=100 {
-            let (fx, dfx) = lawless416(&scores, gumbel_lambda);
-            if fx.abs() < tolerance {
-                newton_raphson_success = true;
-                break;
-            }
-            gumbel_lambda -= fx / dfx;
-
-            if gumbel_lambda <= 0.0 {
-                gumbel_lambda = 0.001;
-            }
-        }
-
-        if !newton_raphson_success {
-            panic!("newton/raphson failed");
-        }
-
-        // this is apparently substituting into equation 4.1.5
-        // from Lawless[82] to solve for the mu parameter
-        let e_sum: f32 = scores.iter().map(|s| (-gumbel_lambda * s).exp()).sum();
-        let gumbel_mu = -(e_sum / scores.len() as f32).ln() / gumbel_lambda;
-
-        // now that we've fit the gumbel lambda, we are going to find our tau
-
-        /// Calculates the inverse CDF for a Gumbel distribution
-        /// with parameters <mu> and <lambda>. That is, returns
-        /// the quantile <x> at which the CDF is <p>.
-        fn gumbel_inverse_cdf(p: f32, mu: f32, lambda: f32) -> f32 {
-            mu - ((-p.ln()).ln() / lambda)
-        }
-
-        // basically, there is (maybe?) no good method for fitting an exponential,
-        // so instead we have fit a Gumbel that we are going to use to pick our tau
-        //
-        // from hmmer:
-        //   Explanation of the eqn below: first find the x at which the Gumbel tail
-        //   mass is predicted to be equal to tailp. Then back up from that x
-        //   by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-        //   instead of tailp.
-        self.fwd_tau = gumbel_inverse_cdf(1.0 - tail_probability, gumbel_mu, gumbel_lambda)
-            + (tail_probability.ln() / self.fwd_lambda);
-    }
-
     #[inline(always)]
     pub fn match_score(&self, alphabet_idx: usize, profile_idx: usize) -> f32 {
         self.emission_scores[Self::MATCH_IDX][profile_idx][alphabet_idx]
@@ -1349,67 +1229,81 @@ mod tests {
     use crate::structs::Sequence;
 
     #[test]
-    fn test_hmm_from_blosum62() -> anyhow::Result<()> {
-        let mut seq = Sequence::from_utf8(
-            concat!(
-                "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
-                "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
-                "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
-                "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
-                "ALLITLLLAYVNSCLNPIIY"
-            )
-            .as_bytes(),
-        )?;
-        seq.name = ">7tm_1-consensus".to_string();
-
-        let prf = Profile::from_blosum_62_and_seq(&seq)?;
-
-        let composition_corrrect = [
-            0.075741, 0.016550, 0.039336, 0.060816, 0.038081, 0.043406, 0.014495, 0.077001,
-            0.061813, 0.144704, 0.026453, 0.033726, 0.040502, 0.031336, 0.048901, 0.063073,
-            0.056054, 0.085715, 0.012350, 0.029948,
+    fn blosum62_profile_lambda_matches_hmmbuild() -> anyhow::Result<()> {
+        // each lambda is from the STATS LOCAL FORWARD line
+        // of the model HMMER 3.4 builds for that sequence:
+        //   hmmbuild --singlemx --informat afa <out.hmm> <one-seq.fa>
+        // lambda does not depend on hmmbuild's seed. tau
+        // does, by about 0.18 across seeds, so it is not
+        // checked here
+        let cases = [
+            (
+                "sp|B3EWN4|2SSL_RICCO",
+                "QDYCAQEGQQEVQRKDLSDLERYLRQSRQR",
+                0.78549,
+            ),
+            (
+                "sp|Q91G65|032R_IIV6",
+                concat!(
+                    "MGVYKFCYNKKKEVGQVAVLQKERLIFYIVTKEKSYLKPTLANFSNAIDSLYNECLLRKC",
+                    "CKLAIPKIGCCLDRLYWKTVKNIIIDKLCKKGIEVVVYYI",
+                ),
+                0.71748,
+            ),
+            (
+                "7tm_1-consensus",
+                concat!(
+                    "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
+                    "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
+                    "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
+                    "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
+                    "ALLITLLLAYVNSCLNPIIY",
+                ),
+                0.70332,
+            ),
+            (
+                "sp|Q91FW0|211L_IIV6",
+                concat!(
+                    "MEMNQKTAFMGINIKDEGPSNVMIIKALNSSSSLLDIPSFMKVAGIEFDPIMFNHFWQVL",
+                    "VDNGDRLPHVGETTLNWLGYEGVFTKQKEKFINMLKRNQISFKELSYQDNEIQLYPSIQK",
+                    "EMLLLPNESAKTKSKWLLMNPDDFKMAIMGLKTKNSEKIKRYYVTLEKTMKLHSEYALYF",
+                    "HDRKAQEEKERERQRAEDEKRSILGEMSEMRQYMQKMGITLEDTREEVKKVNIQNKDIKA",
+                    "QNEEIKAQNEDLAFDLSDVRDRLIEAAEDRSPKLETKPLRERFVIIKRKDSSFPYYAIRG",
+                    "QDVYVKGRLTHFKNTRYPELKIIFDTNYQPNPRNLYIRFKELKDERFIIAGNNIKTVDSS",
+                    "NKLEKEMLELFEKLNEEKHNIYFFFNFNDF",
+                ),
+                0.69989,
+            ),
+            (
+                "sp|Q9Y3L3|3BP1_HUMAN",
+                concat!(
+                    "MMKRQLHRMRQLAQTGSLGRTPETAEFLGEDLLQVEQRLEPAKRAAHNIHKRLQACLQGQ",
+                    "SGADMDKRVKKLPLMALSTTMAESFKELDPDSSMGKALEMSCAIQNQLARILAEFEMTLE",
+                    "RDVLQPLSRLSEEELPAILKHKKSLQKLVSDWNTLKSRLSQATKNSGSSQGLGGSPGSHS",
+                    "HTTMANKVETLKEEEEELKRKVEQCRDEYLADLYHFVTKEDSYANYFIRLLEIQADYHRR",
+                    "SLSSLDTALAELRENHGQADHSPSMTATHFPRVYGVSLATHLQELGREIALPIEACVMML",
+                    "LSEGMKEEGLFRLAAGASVLKRLKQTMASDPHSLEEFCSDPHAVAGALKSYLRELPEPLM",
+                    "TFDLYDDWMRAASLKEPGARLQALQEVCSRLPPENLSNLRYLMKFLARLAEEQEVNKMTP",
+                    "SNIAIVLGPNLLWPPEKEGDQAQLDAASVSSIQVVGVVEALIQSADTLFPGDINFNVSGL",
+                    "FSAVTLQDTVSDRLASEELPSTAVPTPATTPAPAPAPAPAPAPALASAATKERTESEVPP",
+                    "RPASPKVTRSPPETAAPVEDMARRTKRPAPARPTMPPPQVSGSRSSPPAPPLPPGSGSPG",
+                    "TPQALPRRLVGSSLRAPTVPPPLPPTPPQPARRQSRRSPASPSPASPGPASPSPVSLSNP",
+                    "AQVDLGAATAEGGAPEAISGVPTPPAIPPQPRPRSLASETN",
+                ),
+                0.69689,
+            ),
         ];
 
-        todo!("fix this");
-        // hmm.model
-        //     .composition
-        //     .iter()
-        //     .zip(composition_corrrect)
-        //     .for_each(|(a, b)| assert!((a - b).abs() < 1e-4));
+        for (name, residues, hmmbuild_lambda) in cases {
+            let seq = Sequence::from_utf8(residues.as_bytes())?;
+            let prf = Profile::from_blosum_62_and_seq(&seq)?;
 
-        // let lambda_correct = 0.703323;
-        // assert!((lambda_correct - hmm.stats.forward_lambda) < 1e-4,);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_calibrate_tau() -> anyhow::Result<()> {
-        let mut seq = Sequence::from_utf8(
-            concat!(
-                "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
-                "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
-                "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
-                "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
-                "ALLITLLLAYVNSCLNPIIY"
-            )
-            .as_bytes(),
-        )?;
-        seq.name = ">7tm_1-consensus".to_string();
-
-        let mut prf = Profile::from_blosum_62_and_seq(&seq)?;
-
-        prf.calibrate_tau(200, 100, 0.04);
-
-        let correct_tau = -4.193134f32;
-        let diff = (correct_tau - prf.fwd_tau).abs();
-
-        // ***
-        // run "cargo test -- --nocapture" to print the diff
-        // ***
-        println!("\x1b[31m{} | {}\x1b[0m", correct_tau, prf.fwd_tau);
-        println!("\x1b[31mdifference: {}\x1b[0m", diff);
-        assert!(diff <= 0.01);
+            assert!(
+                (prf.fwd_lambda - hmmbuild_lambda).abs() < 1e-4,
+                "{name}: nail lambda {}, hmmbuild lambda {hmmbuild_lambda}",
+                prf.fwd_lambda
+            );
+        }
 
         Ok(())
     }
