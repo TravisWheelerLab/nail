@@ -13,9 +13,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T18:02:20.37895505Z",
-  "updated_at": "2026-10-14T18:14:51.720008359Z",
+  "updated_at": "2026-10-14T18:59:11.206382099Z",
   "closed_at": "2026-10-14T18:14:51.720008359Z",
-  "close_reason": "Fixed in `9a671f7` on `libsail-io`: `from_path` finds the file with `partition_point`, which returns the last file starting at or before the offset.",
+  "close_reason": "Fixed in `5b02ad7` on `libsail-io`: `from_path` finds the file with `partition_point`, which returns the last file starting at or before the offset.",
   "resolution": "done",
   "notes": [],
   "stamps": {
