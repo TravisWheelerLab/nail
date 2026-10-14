@@ -1,7 +1,7 @@
 {
   "id": "nail-8cb666",
   "title": "`PrefilterDb` reopens its file for every record it reads",
-  "body": "placeholder",
+  "body": "`PrefilterDb` in `mmseqs.rs` reads an mmseqs prefilter or align db that mmseqs split over files such as `pdb.0` through `pdb.7`, with one `.index`. Progressive seeding in `seed_stage.rs` uses it three ways:\n\n- slice: `next_n` takes each active query's next lines from the prefilter db, once per iteration.\n- decide: `from_path` opens each iteration's align db, and `get` reads each active query's record.\n- merge: `get` reads every query's record from every iteration's align db.\n\nUntil this issue, `from_path` opened, seeked and read one byte of a split file for every record, to check its null terminator. `get` and `next_n` opened the file again on every call, seeked, and copied the record into a buffer. On 20,795 Pfam profiles against 2,455,940 targets at `-t 8`, with 11 iterations and a 32 GB prefilter db, the full run at `012b26c` timed slice at 0.90 s, decide at 0.32 s and merge at 0.20 s. Seeding's `[misc.]` was 0.23 s, and it includes `from_path` on the prefilter db.\n\n## Proposal\n\nMap each split file once with `libsail::source::MmapSource`. `get` returns a slice of the map. `next_n` counts lines in the slice. The validation reads one byte of the map, and a missing null byte becomes an error instead of an `assert!`.",
   "type": "task",
   "status": "open",
   "priority": 2,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T21:19:35.68733897Z",
-  "updated_at": "2026-10-14T21:19:35.68733897Z",
+  "updated_at": "2026-10-14T21:21:25.957077368Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
