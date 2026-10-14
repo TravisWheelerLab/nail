@@ -1,0 +1,28 @@
+{
+  "id": "nail-a32cbf",
+  "title": "How should `--seeds` load a seeds file that names its records?",
+  "body": "Since `dbdee02`, nail writes each record's position in its input file into the header dbs of the mmseqs databases it builds. The seeds mmseqs reports then name their query and target by position, and `Seeds::from_path` in `nail/src/io/seeds.rs` parses columns 0 and 1 as `usize`. A seeds file passed to `--seeds` must hold positions. A file that `--seeds-out` wrote from the same inputs loads. A file that names its records, from an older nail or written by hand, fails with `seed field \"<name>\" is not a record position`.\n\n`Records::map` already builds a name index for every input to refuse repeated names, so `Records::position` can turn a name into a position at no extra cost.\n\n## Options\n\n| option | cost |\n|---|---|\n| try each field as a position, and look it up as a name if that fails | a record whose name is all digits, such as `17`, reads as a position, so the field is ambiguous |\n| a flag that says the file holds names | one more CLI param; no ambiguity |\n| decide once per file from its first line | the digit-name ambiguity again, only rarer |\n\nI lean to the flag, since nail must never pair a seed with the wrong record, and the other two options can do that silently for a name made of digits.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T19:21:04.83898534Z",
+  "updated_at": "2026-10-14T19:21:04.83898534Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "92de7c5",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
