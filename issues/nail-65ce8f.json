@@ -3,7 +3,7 @@
   "title": "`build_pipeline` builds profiles for hmm queries in parallel",
   "body": "`build_pipeline` in `search.rs` builds the query profiles. For sequence queries it uses `par_iter()`. For hmm queries it calls `p7hmm.iter()`, with the `par_iter()` version commented out on the line above. On the mgy run the pipeline build takes 6.2 s, 1.3% of the run and the second largest serial item. Most of that is likely the serial parse of 20,795 Pfam profiles.\n\n## Proposal\n\nRestore the `par_iter()` line, after checking that the race recorded with commit `3a964e5` is fixed. The note on that commit has the details.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-1964b2",
@@ -12,13 +12,13 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T20:33:26.551213601Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.475877171Z",
-  "updated_at": "2026-10-14T20:36:54.69019219Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T20:36:54.70280734Z",
+  "closed_at": "2026-10-14T20:36:54.70280734Z",
+  "close_reason": "Commit on `dev` restored `p7hmm.par_iter()` in `build_pipeline`. The pipeline build went from 3.07 s to 0.40 s on 20,795 Pfam profiles at `-t 8`. The note above shows the hits are unchanged and that the row order of `results.tbl` varied between runs before this change too.",
+  "resolution": "done",
   "notes": [
     {
       "id": "01a4ae23",
@@ -51,6 +51,9 @@
       "commit": "bdb967d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "29955e7",
+      "branch": "dev"
+    }
   }
 }
