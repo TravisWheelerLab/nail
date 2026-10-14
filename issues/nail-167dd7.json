@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T18:18:06.33901784Z",
+  "updated_at": "2026-10-14T18:21:58.987403308Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -55,6 +55,14 @@
       "at": "2026-10-14T18:18:06.33901693Z",
       "author": "Jack Roddy/2680c5a4",
       "text": "Measured reading records back from the same file, with a warm page cache, using the `read` binary in `tmp-claude/2026-10-14-index-build/`. Each run reads 2,455,940 records and parses each with `FastaParser::parse`. The order is either file order or a fixed pseudo-random order with repeats, which stands in for seeds. `nail` looks each record up by name through `Database::get`, with one `Database` clone per thread as `Pipeline` has. `open` and `map` read `Framed::record(n)` by position. Each cell is the fastest of three interleaved runs, and the three ran within 2% of each other.\n\n| order | threads | `nail` | `open` | `map` |\n|---|---|---|---|---|\n| file | 1 | 4.529 s | 4.034 s | 3.704 s |\n| random | 1 | 5.861 s | 4.545 s | 4.183 s |\n| file | 8 | 0.564 s | 0.526 s | 0.475 s |\n| random | 8 | 0.723 s | 0.583 s | 0.527 s |\n\nParsing takes most of the time in every column. In random order on 8 threads, `map` takes 27% less time than nail, and `open` 19% less.\n\nA `verify` run parsed every record from both nail's framing and `Framed::open`, and all 2,455,940 pairs of `Sequence` were equal. nail's index holds 2,455,940 names as well, so no name in this file repeats.",
+      "commit": "9a671f7",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "03705cef",
+      "at": "2026-10-14T18:21:58.987402558Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Measured the same for `P7Hmm` on `nail-benchmarks/data/pfam.hmm`, 20,795 models in 1.5 GiB, with a warm page cache, using the `hmm` binary in `tmp-claude/2026-10-14-index-build/`. A `verify` run built every `Profile` from both nail's framing and `Framed::open`, in file order, and all 20,795 pairs were equal.\n\nIndex build, fastest of three interleaved runs:\n\n| build | seconds | peak RSS |\n|---|---|---|\n| `P7Hmm::from_path` | 0.843 | 5.7 MiB |\n| `Framed::open` | 0.071 | 3.4 MiB |\n| `Framed::map` | 0.087 | 1,559 MiB |\n| `Framed::map`, then `name_index` | 0.089 | 1,559 MiB |\n\nBuilding every `Profile`, read time only, fastest of three:\n\n| threads | nail `iter` | nail `par_iter` | `open` | `map` |\n|---|---|---|---|---|\n| 1 | 2.898 s | 2.873 s | 2.885 s | 2.817 s |\n| 8 | | 0.373 s | 0.373 s | 0.371 s |\n\n`ProfileBuilder::build` takes nearly all the read time, so the framing makes no difference there. The index build does. On 8 threads nail spends 0.85 s indexing and 0.37 s building profiles, against 0.07 s and 0.37 s through `Framed::open`. `build_pipeline` today calls the serial `iter`, 3.75 s in total on this file.\n\nThe scan in `Framed::map` touches every page of the file, so the process's RSS includes the whole mapped file once the index is built. Those pages are clean and reclaimable, but a batch scheduler that limits jobs by RSS would count them.",
       "commit": "9a671f7",
       "branch": "libsail-io"
     }
