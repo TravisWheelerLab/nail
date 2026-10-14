@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names
+
 ## [0.6.0] - 2026-7-31
 
 ### Added

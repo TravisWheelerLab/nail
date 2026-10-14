@@ -467,10 +467,13 @@ pub fn write_mmseqs_sequence_database(
         let db_byte_length = seq.length + 2;
         writeln!(db_index, "{}\t{}\t{}", seq_count, db_offset, db_byte_length,)?;
 
-        writeln!(db_header, "{}", seq.name)?;
+        // the header is the record's position, so the seeds
+        // mmseqs reports name records by position
+        let header = seq_count.to_string();
+        writeln!(db_header, "{header}")?;
         db_header.write_all(&[0u8])?;
 
-        let header_byte_length = seq.name.len() + 2;
+        let header_byte_length = header.len() + 2;
         writeln!(
             db_header_index,
             "{}\t{}\t{}",
@@ -554,11 +557,12 @@ pub fn write_mmseqs_profile_database(
         writeln!(db_index, "{}\t{}\t{}", prf_cnt, db_offset, db_byte_length,)?;
 
         // for some reason, the header has newlines and 0-byte separators?
-        writeln!(db_header, "{}", prf.name)?;
+        let header = prf_cnt.to_string();
+        writeln!(db_header, "{header}")?;
         db_header.write_all(&[0u8])?;
 
         // +1 for the 0 byte, +1 for the newline
-        let header_byte_length = prf.name.len() + 2;
+        let header_byte_length = header.len() + 2;
 
         writeln!(
             db_header_index,

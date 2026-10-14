@@ -25,13 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added per-iteration rows under the `align` leaf of the `-s` runtime tree in `--seed-mode prog`, with an iteration count on the leaf
 - added dependency `libsail` 0.4.1 with feature `mmap`
 - added struct `io::Records`
-- added methods `Fasta::name()`, `P7Hmm::name()`
+- added methods `Fasta::name()`, `P7Hmm::name()`, `Queries::name()`
 
 ### Changed
 - `build_pipeline()` now takes `&Queries` and runs before seeding
 - renamed enum `stats::MmseqsTimed` to `SeedTimed`, and methods `Stats::{set_mmseqs_time(), add_mmseqs_time()}` to `set_seed_time()`, `add_seed_time()`
 - the seeding branch of the `-s` runtime tree is labelled `seeding` instead of `seeding (mmseqs)`
-- `io::Fasta` and `io::P7Hmm` are now structs over a memory-mapped `libsail::index::Framed` instead of aliases of `Database`, and `Fasta::get()` takes `&self`
+- `io::Fasta` and `io::P7Hmm` are now structs over a memory-mapped `libsail::index::Framed` instead of aliases of `Database`, and `Fasta::get()` takes `&self` and a record position instead of a name
+- the seeds file from `--seeds-out` names queries and targets by their position in the input file instead of by name
+- CLI param `--seeds` reads queries and targets as positions; a seeds file that names them no longer loads
+- field `Pipeline::profiles` is now `Arc<Vec<Profile>>`, indexed by query position
+- field `Pipeline::prf` is now `Option<(usize, Profile)>`
 - `Stats::new()` now returns `anyhow::Result<Self>`
 - field `Pipeline::targets` is now `Arc<Fasta>`
 - the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before

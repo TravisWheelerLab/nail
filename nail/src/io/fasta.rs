@@ -29,12 +29,9 @@ impl Fasta {
         self.0.name(n)
     }
 
-    pub fn get(&self, name: &str) -> Option<anyhow::Result<Sequence>> {
-        match self.0.position(name) {
-            Ok(Some(n)) => Some(self.0.parse(n, FastaParser::parse)),
-            Ok(None) => None,
-            Err(e) => Some(Err(e)),
-        }
+    /// The `n`th record.
+    pub fn get(&self, n: usize) -> anyhow::Result<Sequence> {
+        self.0.parse(n, FastaParser::parse)
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = anyhow::Result<Sequence>> + '_ {

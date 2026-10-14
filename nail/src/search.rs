@@ -36,6 +36,13 @@ impl Queries {
             Queries::Profile(q) => q.len(),
         }
     }
+
+    pub fn name(&self, n: usize) -> anyhow::Result<String> {
+        match self {
+            Queries::Sequence(q) => q.name(n),
+            Queries::Profile(q) => q.name(n),
+        }
+    }
 }
 
 pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
@@ -94,7 +101,7 @@ pub fn seed(
 
             let mut counts: HashMap<String, u64> = HashMap::new();
             for seed in &seeds.seeds {
-                *counts.entry(seed.prf.clone()).or_insert(0) += 1;
+                *counts.entry(queries.name(seed.prf_pos)?).or_insert(0) += 1;
             }
 
             stats.set_seed_counts(counts);
@@ -110,7 +117,7 @@ pub fn build_pipeline(
     stats: Stats,
     args: &mut SearchArgs,
 ) -> anyhow::Result<Pipeline> {
-    let profiles: Arc<HashMap<String, Profile>> = Arc::new(
+    let profiles: Arc<Vec<Profile>> = Arc::new(
         match queries {
             Queries::Sequence(fasta) => fasta
                 .par_iter()
@@ -119,10 +126,7 @@ pub fn build_pipeline(
             // Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
             Queries::Profile(p7hmm) => p7hmm.iter().collect::<anyhow::Result<Vec<_>>>(),
         }
-        .context("failed to build profiles")?
-        .into_iter()
-        .map(|p| (p.name.clone(), p))
-        .collect(),
+        .context("failed to build profiles")?,
     );
 
     let mut output = OutputStage::new(args.pipeline_args.e_value_threshold)?;

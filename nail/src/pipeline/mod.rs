@@ -11,7 +11,7 @@ mod output_stage;
 pub use output_stage::*;
 
 use std::sync::Arc;
-use std::{collections::HashMap, sync::Mutex};
+use std::sync::Mutex;
 
 use libnail::{
     align::{structs::Seed, Bits},
@@ -109,8 +109,9 @@ impl PipelineResult {
 
 #[derive(Clone)]
 pub struct Pipeline {
-    pub profiles: Arc<HashMap<String, Profile>>,
-    pub prf: Option<Profile>,
+    pub profiles: Arc<Vec<Profile>>,
+    /// The profile of the last seed run, and its position.
+    pub prf: Option<(usize, Profile)>,
     pub targets: Arc<Fasta>,
     pub cloud_search: Box<dyn CloudSearchStage>,
     pub align: Box<dyn AlignStage>,
@@ -120,19 +121,18 @@ pub struct Pipeline {
 
 impl Pipeline {
     pub fn run(&mut self, seed: &Seed) -> anyhow::Result<PipelineResult> {
-        match self.prf {
-            Some(ref prf) => {
-                if prf.name != seed.prf {
-                    self.prf = self.profiles.get(&seed.prf).cloned();
-                }
-            }
-            None => {
-                self.prf = self.profiles.get(&seed.prf).cloned();
-            }
+        let profile_is_cached = match &self.prf {
+            Some((position, _)) => *position == seed.prf_pos,
+            None => false,
+        };
+
+        if !profile_is_cached {
+            let prf = self.profiles.get(seed.prf_pos).context("no prf")?;
+            self.prf = Some((seed.prf_pos, prf.clone()));
         }
 
-        let prf = self.prf.as_mut().expect("no prf");
-        let seq = self.targets.get(&seed.seq).context("no seq")??;
+        let (_, prf) = self.prf.as_mut().expect("no prf");
+        let seq = self.targets.get(seed.seq_pos).context("no seq")?;
 
         // configuring for the target length adjusts special state transitions
         prf.configure_for_target_length(seq.length);

@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use libnail::align::structs::Seed;
 
 pub struct Seeds {
@@ -29,8 +29,8 @@ impl Seeds {
             let line = line?;
             let tokens = line.split_whitespace().collect::<Vec<_>>();
             seeds.push(Seed {
-                prf: tokens[0].to_string(),
-                seq: tokens[1].to_string(),
+                prf_pos: position(tokens[0])?,
+                seq_pos: position(tokens[1])?,
                 seq_start: tokens[4].parse()?,
                 seq_end: tokens[5].parse()?,
                 prf_start: tokens[2].parse()?,
@@ -47,7 +47,7 @@ impl Seeds {
         let mut seen = HashSet::new();
 
         let mut cnt = 0;
-        let mut prev = String::new();
+        let mut prev = None;
         for line in buf.lines() {
             let line = line?;
             let tokens = line.split_whitespace().collect::<Vec<_>>();
@@ -56,13 +56,13 @@ impl Seeds {
                 bail!("unexpected line format in mmseqs align tsv");
             }
 
-            let prf = tokens[0].to_string();
+            let prf = position(tokens[0])?;
 
-            if prf != prev {
-                if !seen.insert(prf.clone()) {
+            if prev != Some(prf) {
+                if !seen.insert(prf) {
                     bail!("unexpected sorting of mmseqs align tsv");
                 }
-                prev = prf.clone();
+                prev = Some(prf);
                 cnt = 0;
             }
 
@@ -71,8 +71,8 @@ impl Seeds {
             }
 
             seeds.push(Seed {
-                prf: prf,
-                seq: tokens[1].to_string(),
+                prf_pos: prf,
+                seq_pos: position(tokens[1])?,
                 seq_start: tokens[4].parse()?,
                 seq_end: tokens[5].parse()?,
                 prf_start: tokens[2].parse()?,
@@ -86,6 +86,12 @@ impl Seeds {
 
         Ok(Self { seeds })
     }
+}
+
+fn position(token: &str) -> anyhow::Result<usize> {
+    token
+        .parse()
+        .with_context(|| format!("seed field \"{token}\" is not a record position"))
 }
 
 #[cfg(test)]
