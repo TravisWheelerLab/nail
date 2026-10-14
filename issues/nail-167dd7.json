@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T18:44:42.910613709Z",
+  "updated_at": "2026-10-14T19:17:45.210720679Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -80,6 +80,14 @@
       "author": "Jack Roddy/2680c5a4",
       "text": "Decided: nail refuses a repeated record name in every input, targets included, even once seeds carry positions. Jack's reason: nail would pair each hit with the right record, but the tabular output would show two different targets under one name, and a reader cannot tell them apart. `Records::map` keeps the name index and the check for targets, which cost about 0.8 s and 90 MiB on the mgy fasta.",
       "commit": "9a671f7",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "2c6667f5",
+      "at": "2026-10-14T19:17:45.210719899Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Landed on `libsail-io`:\n\n| commit | change |\n|---|---|\n| `051893a` | `Fasta` and `P7Hmm` read their input through `Records`, a mapped `Framed` with a repeated-name check |\n| `dbdee02` | the mmseqs header dbs hold positions; `Seed::{prf_pos, seq_pos}` are `usize`; `Pipeline` reads by position |\n| `92de7c5` | `Sequence::from_fasta` and `Profile::from_p7hmm` in libnail; `Database`, `impl_rayon` and `ByteBufferExt` removed |\n\nEach commit matched the commit before it on the fixtures, in tables and alignments, for fasta and hmm queries under both seed modes. For `92de7c5`, a harness compiled the old parsers against the new libnail and found equal records for all 20,795 Pfam models and all 2,455,940 mgy targets.\n\nStill open here: the line in nail's docs about SIGBUS when an input is truncated during a run. The seeds-file issue is filed once this one closes.",
+      "commit": "92de7c5",
       "branch": "libsail-io"
     }
   ],
