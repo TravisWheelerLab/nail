@@ -1,0 +1,28 @@
+{
+  "id": "nail-2b1402",
+  "title": "Does nail gain from memory maps, and how should a build or a run choose them?",
+  "body": "nail reads three kinds of file through memory maps today, all through libsail's `MmapSource`:\n\n- `io::Records` maps the query and target inputs with `Framed::map`, behind `io::Fasta` and `io::P7Hmm`.\n- `PrefilterDb` maps each split file of the mmseqs prefilter db and of every align db, since `41781f9`.\n\nlibsail puts maps behind its `mmap` cargo feature. Its `source::Source` trait has one method, `range(start, len) -> io::Result<Cow<[u8]>>`, with two implementations. `FileSource` reads the range with a positioned read and returns an owned buffer. `MmapSource` returns a slice of the map. `Framed<S: Source>` is generic over the two, with `Framed::open` for a `FileSource` and `Framed::map` for an `MmapSource`.\n\nThe measurements so far are mixed. Mapping helped the input indexing and decide and merge in progressive seeding. It also raised peak RSS from 4.8 GB to 7.4 GB on a 32 GB prefilter db, and seeding misc time from 0.23 s to 0.74 s (nail-844b46). At MGnify scale, about 2.456 billion records over about 500 GB, the prefilter db and the RSS figure would be far larger. Nobody has compared the two sources across nail on the same runs.\n\n## Proposal\n\nFirst, evaluate. Run nail with each file kind on `FileSource` and on `MmapSource`, at more than one input size, and record wall time per leaf of the `-s` tree and peak RSS.\n\nThen gate the maps the way libsail does, with the `cfg` in one module. libsail already supplies the trait and both sources, so nail needs no trait of its own. A sketch:\n\n```rust\n#[cfg(feature = \"mmap\")]\npub type InputSource = MmapSource;\n#[cfg(not(feature = \"mmap\"))]\npub type InputSource = FileSource;\n\npub fn open_source(path: &Path) -> anyhow::Result<InputSource>;\npub fn open_framed(path: &Path, format: Format) -> anyhow::Result<Framed<InputSource>>;\n```\n\n`Records` and `PrefilterDb` then hold `InputSource` and call `Source::range`.\n\n## Options\n\n| option | what it is | cost |\n|---|---|---|\n| A. map always | today | no choice for a user short on memory |\n| B. cargo feature | `mmap` on or off at build time, as in libsail | release binaries carry one setting, which the release CI picks |\n| C. runtime flag | a CLI param picks the source per run | both paths compiled into every binary, and a new CLI param |\n| D. never map | `FileSource` everywhere | gives up the measured gains in indexing, decide and merge |\n\nThe lean is to settle the evaluation first. nail ships as a binary, so B fixes the choice per release build. C reaches users of the release binaries, and B reaches only users who build from source. The evaluation should say whether either source wins outright, which would make the choice moot.\n\n## Open\n\n- `PrefilterDb::next_n` scans a record for n newlines from its checkpoint. With a map that is a slice. With `FileSource` it needs reads in chunks, since a `range` call over the rest of a record can read megabytes for one query.\n- `PrefilterDb::get` would return `Cow<[u8]>` under both sources, which changes its callers in `seed_stage.rs`.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T21:38:55.208620874Z",
+  "updated_at": "2026-10-14T21:38:55.208620874Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "41781f9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
