@@ -1,0 +1,28 @@
+{
+  "id": "nail-811f24",
+  "title": "The query profile db write parses every profile a second time",
+  "body": "placeholder",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-1964b2",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T20:18:55.618769353Z",
+  "updated_at": "2026-10-14T20:18:55.618769353Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "a8a28e5",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
