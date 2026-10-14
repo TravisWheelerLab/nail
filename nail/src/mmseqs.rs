@@ -3,6 +3,7 @@ use self::consts::*;
 use std::{
     fs::File,
     io::{BufRead, BufReader, Read, Seek, Write},
+    ops::Range,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -17,6 +18,7 @@ use crate::{
 
 use anyhow::Context;
 use anyhow::{anyhow, bail};
+use rayon::prelude::*;
 use regex::Regex;
 
 pub mod consts {
@@ -427,6 +429,44 @@ impl MmseqsDbPaths {
     }
 }
 
+/// The number of records in one batch of a sequence db.
+const SEQUENCE_DB_BATCH_LEN: usize = 16_384;
+
+/// The bytes a run of records adds to a sequence db and its header db.
+struct SequenceDbBatch {
+    db: Vec<u8>,
+    db_lengths: Vec<usize>,
+    headers: Vec<u8>,
+    header_lengths: Vec<usize>,
+}
+
+impl SequenceDbBatch {
+    fn build(sequences: &Fasta, positions: Range<usize>) -> anyhow::Result<Self> {
+        let mut batch = Self {
+            db: vec![],
+            db_lengths: Vec::with_capacity(positions.len()),
+            headers: vec![],
+            header_lengths: Vec::with_capacity(positions.len()),
+        };
+
+        for position in positions {
+            let seq = sequences.get(position)?;
+            batch.db.extend_from_slice(&seq.utf8_bytes[1..]);
+            batch.db.extend_from_slice(&[b'\n', 0]);
+            batch.db_lengths.push(seq.length + 2);
+
+            // the header is the record's position, so the seeds
+            // mmseqs reports name records by position
+            let header = position.to_string();
+            batch.headers.extend_from_slice(header.as_bytes());
+            batch.headers.extend_from_slice(&[b'\n', 0]);
+            batch.header_lengths.push(header.len() + 2);
+        }
+
+        Ok(batch)
+    }
+}
+
 pub fn write_mmseqs_sequence_database(
     sequences: &Fasta,
     path: impl AsRef<Path>,
@@ -456,30 +496,39 @@ pub fn write_mmseqs_sequence_database(
 
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
+    let mut position = 0usize;
 
-    for (seq_count, seq) in sequences.iter().enumerate() {
-        let seq = seq?;
-        db.write_all(&seq.utf8_bytes[1..])?;
-        db.write_all(&[10u8, 0u8])?;
+    let batch_starts: Vec<usize> = (0..sequences.len())
+        .step_by(SEQUENCE_DB_BATCH_LEN)
+        .collect();
 
-        let db_byte_length = seq.length + 2;
-        writeln!(db_index, "{}\t{}\t{}", seq_count, db_offset, db_byte_length,)?;
+    // a group of batches is built at a time, so memory
+    // holds one group's bytes and not the whole db
+    for group in batch_starts.chunks(rayon::current_num_threads()) {
+        let batches = group
+            .par_iter()
+            .map(|&start| {
+                let end = (start + SEQUENCE_DB_BATCH_LEN).min(sequences.len());
+                SequenceDbBatch::build(sequences, start..end)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-        // the header is the record's position, so the seeds
-        // mmseqs reports name records by position
-        let header = seq_count.to_string();
-        writeln!(db_header, "{header}")?;
-        db_header.write_all(&[0u8])?;
+        for batch in batches {
+            db.write_all(&batch.db)?;
+            db_header.write_all(&batch.headers)?;
 
-        let header_byte_length = header.len() + 2;
-        writeln!(
-            db_header_index,
-            "{}\t{}\t{}",
-            seq_count, header_offset, header_byte_length
-        )?;
+            for (db_length, header_length) in batch.db_lengths.iter().zip(&batch.header_lengths) {
+                writeln!(db_index, "{position}\t{db_offset}\t{db_length}")?;
+                writeln!(
+                    db_header_index,
+                    "{position}\t{header_offset}\t{header_length}"
+                )?;
 
-        db_offset += db_byte_length;
-        header_offset += header_byte_length;
+                db_offset += db_length;
+                header_offset += header_length;
+                position += 1;
+            }
+        }
     }
 
     Ok(())
