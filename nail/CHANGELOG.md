@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added method `Stats::set_num_threads()`
 - added method `Stats::add_align_iteration()`
 - added per-iteration rows under the `align` leaf of the `-s` runtime tree in `--seed-mode prog`, with an iteration count on the leaf
-- added dependency `libsail` 0.4.1 with feature `mmap`
+- added dependency `libsail` 0.4.2 with feature `mmap`
 - added struct `io::Records`
 - added methods `Fasta::name()`, `P7Hmm::name()`, `P7Hmm::get()`, `Queries::name()`
 
