@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-14T22:07:06.854236166Z",
   "defer_until": null,
   "created_at": "2026-09-29T01:27:31.758933822Z",
-  "updated_at": "2026-10-14T21:52:06.854236166Z",
+  "updated_at": "2026-10-14T21:52:33.819214937Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "cd28fb05",
+      "at": "2026-10-14T21:52:33.819214087Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Diagnosis. The panic is `todo!(\"fix this\")` inside the test itself, at `libnail/src/structs/profile.rs:1373`. No library code fails. Commit `036babf` (2025-07-25, \"removed Hmm struct\") moved the test from the deleted `hmm.rs`. It swapped `Hmm::from_blosum_62_and_sequence` for `Profile::from_blosum_62_and_seq`, commented out both assertions and put the `todo!` in their place. The old test checked two things on the `Hmm`. First, `hmm.model.composition` against 20 expected values. `Profile` has no composition field, and nothing computes one from a sequence anymore, so that half has nothing left to check. Second, `hmm.stats.forward_lambda` against 0.703323. `Profile::from_blosum_62_and_seq` computes `fwd_lambda` with the same formula, `LN_2 + 1.44 / total_entropy`, so that half could be pointed at `prf.fwd_lambda`. The old lambda assert had no `.abs()`: `(lambda_correct - lambda) < 1e-4` passes for any lambda above 0.7032, so it never checked an upper bound. Nobody has run the old test at `036babf^` to see whether it passed then.",
+      "commit": "944417e",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "bdb967d",
