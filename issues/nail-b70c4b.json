@@ -3,26 +3,29 @@
   "title": "`PrefilterDb::from_path` can place a record in an empty split file",
   "body": "`PrefilterDb::from_path` in `mmseqs.rs` reads a prefilter or align db that mmseqs may leave split over files `name.0`, `name.1`, and so on. It takes each `.index` offset as a position in the concatenation of those files. It sums the file sizes into `prefix_sum`, the start of each file, and finds the file holding a record by binary search:\n\n```rust\nlet file_idx = match prefix_sum.binary_search(&offset) {\n    Ok(idx) => idx,\n    Err(idx) => idx.saturating_sub(1),\n};\n```\n\nmmseqs leaves zero-size files in the split. A run of `mmseqs align --threads 8` on a 24-query fixture left these file sizes and starts:\n\n| file | size | `prefix_sum` |\n|---|---|---|\n| 0 | 17699 | 0 |\n| 1 | 0 | 17699 |\n| 2 | 16485 | 17699 |\n| 3 | 0 | 34184 |\n| 4 | 0 | 34184 |\n| 5 | 26775 | 34184 |\n| 6 | 20066 | 60959 |\n| 7 | 17930 | 81025 |\n\nAn empty file starts where the next file starts, so `prefix_sum` holds that value more than once. A record at the start of the next file has that offset, and `binary_search` may return any of the matching entries. Rust's docs leave the choice unspecified.\n\nIf it returns an empty file, the record's relative offset is 0 in a file with no bytes. The null-terminator check in `from_path` then fails at `read_exact`, and nail stops with an error. nail would not read a wrong record. In 21 runs on that fixture the lookup returned the right file every time.\n\nThe check ran against mmseqs `8cc5ce3`. mmseqs computes the offsets in `DBWriter::mergeIndex`, which adds the size of each earlier thread file to the offsets of the next. The scratch files are in `tmp-claude/2026-10-14-prefilter-index/` on Jack's machine.\n\n## Proposal\n\nTake the last file whose start is at or below the offset:\n\n```rust\nlet file_idx = prefix_sum.partition_point(|&s| s <= offset) - 1;\n```\n\nmmseqs writes every record with at least its null terminator, so a record never starts at the end of the data. The last file starting at or below a record's offset is then never an empty one.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/2680c5a4",
-  "lease_expires": "2026-10-14T18:25:44.038365748Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T18:02:20.37895505Z",
-  "updated_at": "2026-10-14T18:10:44.038365748Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T18:14:51.720008359Z",
+  "closed_at": "2026-10-14T18:14:51.720008359Z",
+  "close_reason": "Fixed in `9a671f7` on `libsail-io`: `from_path` finds the file with `partition_point`, which returns the last file starting at or before the offset.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "1326e49",
       "branch": "libsail-io"
     },
-    "closed": null
+    "closed": {
+      "commit": "9a671f7",
+      "branch": "libsail-io"
+    }
   }
 }
