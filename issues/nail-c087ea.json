@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-14T23:45:55.35392041Z",
   "defer_until": null,
   "created_at": "2026-10-14T23:30:05.873123483Z",
-  "updated_at": "2026-10-14T23:30:55.35392041Z",
+  "updated_at": "2026-10-14T23:32:14.494099482Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "8c988cd5",
+      "at": "2026-10-14T23:32:14.494098742Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Search for the source of 0.589. Nothing in the tau-calibration archive mentions it: the scripts and readme fit tau on ln(L) alone, with no relative entropy term. In git it first appears in `a9900ba` (2026-03-23, \"added closed form solution for seq tau\"). That same commit added the lambda comment about approximating lambda from \"the length of the sequence and the mean relative entropy of blosum62\", which reads as the mean match relative entropy per position, H in lambda = ln 2 + 1.44 / (L * H). Candidate values, in bits per position:\n\n| source | value |\n|---|---|\n| backed out of hmmbuild lambda, PANTHER training set (189,921) | mean 0.5727, sd 0.030 |\n| the same, held-out set (193,872) | mean 0.5719 |\n| the same from nail lambda, 49-sequence SwissProt bag | mean 0.5753 |\n| nail BLOSUM62 emissions per residue, weighted by `AMINO_BACKGROUND_FREQUENCIES` | 0.5686 |\n| the same, unweighted over the 20 residues | 0.6604 |\n| HMMER `p7_ETARGET_AMINO` in `p7_config.h.in`, the per-position target of hmmbuild entropy weighting | 0.59 |\n| BLOSUM62 relative entropy as Henikoff and Henikoff report it | 0.6979 |\n\nNone gives 0.589 exactly. The two closest are HMMER's 0.59 target, a tuned constant for multi-sequence models that `--singlemx` does not apply, and a measured mean of about 0.57 that some other sample could have put at 0.589. The record does not settle it. The per-residue values range from 0.26 (S) to 1.91 (W).",
+      "commit": "9d8f4df",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "b05455b",
