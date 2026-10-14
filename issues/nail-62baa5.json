@@ -1,0 +1,30 @@
+{
+  "id": "nail-62baa5",
+  "title": "A closed form for tau fits the rerun hmmbuild data",
+  "body": "Fit tau = a*ln(L) + b on the rerun TSVs, with new code, and check the fit before nail takes it.\n\n## Proposal\n\n- Least squares on training at seed 42, then the same two-decimal grid search on mean absolute error as the original. Both fits should land on 1.34 and -2.33 if the rerun data matches.\n- Mean error, mean absolute error and standard deviation of the residuals on all three sets, for the fit and for nail's current form.\n- Residuals against L in bins, to see whether ln(L) alone leaves a trend at short or long lengths.\n- The four panels of the original figure, redrawn.\n\n## Open\n\n- Whether least squares and least absolute error give fits far enough apart to matter.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-df3f53",
+  "blocked_by": [
+    "nail-76e419"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T22:50:22.33765659Z",
+  "updated_at": "2026-10-14T22:50:22.33765659Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "b05455b",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
