@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.412018534Z",
-  "updated_at": "2026-10-14T20:19:21.749274962Z",
+  "updated_at": "2026-10-14T20:19:21.763213002Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "4d3b3551",
+      "at": "2026-10-14T20:19:21.763211932Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Rewrote the body. The old one described `Database::iter` with a seek and a `read_exact` per record, which `92de7c5` removed. It also counted the whole 15.5 s db write leaf as the target db, when part of the leaf is the query profile db, now nail-811f24.",
+      "commit": "a8a28e5",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "432ff65",
