@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-14T17:45:43.252883723Z",
   "defer_until": null,
   "created_at": "2026-10-13T23:07:08.309170681Z",
-  "updated_at": "2026-10-14T17:51:16.838693494Z",
+  "updated_at": "2026-10-14T18:02:26.53951537Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -31,6 +31,14 @@
       "at": "2026-10-14T17:51:16.818862067Z",
       "author": "Jack Roddy/2680c5a4",
       "text": "Checked the `prf_idx` values in `seed_progressive`. They are query db keys and never touch the header db. `seed_progressive` numbers its per-query `State` entries `0..queries.len()`. `PrefilterDb::next_n` and `PrefilterDb::get` look records up by that number, and the merged align db at the end of `seed_progressive` writes it as each record's key. `write_mmseqs_sequence_database` and `write_mmseqs_profile_database` take each record's key from `enumerate()` over `Database::iter`. Once the writers number records `0..len` in file order through `Framed`, a query's key, its `prf_idx` and its position are the same number. mmseqs reads the header db only in `convertalis`, so writing positions in place of names changes only what `convertalis` prints.\n\n`PrefilterDb::from_path` ignores the key column of the `.index` file and uses each line's number as the key. That holds only if mmseqs writes one index line per query, sorted by key, with no key missing. This session did not check that against mmseqs, and nothing in nail asserts it.",
+      "commit": "1326e49",
+      "branch": "libsail-io"
+    },
+    {
+      "id": "836084f0",
+      "at": "2026-10-14T18:02:26.53951457Z",
+      "author": "Jack Roddy/2680c5a4",
+      "text": "Checked the `.index` assumption in `PrefilterDb::from_path` against mmseqs `8cc5ce3`, in its source and with runs on up to 8 threads. It holds. `Prefiltering.cpp` and `Alignment.cpp` write one record per query, including a query with no hits, which gets a record of just the null byte. `DBWriter::close` sorts the merged index by key. On a 24-query db built by `createdb`, the `.index` files from `prefilter` and `align` each held 24 lines with keys 0 to 23 in order, 8 of them of length 1.\n\nThe way `from_path` finds the split file for each offset holds as well, with one flaw filed as nail-b70c4b.",
       "commit": "1326e49",
       "branch": "libsail-io"
     }
