@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.395993367Z",
-  "updated_at": "2026-10-13T23:11:17.929985834Z",
+  "updated_at": "2026-10-14T19:38:18.507498451Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -35,6 +35,14 @@
       "commit": "432ff65",
       "branch": "dev",
       "edited_at": "2026-10-13T23:11:17.929985614Z"
+    },
+    {
+      "id": "d6ef5869",
+      "at": "2026-10-14T19:38:18.507497481Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Rerun at `92de7c5`, after the libsail io commits, on the 16-core box at `-t 8`. The box has 8 physical cores. Inputs are the same 20,795 Pfam profiles against the same 2,455,940 targets, with native mmseqs `8cc5ce3`. The run took 726.1 s and reported 3,031,620 hits. The log and the full tree are in `tmp-claude/2026-10-14-serial-overhead` on that box.\n\nThe two runs used different machines and thread counts, so the old column is a rough guide. It is not a before and after.\n\n| item | 48 threads at `432ff65`, s | 8 threads at `92de7c5`, s |\n|---|---|---|\n| db write | 15.47 | 7.31 |\n| target index | 1.16 | 3.36 |\n| pipeline build | 6.23 | 3.07 |\n| slice, decide and merge | 3.40 | 1.25 |\n| seed index | 1.64 | 0.56 |\n| convertalis | 0.65 | 0.38 |\n| query index | 1.53 | 0.09 |\n| all serial | 30.08 | 16.02 |\n\nThe serial work is 2.2% of this run. At 48 threads the parallel stages shrink, and the same 16 s would come to roughly 3 to 4% of the run. That figure is an estimate from scaling and was not measured.\n\n- db write is still the largest item, nail-fc2ac4.\n- target index went up from 1.16 s to 3.36 s, while query index fell from 1.53 s to 0.09 s. Nobody has checked why. A cold page cache on the 535 MB target fasta would explain it, and so would an index pass that runs on one thread. It needs a warm rerun before anyone reads it as a regression.\n- pipeline build is 3.07 s, nail-65ce8f.\n- The alignment stage reported 99.6% busy at 8 threads. The idle time in nail-ec7764 does not show up at this thread count.\n\nProgressive seeding ran 11 align iterations for 67.1 s, all inside `mmseqs align`, which runs on 8 threads. The prefilter took 187.6 s.",
+      "commit": "92de7c5",
+      "branch": "dev"
     }
   ],
   "stamps": {
