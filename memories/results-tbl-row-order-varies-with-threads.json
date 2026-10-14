@@ -1,0 +1,10 @@
+{
+  "slug": "results-tbl-row-order-varies-with-threads",
+  "text": "At more than one thread, two nail runs on the same inputs write `results.tbl` rows in different orders. The rows are identical once sorted. At `-t 1` the file is byte-identical between runs. Compare outputs sorted. Measured on 300 Pfam profiles against 50,000 mgy targets, at the commit after `a8a28e5`; nobody has traced it to a specific line in the alignment stage of `search.rs`.",
+  "created_at": "2026-10-14T20:36:47.764738027Z",
+  "updated_at": "2026-10-14T20:36:47.764738027Z",
+  "stamp": {
+    "commit": "a8a28e5",
+    "branch": "dev"
+  }
+}
