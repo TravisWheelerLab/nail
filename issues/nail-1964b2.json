@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.395993367Z",
-  "updated_at": "2026-10-14T21:13:29.854543259Z",
+  "updated_at": "2026-10-14T21:48:03.036809778Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -51,6 +51,14 @@
       "author": "Jack Roddy/95b307ba",
       "text": "Serial items after commits `a8a28e5` through `f337e0f` on `dev`, on the 16-core box at `-t 8` with 2,455,940 targets. The query profile db is not timed on its own. Target index 3.36 s became 0.37 s, from the sharded repeated-name check in nail-cfade0 and libsail 0.4.2. Pipeline build 3.07 s became under 0.01 s, since nail-65ce8f and nail-811f24 parse the hmm queries once, in parallel. Query index grew from 0.09 s to 0.50 s because it now includes that parse. The db write leaf went from 7.31 s to about 1.2 s: the target db write fell from about 4.3 s to 1.05 s in nail-fc2ac4, and the profile db stopped parsing. The largest serial items left are slice, decide and merge at 1.25 s, seed index at 0.60 s and convertalis at 0.38 s. The db write leaf is an estimate from the one-profile run plus the profile db; no full run has measured it since `f337e0f`.",
       "commit": "f337e0f",
+      "branch": "dev"
+    },
+    {
+      "id": "a90458b8",
+      "at": "2026-10-14T21:48:03.036808978Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Runtime tree at `41781f9` on the 16-core box at `-t 8`: 20,795 Pfam profiles against 2,455,940 mgy targets, native mmseqs `8cc5ce3`, 3,031,623 hits, peak RSS 7.4 GB.\n\n```text\nruntime: 707.52s (100.00%)\n └─ setup:       0.86s ( 0.12%)\n     ├─ query index:      0.50s (57.89%)\n     ├─ target index:     0.36s (41.83%)\n     ├─ pipeline build:   0.00s ( 0.02%)\n     └─ [misc.]:          0.00s ( 0.26%)\n └─ seeding:   250.51s (35.41%)\n     ├─ db write:      1.20s ( 0.48%)\n     ├─ prefilter:   180.75s (72.16%)\n     ├─ slice:         0.72s ( 0.29%)\n     ├─ align:        65.88s (26.30%)   [11 iterations]\n     │   ├─ 1:         7.79s\n     │   ├─ 2:         9.93s\n     │   ├─ 3:         7.59s\n     │   ├─ 4:         7.18s\n     │   ├─ 5:         6.88s\n     │   ├─ 6:         6.71s\n     │   ├─ 7:         6.80s\n     │   ├─ 8:         5.74s\n     │   ├─ 9:         3.96s\n     │   ├─ 10:        2.96s\n     │   └─ 11:        0.34s\n     ├─ decide:        0.08s ( 0.03%)\n     ├─ merge:         0.16s ( 0.06%)\n     ├─ convertalis:   0.38s ( 0.15%)\n     ├─ seed index:    0.58s ( 0.23%)\n     └─ [misc.]:       0.74s ( 0.30%)\n └─ alignment: 456.05s (64.46%)   [8 threads, cpu 3,590.88s, 98.4% busy]\n     │                        wall        %         cpu\n     │                     -------   ------   ---------\n     ├─ memory init          2.55s    0.56%      20.06s\n     ├─ cloud search       204.62s   44.87%   1,611.17s\n     ├─ forward             88.49s   19.40%     696.79s\n     ├─ backward           100.52s   22.04%     791.52s\n     ├─ posterior           23.54s    5.16%     185.35s\n     ├─ optimal accuracy    20.48s    4.49%     161.27s\n     ├─ traceback            1.85s    0.40%      14.54s\n     ├─ null two             7.74s    1.70%      60.95s\n     ├─ output (write)       0.44s    0.10%       3.50s\n     ├─ output (mutex)       0.00s    0.00%       0.02s\n     └─ [misc.]              5.81s    1.27%      45.73s\n └─ [misc.]:     0.09s ( 0.01%)\n```",
+      "commit": "41781f9",
       "branch": "dev"
     }
   ],
