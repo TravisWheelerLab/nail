@@ -15,7 +15,7 @@
   "lease_expires": "2026-10-14T20:33:26.551213601Z",
   "defer_until": null,
   "created_at": "2026-09-29T01:19:52.475877171Z",
-  "updated_at": "2026-10-14T20:31:05.893958335Z",
+  "updated_at": "2026-10-14T20:36:47.755861061Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -40,9 +40,10 @@
       "id": "3fc4f3de",
       "at": "2026-10-14T20:31:05.893957435Z",
       "author": "Jack Roddy/95b307ba",
-      "text": "Restored `p7hmm.par_iter()` in `build_pipeline`, uncommitted. A full run of 20,795 Pfam profiles against 2,455,940 targets at `-t 8` took the pipeline build from 3.07 s to 0.40 s, and setup from 6.52 s to 1.45 s. Both runs wrote 3,031,623 lines to `results.tbl`, and the two files are identical once sorted. Their row order differs, from line 4 on. `par_iter().collect()` keeps the profiles in file order, so the row order most likely comes from the parallel alignment stage writing rows as threads finish. Nobody has run the old code twice to confirm that its order also varies.",
+      "text": "Restored `p7hmm.par_iter()` in `build_pipeline`. A full run of 20,795 Pfam profiles against 2,455,940 targets at `-t 8` took the pipeline build from 3.07 s to 0.40 s, and setup from 6.52 s to 1.45 s. Both runs wrote 3,031,623 lines to `results.tbl`. The two files are identical once sorted, and their row order differs from line 4 on.\n\nThe row order does not come from this change. On 300 Pfam profiles against the first 50,000 mgy targets, the serial build and the parallel build each ran three times at `-t 8`. All six files differ byte for byte and are identical once sorted. At `-t 1`, two runs of each build are byte-identical to each other and to one another. The serial build reorders rows too, so the order varies with the thread count, not with how the profiles are parsed. The race recorded with `3a964e5` would show up as changed rows, and no row changed.",
       "commit": "a8a28e5",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-14T20:36:47.755860761Z"
     }
   ],
   "stamps": {
