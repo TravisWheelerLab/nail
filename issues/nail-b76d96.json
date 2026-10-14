@@ -3,26 +3,29 @@
   "title": "`-a 0` panics instead of failing validation",
   "body": "`-a` sets `cloud_max_join_attempts`, the total number of attempts to recover disjoint clouds. `SearchArgs::validate()` in `args.rs` does not check it. With `-a 0` a search reaches `unreachable!(\"finished cloud search without results\")` at `cloud_stage.rs:154` instead of failing at startup. This cost an overnight cloud search run.\n\n## Proposal\n\n`SearchArgs::validate()` rejects 0 with an error that names the flag.\n\n## Out of scope\n\n- The help text for the same flag, in nail-d88b8b.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T22:03:06.960155502Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T01:19:58.979185219Z",
-  "updated_at": "2026-10-14T21:48:06.960155502Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-14T21:48:55.661409777Z",
+  "closed_at": "2026-10-14T21:48:55.661409777Z",
+  "close_reason": "Commit a3a5e71 on `dev`: `PipelineArgs::validate`, called from `SearchArgs::validate`, rejects `-a 0` with \"the argument '-a' must be at least 1\". Tests `zero_cloud_join_attempts_fails_validation` and `one_cloud_join_attempt_passes_validation` in `args.rs` cover it.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "bdb967d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "a3a5e71",
+      "branch": "dev"
+    }
   }
 }
