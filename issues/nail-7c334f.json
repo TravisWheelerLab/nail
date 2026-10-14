@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T22:07:16.846098238Z",
-  "updated_at": "2026-10-14T22:07:16.846098238Z",
+  "updated_at": "2026-10-14T22:15:41.298495143Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "cb86dd8f",
+      "at": "2026-10-14T22:15:41.298494433Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "A colleague of Jack's ran the experiment that fit the closed-form tau constants, and Jack doesn't know whether it fit to nail's uni-hit scores or to HMMER's. Jack will find that experiment's folder, and the evaluation waits on it.",
+      "commit": "944417e",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "944417e",
