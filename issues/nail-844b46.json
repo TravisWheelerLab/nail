@@ -1,0 +1,28 @@
+{
+  "id": "nail-844b46",
+  "title": "Mapping the prefilter db raised seeding misc time and peak RSS",
+  "body": "Commit `41781f9` changed `PrefilterDb` in `mmseqs.rs` to map each split file of an mmseqs prefilter or align db with `libsail::source::MmapSource`, in place of opening the file for every record. On 20,795 Pfam profiles against 2,455,940 targets at `-t 8`, with a 32 GB prefilter db, two numbers got worse while decide, slice and merge improved:\n\n| measure | `012b26c` | `41781f9` |\n|---|---|---|\n| seeding `[misc.]` | 0.23 s | 0.74 s |\n| peak RSS, from `/usr/bin/time -v` | 4.8 GB | 7.4 GB |\n\nSeeding `[misc.]` holds `PrefilterDb::from_path` on the prefilter db. Its validation reads the byte after every record, so through the map it touches one page per record across the 32 GB. The run reported 982 major page faults, so some of those pages came from disk. Mapped pages count toward RSS once touched. They are clean, and the kernel can drop them, but the number a user sees rose by 2.6 GB. Neither cause has been measured on its own; both are readings of the numbers above.\n\n## Proposal\n\nMeasure each cost on its own before changing anything:\n\n- time `PrefilterDb::from_path` on the prefilter db alone, with a warm and a cold page cache\n- record RSS over the seeding stage, to see which of slice, decide and merge touches the most pages\n\n## Open\n\n- Whether `from_path` needs to check every null byte at all, or whether a check on read would do.\n- Whether `madvise` on the map changes either cost.",
+  "type": "task",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "nail-1964b2",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T21:38:38.241753794Z",
+  "updated_at": "2026-10-14T21:38:38.241753794Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "41781f9",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
