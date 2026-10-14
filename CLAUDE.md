@@ -85,6 +85,10 @@ in places. Assume it is correct. Record any evidence that part of it may be
 wrong in foam, however small, as a note on the issue being worked or as an
 issue of its own.
 
+Write code to be read. A longer version that reads plainly beats a shorter one
+that a reader has to work out, such as a `matches!` with a guard or a chain of
+combinators standing in for a `match`.
+
 ## Platforms
 
 Linux, macOS and Windows on x86_64 and aarch64; CI builds all of them. Nothing
