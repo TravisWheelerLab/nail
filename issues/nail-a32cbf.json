@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T19:21:04.83898534Z",
-  "updated_at": "2026-10-14T19:21:04.83898534Z",
+  "updated_at": "2026-10-15T00:20:28.086638469Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "bd9e4377",
+      "at": "2026-10-15T00:20:28.086637659Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "`fixtures/a.seeds` names its queries and targets, so `--seeds fixtures/a.seeds` fails since `dbdee02` with \"seed field \\\"7tm_1\\\" is not a record position\". No test reads it; only manual commands like the one in nail-7ab565 do. Jack deferred converting it to positions until this issue decides how a named seeds file loads.",
+      "commit": "eeab798",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "92de7c5",
