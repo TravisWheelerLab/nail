@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-15T19:27:59.956170554Z",
   "defer_until": null,
   "created_at": "2026-10-14T21:38:38.241753794Z",
-  "updated_at": "2026-10-15T19:12:59.956170554Z",
+  "updated_at": "2026-10-15T19:15:15.243074218Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "1ab501e7",
+      "at": "2026-10-15T19:15:15.243073198Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "Measured at `1e1bac3` with a copy of `PrefilterDb` in `tmp-claude/2026-10-15-prefilter-map`. The input was the 32 GB prefilter db of the full run: 20,795 records over 8 split files, in `tmp-claude/2026-10-14-serial-overhead/nail-tmp/prefilter-db`. For a cold cache, `evict.py` in the same directory drops the files' pages with `posix_fadvise(POSIX_FADV_DONTNEED)`. The box has 60 GB of RAM.\n\n## `from_path`\n\n| step | cold | warm |\n|---|---|---|\n| read the index | 0.002 s | 0.002 s |\n| map the 8 files | 0.000 s | 0.000 s |\n| null-byte check | 6.87 s, 10,012 major faults | 0.028 s |\n\nThe check reads one byte per record, yet it leaves 1,298 MB of the file resident (`RssFile`), because each page fault maps the 64 KB around its address. The full run had 982 major faults and 0.74 s in seeding `[misc.]`, which fits a check whose pages were mostly still cached after mmseqs wrote them. On a box whose page cache cannot hold the db, the check would approach the cold 6.9 s.\n\n## Slicing\n\nThe probe repeats the slice loop of `seed_progressive` with `--prog-n 200` and doubling. It keeps every query active, so it reads more than a real run, which stops querying records once decide terminates them.\n\n| after | sliced this iteration | `RssFile` | `RssAnon` |\n|---|---|---|---|\n| null check | | 1,298 MB | 0 MB |\n| iteration 4 | 960 MB | 3,074 MB | 1 MB |\n| iteration 7 | 7,183 MB | 15,189 MB | 1 MB |\n| iteration 10 | 2,305 MB | 31,599 MB | 1 MB |\n\nAll the growth is file pages, which are clean and which the kernel can drop. `RssAnon` stays at 1 MB. Peak RSS (`VmHWM`) counts file pages, so the 4.8 GB to 7.4 GB rise in the full run is the mapped prefilter db, not memory nail allocated. Before `41781f9`, nail read the same bytes into the page cache with `read`, which does not count toward the process's RSS.",
+      "commit": "1e1bac3",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "41781f9",
