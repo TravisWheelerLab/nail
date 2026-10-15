@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - fixed `p_value()` returning more than 1 for a score below tau; it now returns 1, as HMMER does
+- fixed `Sequence::from_fasta()` failing on a record with CRLF line endings; it skips `\r` as it skips `\n`
+- fixed `Sequence::from_fasta()` ending a record's name only at a space; it ends the name at any whitespace, so a tab no longer lands inside it
 
 ## [0.6.0] - 2026-7-31
 

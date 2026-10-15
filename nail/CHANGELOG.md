@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
 - fixed CLI param `-a 0` reaching a panic in cloud search; validation now rejects it at startup
 - fixed the help text of CLI param `-a`, which read as N retries after a first attempt; N counts every attempt
+- fixed a target or query fasta with CRLF line endings stopping nail with a parse error
+- fixed a fasta header with a tab after the name putting the tab and the next word into the name in the output
 - fixed `PrefilterDb::from_path()` placing a record in an empty split file of a prefilter or align db, which could stop `--seed-mode prog` with an error
 
 ## [0.7.1] - 2026-7-31

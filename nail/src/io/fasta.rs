@@ -45,6 +45,34 @@ pub mod tests {
 
     use super::*;
 
+    // the index names a record through libsail's name_of,
+    // and the output names it through Sequence::from_fasta,
+    // so the two have to agree on every header
+    #[test]
+    fn index_and_output_agree_on_record_names() -> anyhow::Result<()> {
+        let records: [&[u8]; 6] = [
+            b">abc some desc\nACDE\n",
+            b">abc\nACDE\n",
+            b">abc\tsome desc\nACDE\n",
+            b">abc some desc\r\nACDE\r\n",
+            b">abc\r\nACDE\r\n",
+            b">  abc  some desc\nACDE\n",
+        ];
+
+        for record in records {
+            let index_name = libsail::seq::fasta::name_of(record).unwrap();
+            let output_name = Sequence::from_fasta(record)?.name;
+            assert_eq!(
+                output_name.as_bytes(),
+                index_name,
+                "{:?}",
+                String::from_utf8_lossy(record)
+            );
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn test_fasta_iter_parse() -> anyhow::Result<()> {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");

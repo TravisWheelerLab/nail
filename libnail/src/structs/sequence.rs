@@ -91,27 +91,21 @@ impl Sequence {
             None => bail!("no newline in FASTA record"),
         };
 
-        let header_bytes = &buf[1..header_newline_pos];
+        let header = buf[1..header_newline_pos].trim_ascii();
         let sequence_bytes = &buf[(header_newline_pos + 1)..];
 
-        let name = String::from_utf8(
-            header_bytes
-                .iter()
-                .take_while(|&&b| b != b' ')
-                .cloned()
-                .collect(),
-        )?;
+        // the name ends at any whitespace, as easel's
+        // header_fasta() ends it, so a tab or the \r of a
+        // CRLF line never lands inside it
+        let name_end = header
+            .iter()
+            .position(|b| b.is_ascii_whitespace())
+            .unwrap_or(header.len());
+        let name = String::from_utf8(header[..name_end].to_vec())?;
 
-        let details = match name.len().cmp(&(header_newline_pos - 1)) {
-            std::cmp::Ordering::Less => Some(String::from_utf8(
-                header_bytes[(name.len() + 1)..]
-                    .iter()
-                    .take_while(|&&b| b != b'\n')
-                    .cloned()
-                    .collect(),
-            )?),
-            std::cmp::Ordering::Equal => None,
-            std::cmp::Ordering::Greater => bail!("fasta name longer than header"),
+        let details = match header[name_end..].trim_ascii_start() {
+            [] => None,
+            details => Some(String::from_utf8(details.to_vec())?),
         };
 
         let mut utf8_bytes = Vec::with_capacity(sequence_bytes.len());
@@ -122,7 +116,8 @@ impl Sequence {
 
         sequence_bytes
             .iter()
-            .filter(|&&b| b != b'\n')
+            // \r is skipped with \n, so a CRLF file reads like an LF one
+            .filter(|&&b| b != b'\n' && b != b'\r')
             .try_for_each(|b| {
                 utf8_bytes.push(*b);
                 digital_bytes.push(match UTF8_TO_DIGITAL_AMINO.get(b) {
@@ -238,6 +233,40 @@ mod tests {
     use rand_pcg::Pcg64;
 
     use crate::{alphabet::AMINO_BACKGROUND_FREQUENCIES, structs::Sequence};
+
+    #[test]
+    fn from_fasta_reads_crlf_like_lf() -> anyhow::Result<()> {
+        let lf = Sequence::from_fasta(b">abc some desc\nACDE\nFGHI\n")?;
+        let crlf = Sequence::from_fasta(b">abc some desc\r\nACDE\r\nFGHI\r\n")?;
+
+        assert_eq!(crlf.name, "abc");
+        assert_eq!(crlf.details.as_deref(), Some("some desc"));
+        assert_eq!(crlf.length, 8);
+        assert_eq!(crlf.utf8_bytes, lf.utf8_bytes);
+        assert_eq!(crlf.digital_bytes, lf.digital_bytes);
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_fasta_reads_a_crlf_header_with_no_details() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">abc\r\nACDE\r\n")?;
+
+        assert_eq!(seq.name, "abc");
+        assert_eq!(seq.details, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_fasta_ends_the_name_at_a_tab() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">abc\tsome desc\nACDE\n")?;
+
+        assert_eq!(seq.name, "abc");
+        assert_eq!(seq.details.as_deref(), Some("some desc"));
+
+        Ok(())
+    }
 
     #[test]
     fn test_random_amino() -> anyhow::Result<()> {
