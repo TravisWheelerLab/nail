@@ -180,7 +180,15 @@ impl Score for Bits {
 }
 
 pub fn p_value(score: impl Score, lambda: f32, tau: f32) -> f64 {
-    (-lambda as f64 * ((score.bits().value()) as f64 - tau as f64)).exp()
+    let score = score.bits().value() as f64;
+
+    // the exponential tail starts at tau, so a score below
+    // it has a p-value of 1, as in easel's esl_exp_surv()
+    if score < tau as f64 {
+        return 1.0;
+    }
+
+    (-lambda as f64 * (score - tau as f64)).exp()
 }
 
 pub fn e_value(p_value: f64, num_targets: usize) -> f64 {
@@ -372,6 +380,19 @@ pub fn null_two_score(
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn p_value_is_one_below_tau() {
+        let lambda = 0.7;
+        let tau = -5.0;
+
+        assert_eq!(p_value(Bits(-8.0), lambda, tau), 1.0);
+        assert_eq!(p_value(Bits(-5.0), lambda, tau), 1.0);
+
+        // 2 bits above tau
+        let expected = (-0.7f64 * 2.0).exp();
+        assert!((p_value(Bits(-3.0), lambda, tau) - expected).abs() < 1e-6);
+    }
 
     #[test]
     fn test_nats_ops() -> anyhow::Result<()> {

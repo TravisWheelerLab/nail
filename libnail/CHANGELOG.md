@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed dependency `seq_io`
 - removed method `Profile::calibrate_tau()`; nothing called it, and `Profile::from_blosum_62_and_seq()` sets tau from a closed form
 
+### Fixed
+- fixed `p_value()` returning more than 1 for a score below tau; it now returns 1, as HMMER does
+
 ## [0.6.0] - 2026-7-31
 
 ### Added
