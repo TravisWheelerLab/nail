@@ -3,20 +3,20 @@
   "title": "Parsing and building `Profile` and `Sequence` gets faster",
   "body": "libnail builds its two record types from raw bytes in `libnail/src/structs`. nail calls them from `nail/src/io` and `search.rs`.\n\n- `Sequence::from_fasta(buf)` (`sequence.rs`) copies the name and the header details into new `String`s. It then pushes every residue into two `Vec`s, `utf8_bytes` and `digital_bytes`, both with a 255 sentinel in front. Each digital byte comes from a lookup in `UTF8_TO_DIGITAL_AMINO`, a `phf::Map<u8, u8>`.\n- `Profile::from_p7hmm(buf)` (`p7hmm.rs`) splits the record into lines, checks each line as UTF-8, and parses the floats with `str::parse` through `split_whitespace`. A `ProfileBuilder` collects the values, and its build produces the `Profile`.\n- `Profile::from_blosum_62_and_seq(seq)` (`profile.rs`) builds a profile for a sequence query.\n\nnail parses every target and every query at least once, and every profile query twice: once in `build_pipeline` and once for the mmseqs query db (nail-811f24). Each parse lands in a serial step or on the path to one. Rough per-record costs, derived from the `-s` tree on 2,455,940 MGnify targets and 20,795 Pfam profiles at `-t 8` and not measured directly:\n\n| record | step | seconds | per record |\n|---|---|---|---|\n| `Sequence` | target db write, one thread | ~4.3 | ~1.8 µs, including the writes |\n| `Profile` from p7hmm | pipeline build, one thread at `92de7c5` | 3.07 | ~150 µs |\n\n## Proposal\n\nMeasure first. A benchmark per constructor, on these inputs, times the parse apart from the build. That shows where the time goes before anything changes. Candidates once it is measured:\n\n- `from_fasta`: a 256-entry table in place of the `phf::Map`, and no `String` for the details when a caller does not need them.\n- `from_p7hmm`: a float parser for p7hmm's fixed number format in place of `str::parse`, and no per-line UTF-8 check.\n- the `ProfileBuilder` build, if the measurement puts the cost there and not in the parse.\n\n## Open\n\n- Whether a caller that needs only some of a record, such as the target db writer in nail-fc2ac4, gets a narrower constructor or a cheaper full one.\n- Any change to these constructors goes in `libnail/CHANGELOG.md`, and one that changes a public field or signature is breaking.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/302d4408",
-  "lease_expires": "2026-10-15T03:55:47.138751885Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T20:19:08.878086784Z",
-  "updated_at": "2026-10-15T05:05:39.800851695Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-15T05:05:39.814472754Z",
+  "closed_at": "2026-10-15T05:05:39.814472754Z",
+  "close_reason": "Landed in `94eecda`, `9162fd4`, `6df648a`, `fbf5e2c` and `1e1bac3`: `from_fasta` is 7.3 times faster and `from_p7hmm` about 1.5 times, with bit-identical output. The last note has the numbers and the two options left unbuilt.",
+  "resolution": "done",
   "notes": [
     {
       "id": "6a675c19",
@@ -40,6 +40,9 @@
       "commit": "a8a28e5",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "1e1bac3",
+      "branch": "dev"
+    }
   }
 }
