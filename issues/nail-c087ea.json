@@ -3,20 +3,20 @@
   "title": "Where do the BLOSUM62 relative entropy and the tau weight on it come from?",
   "body": "`Profile::from_blosum_62_and_seq` in `libnail/src/structs/profile.rs` builds the tau intercept from named constants:\n\n```rust\nconst KL_BLOSUM62: f32 = 0.589;\nconst TAU_KL_WEIGHT: f32 = 0.662;\nconst TAU_BASE: f32 = 1.94;\nconst TAU_INTERCEPT: f32 = TAU_KL_WEIGHT * KL_BLOSUM62 + TAU_BASE;\n```\n\nThe fit in nail-62baa5 sets the intercept to 2.33 and nothing more. Every model in it was built from BLOSUM62, so `KL_BLOSUM62` was the same for every sequence, and the data cannot separate its weight from the base. Any `TAU_KL_WEIGHT`, with `TAU_BASE = 2.33 - TAU_KL_WEIGHT * 0.589`, gives the same tau for BLOSUM62. 0.662 and 0.589 come from the form Jack typed in with `a9900ba`, whose source is not recorded. Neither number changes tau today, since BLOSUM62 is the only matrix nail builds single-sequence profiles from. Both would matter for any other matrix.\n\n## Proposal\n\n- Find where 0.589 comes from. The figure usually cited for BLOSUM62's relative entropy is 0.6979 bits (Henikoff and Henikoff 1992), about 0.484 nats, and 0.589 matches neither. Compute it from BLOSUM62's target frequencies and the background nail uses.\n- Measure the weight. Run the tau fit with `hmmbuild --singlemx --mx` on several matrices of different relative entropy, such as BLOSUM45, BLOSUM62, BLOSUM80 and PAM30, fitting the intercept with the slope held at 1.34. The slope of the intercept against each matrix's relative entropy is the weight to compare with 0.662.\n\n## Open\n\n- Whether the slope on ln(L) also changes with the matrix, which a single KL term in the intercept would not capture.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "nail-df3f53",
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-14T23:45:55.35392041Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T23:30:05.873123483Z",
-  "updated_at": "2026-10-14T23:32:14.494099482Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-15T00:01:32.366926619Z",
+  "closed_at": "2026-10-15T00:01:32.366926619Z",
+  "close_reason": "Settled without a source for 0.589. The fit, its scripts and the draft paper all give tau = 1.34 ln(L) - 2.33 with no relative entropy term, and the draft says the closed form holds only for the default scoring scheme and must be refit for others. Commit `85f6793` drops `KL_BLOSUM62` and its weight. Nail's tau matches the draft's formula within 1.3e-6 on the 49-sequence bag. The note above holds the candidate values for 0.589.",
+  "resolution": "done",
   "notes": [
     {
       "id": "8c988cd5",
@@ -32,6 +32,9 @@
       "commit": "b05455b",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "85f6793",
+      "branch": "dev"
+    }
   }
 }
