@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-15T03:55:47.138751885Z",
   "defer_until": null,
   "created_at": "2026-10-14T20:19:08.878086784Z",
-  "updated_at": "2026-10-15T03:40:47.138751885Z",
+  "updated_at": "2026-10-15T03:47:30.827864532Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "6a675c19",
+      "at": "2026-10-15T03:47:30.827863582Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "Measured at `0aae149`, one thread, with a throwaway binary in `tmp-claude/2026-10-14-parse-bench`. It linked libnail and read each input whole into memory before timing. Inputs were `nail-benchmarks/data/pfam.hmm` (20,795 profiles, 3,457,312 positions, mean length 166) and the 2,455,940 MGnify targets in `tmp-claude/2026-10-08-align-fixed-cost/mgy-db/targets.fa`. Each fasta row is the best of two rounds, which were within 1% of each other.\n\n## `Sequence::from_fasta`\n\n| variant | µs per record |\n|---|---|\n| `from_fasta` as it is | 1.54 |\n| `phf` lookup, details not copied | 1.74 |\n| 256-entry table, details copied | 0.21 |\n| 256-entry table, details not copied | 0.20 |\n\nThe `phf::Map` lookup per residue accounts for about 85% of the time. A `[u8; 256]` table built from `UTF8_TO_DIGITAL_AMINO` cuts the time 7.4 times. Copying the details `String` costs about 0.01 µs, so dropping it gains nothing worth a narrower constructor. The `phf` variant without details ran slower than `from_fasta`, and I did not find out why.\n\n## `Profile::from_p7hmm`\n\n| part | ns per position |\n|---|---|\n| parse, up to `ProfileBuilder::build` | 595 to 635 |\n| `ProfileBuilder::build` | 240 to 266 |\n| whole `from_p7hmm` | 832 to 865 |\n\nThe parse costs about 70% and the build about 30%. Each range spans two runs.\n\nOver all 163.6M float tokens in Pfam, `str::parse::<f32>` took 7.1 ns per token and 8.7 ns with `exp`. A fixed-format parser took 4.0 ns per token, and 5.0 ns with `exp`. It reads `d+.ddddd` as an integer `n`, falls back to `str::parse` when `n >= 2^24`, and returns `n as f32 / 100000.0`. The result matches `str::parse` exactly. Both `n` and 1e5 are exact in f32, and IEEE division rounds correctly, so the quotient is the correctly rounded decimal. Every one of 163,471,026 tokens matched bit for bit, and 145,537 tokens fell back.\n\nA parse that tokenizes model lines as bytes, with no per-line `str::from_utf8`, uses `split` on `is_ascii_whitespace` in place of `split_whitespace`, and calls the fixed-format parser, took 386 ns per position against 635 in the same run. Every Pfam profile it built compared equal (`PartialEq`) to the current one. The other ~390 ns per position, which covers line splitting, insert lines and the builder's `Option`s, has not been broken down. perf is not installed on this machine.\n\nIn `build`, `Alphabet::ambiguity_map()` runs once per position. It allocates seven `Vec`s and takes 40 ns per call, about 16% of the build. Hoisting it out of the loop leaves the results unchanged. Most of the rest is likely the `ln` calls, 20 in f64 and 7 in f32 per position, but this is unmeasured. Changing those `ln` calls would change scores.\n\n## `Profile::from_blosum_62_and_seq`\n\n68 µs per sequence over the first 5,000 MGnify targets. That includes `from_fasta` and goes through the same `build`.",
+      "commit": "0aae149",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "a8a28e5",
