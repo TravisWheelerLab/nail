@@ -22,6 +22,29 @@ pub struct UnknownDigitalSequenceByteError {
     byte: u8,
 }
 
+/// The value in `UTF8_TO_DIGITAL_AMINO_TABLE` for a byte outside the alphabet.
+const UNKNOWN_UTF8_BYTE: u8 = 255;
+
+/// The digital code of each UTF8 byte, indexed by the byte.
+//
+// the same mapping as UTF8_TO_DIGITAL_AMINO, which a test
+// checks for every byte. from_fasta indexes this array in
+// place of the phf lookup, which took about 85% of its time
+const UTF8_TO_DIGITAL_AMINO_TABLE: [u8; 256] = {
+    // a byte's position here is its digital code
+    const UPPER: &[u8; 26] = b"ACDEFGHIKLMNPQRSTVWYOUXBZJ";
+
+    let mut table = [UNKNOWN_UTF8_BYTE; 256];
+    let mut code = 0;
+    while code < UPPER.len() {
+        let byte = UPPER[code];
+        table[byte as usize] = code as u8;
+        table[byte.to_ascii_lowercase() as usize] = code as u8;
+        code += 1;
+    }
+    table
+};
+
 /// This holds the both the "digital" data and string data of a biological sequence.
 #[derive(Default, PartialEq)]
 pub struct Sequence {
@@ -114,20 +137,20 @@ impl Sequence {
         utf8_bytes.push(255);
         digital_bytes.push(255);
 
-        sequence_bytes
-            .iter()
+        for &byte in sequence_bytes {
             // \r is skipped with \n, so a CRLF file reads like an LF one
-            .filter(|&&b| b != b'\n' && b != b'\r')
-            .try_for_each(|b| {
-                utf8_bytes.push(*b);
-                digital_bytes.push(match UTF8_TO_DIGITAL_AMINO.get(b) {
-                    Some(b) => *b,
-                    None => {
-                        bail!("byte: \"{b}\" is not in the compressed amino acid alphabet")
-                    }
-                });
-                Ok(())
-            })?;
+            if byte == b'\n' || byte == b'\r' {
+                continue;
+            }
+
+            let digital_byte = UTF8_TO_DIGITAL_AMINO_TABLE[byte as usize];
+            if digital_byte == UNKNOWN_UTF8_BYTE {
+                bail!("byte: \"{byte}\" is not in the compressed amino acid alphabet");
+            }
+
+            utf8_bytes.push(byte);
+            digital_bytes.push(digital_byte);
+        }
 
         digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
 
@@ -232,7 +255,31 @@ mod tests {
     use rand::SeedableRng;
     use rand_pcg::Pcg64;
 
-    use crate::{alphabet::AMINO_BACKGROUND_FREQUENCIES, structs::Sequence};
+    use super::{UNKNOWN_UTF8_BYTE, UTF8_TO_DIGITAL_AMINO_TABLE};
+    use crate::{
+        alphabet::{AMINO_BACKGROUND_FREQUENCIES, UTF8_TO_DIGITAL_AMINO},
+        structs::Sequence,
+    };
+
+    #[test]
+    fn utf8_to_digital_amino_table_matches_the_map() {
+        for byte in 0..=255u8 {
+            let expected = match UTF8_TO_DIGITAL_AMINO.get(&byte) {
+                Some(code) => *code,
+                None => UNKNOWN_UTF8_BYTE,
+            };
+
+            assert_eq!(
+                UTF8_TO_DIGITAL_AMINO_TABLE[byte as usize], expected,
+                "byte {byte}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_fasta_rejects_a_byte_outside_the_alphabet() {
+        assert!(Sequence::from_fasta(b">abc\nAC-DE\n").is_err());
+    }
 
     #[test]
     fn from_fasta_reads_crlf_like_lf() -> anyhow::Result<()> {
