@@ -3,20 +3,20 @@
   "title": "A fasta with CRLF line endings fails to parse",
   "body": "`FastaParser::parse` in `nail/src/io/fasta.rs` splits a record at its first `\\n` into the header and the sequence, then drops every `\\n` from the sequence. It keeps `\\r`. In a fasta with Windows line endings every sequence line ends in `\\r`. `UTF8_TO_DIGITAL_AMINO` has no entry for byte 13, so the parse fails with `byte: \"13\" is not in the compressed amino acid alphabet` and nail stops. nail does not produce wrong output from such a file.\n\nThis session found it by reading the code. Nobody has run nail on a CRLF file to confirm it.\n\nThe parser moves to `Sequence::from_fasta` in libnail under nail-167dd7, so a fix belongs there. The p7hmm parser also splits lines at `\\n`, and this session did not check how it treats `\\r`.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-15T00:39:05.892859284Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T19:03:21.938979441Z",
-  "updated_at": "2026-10-15T00:25:13.310958077Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-15T01:26:19.165454552Z",
+  "closed_at": "2026-10-15T01:26:19.165454552Z",
+  "close_reason": "Commit `3794e7c` on `dev`: `Sequence::from_fasta` skips `\\r` with `\\n`. The fixture target in CRLF gives the same 408 hits as LF, and `from_fasta_reads_crlf_like_lf` and `from_fasta_reads_a_crlf_header_with_no_details` cover it.",
+  "resolution": "done",
   "notes": [
     {
       "id": "63f7e880",
@@ -32,6 +32,9 @@
       "commit": "dbdee02",
       "branch": "libsail-io"
     },
-    "closed": null
+    "closed": {
+      "commit": "3794e7c",
+      "branch": "dev"
+    }
   }
 }
