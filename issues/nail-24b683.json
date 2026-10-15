@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-15T00:39:05.892859284Z",
   "defer_until": null,
   "created_at": "2026-10-14T19:03:21.938979441Z",
-  "updated_at": "2026-10-15T00:24:05.892859284Z",
+  "updated_at": "2026-10-15T00:25:13.310958077Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "63f7e880",
+      "at": "2026-10-15T00:25:13.310957307Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Diagnosis at `7db351a`, confirmed by running nail. With every line of `fixtures/target.fa` ending in CRLF, `nail search` against `fixtures/query.hmm`, with the fixture seeds converted to positions, stops with \"no seq ... byte: \\\"13\\\" is not in the compressed amino acid alphabet\". The parser is `Sequence::from_fasta` in `libnail/src/structs/sequence.rs`. It splits the header at the first `\\n`, filters only `\\n` from the sequence lines, and maps every other byte through `UTF8_TO_DIGITAL_AMINO`, which has no entry for 13. On a CRLF header with no description, the name would also keep its `\\r`.\n\nA CRLF `query.hmm` runs, and its 408 hits match the LF run exactly once sorted. `Profile::from_p7hmm` trims header lines and reads model lines with `split_whitespace`, both of which drop `\\r`.\n\nEasel, in `~/hmmer-3.4/easel/esl_sqio_ascii.c`, sets `inmap['\\r'] = eslDSQ_IGNORED` with the comment \"DOS eol compatibility\". It ends the description at `\\n` or `\\r`, and ends the name at any whitespace (`isspace`).",
+      "commit": "7db351a",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "dbdee02",
