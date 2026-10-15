@@ -519,11 +519,11 @@ impl ProfileBuilder {
     }
 
     pub fn build(mut self) -> anyhow::Result<Profile> {
-        let name = self.name.ok_or(anyhow!("missing: name"))?;
-        let length = self.length.ok_or(anyhow!("missing: length"))?;
+        let name = self.name.ok_or_else(|| anyhow!("missing: name"))?;
+        let length = self.length.ok_or_else(|| anyhow!("missing: length"))?;
         let accession = self.accession.unwrap_or_default();
-        let fwd_tau = self.fwd_tau.ok_or(anyhow!("missing: tau"))?;
-        let fwd_lambda = self.fwd_lambda.ok_or(anyhow!("missing: tau"))?;
+        let fwd_tau = self.fwd_tau.ok_or_else(|| anyhow!("missing: tau"))?;
+        let fwd_lambda = self.fwd_lambda.ok_or_else(|| anyhow!("missing: tau"))?;
 
         self.mat_emissions[0] = Some([-f32::INFINITY; 20]);
 
@@ -531,14 +531,14 @@ impl ProfileBuilder {
             .mat_emissions
             .into_iter()
             .enumerate()
-            .map(|(i, v)| v.ok_or(anyhow!("missing: match emissions {}", i)))
+            .map(|(i, v)| v.ok_or_else(|| anyhow!("missing: match emissions {}", i)))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let transitions = self
             .transitions
             .into_iter()
             .enumerate()
-            .map(|(i, v)| v.ok_or(anyhow!("missing: transitions {}", i + 1)))
+            .map(|(i, v)| v.ok_or_else(|| anyhow!("missing: transitions {}", i + 1)))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let mut prf = Profile {
@@ -890,7 +890,7 @@ impl Profile {
                             })
                             // **note: we're taking the max of (mostly) negative weights
                             .max_by(|a, b| a.partial_cmp(b).expect("NaN encountered"))
-                            .ok_or(anyhow!("empty emission probabilities"))?;
+                            .ok_or_else(|| anyhow!("empty emission probabilities"))?;
 
                         anyhow::Ok(())
                     })
@@ -902,7 +902,7 @@ impl Profile {
                     // skip profile index 0
                     .skip(1)
                     .min_by(|a, b| a.total_cmp(b))
-                    .ok_or(anyhow!("empty weights"))?;
+                    .ok_or_else(|| anyhow!("empty weights"))?;
 
                 Ok((*lower_bound, 0.0f32))
             }

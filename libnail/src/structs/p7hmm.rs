@@ -240,7 +240,7 @@ fn first_non_whitespace_pos(buf: &[u8]) -> Option<usize> {
 fn first_word(buf: &[u8]) -> anyhow::Result<&str> {
     word_from(
         buf,
-        first_non_whitespace_pos(buf).ok_or(anyhow!("no words found in buffer"))?,
+        first_non_whitespace_pos(buf).ok_or_else(|| anyhow!("no words found in buffer"))?,
     )
 }
 
