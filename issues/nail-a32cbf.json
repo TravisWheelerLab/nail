@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-15T01:46:43.092401234Z",
   "defer_until": null,
   "created_at": "2026-10-14T19:21:04.83898534Z",
-  "updated_at": "2026-10-15T01:31:43.092401234Z",
+  "updated_at": "2026-10-15T01:34:23.458721174Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,6 +24,14 @@
       "author": "Jack Roddy/95b307ba",
       "text": "`fixtures/a.seeds` names its queries and targets, so `--seeds fixtures/a.seeds` fails since `dbdee02` with \"seed field \\\"7tm_1\\\" is not a record position\". No test reads it; only manual commands like the one in nail-7ab565 do. Jack deferred converting it to positions until this issue decides how a named seeds file loads.",
       "commit": "eeab798",
+      "branch": "dev"
+    },
+    {
+      "id": "563ccdf7",
+      "at": "2026-10-15T01:34:23.458720394Z",
+      "author": "Jack Roddy/95b307ba",
+      "text": "Jack chose a CLI param, `--seeds-format <positions|names>`, defaulting to positions, covering both `--seeds` and `--seeds-out`. The flag option in the body won, generalised to an enum so later formats fit. The flag removes the ambiguity of a record named with digits, since the file's format is never guessed. Uncommitted on `dev`: names are read through libsail's name index for targets and a map of query names, built once. A named `--seeds-out` is written by rewriting the first two fields of the positional file convertalis writes, copying the other six fields byte for byte. On the fixtures, a named `--seeds-out` is byte-identical to `fixtures/a.seeds`, so that fixture loads as it is with `--seeds-format names`, and no conversion is needed.",
+      "commit": "3794e7c",
       "branch": "dev"
     }
   ],
