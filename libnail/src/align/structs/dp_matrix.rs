@@ -828,7 +828,10 @@ impl DpMatrixSparse {
     #[inline]
     fn match_idx(&self, target_idx: usize, profile_idx: usize) -> usize {
         debug_assert!(target_idx <= self.target_length);
-        debug_assert!(profile_idx <= self.profile_length);
+        // + 1 because a read one past a row's right bound lands
+        // on the next row's pad cell, and backward makes that
+        // read at L + 1 on a row that spans the whole profile
+        debug_assert!(profile_idx <= self.profile_length + 1);
 
         let block_offset = self.block_offsets[target_idx];
         let next_block_offset = self.block_offsets[target_idx + 1];
