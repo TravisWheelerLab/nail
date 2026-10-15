@@ -218,7 +218,7 @@ pub fn seed_progressive(
 
             for prf_state in state.iter_mut() {
                 let record_bytes = match prf_state.status {
-                    Status::Active => match pdb.next_n(prf_state.idx, n_take) {
+                    Status::Active => match pdb.next_n(prf_state.idx, n_take)? {
                         ByteBuffer::Complete(buf) => buf,
                         ByteBuffer::Partial(buf, n_retrieved) => {
                             prf_state.status = Status::Final(n_retrieved);
@@ -273,7 +273,7 @@ pub fn seed_progressive(
         for prf_state in state.iter_mut() {
             match prf_state.status {
                 Status::Active => {
-                    let record_bytes = prog_adb.get(prf_state.idx);
+                    let record_bytes = prog_adb.get(prf_state.idx)?;
                     let mut cnt = 0;
                     for b in record_bytes.iter() {
                         if *b == b'\n' {
@@ -345,7 +345,7 @@ pub fn seed_progressive(
         for prf_idx in 0..queries.len() {
             let mut n_written = 0;
             for prog_adb in &prog_adbs {
-                let record_bytes = prog_adb.get(prf_idx);
+                let record_bytes = prog_adb.get(prf_idx)?;
                 adb.write_all(record_bytes)?;
                 n_written += record_bytes.len();
             }

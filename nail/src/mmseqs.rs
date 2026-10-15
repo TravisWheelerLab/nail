@@ -45,6 +45,8 @@ struct Descriptor {
 }
 
 pub struct PrefilterDb {
+    /// The path the db was opened from.
+    path: PathBuf,
     /// The split files, mapped, in suffix order.
     maps: Vec<MmapSource>,
     descriptors: Vec<Descriptor>,
@@ -161,32 +163,26 @@ impl PrefilterDb {
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        for desc in &descriptors {
-            let bytes = maps[desc.file_idx].bytes();
-            let end = (desc.offset + desc.length) as usize;
-            if bytes.get(end) != Some(&0) {
-                bail!("a record in {} does not end in a null byte", path.display());
-            }
-        }
-
         let checkpoints = vec![0; descriptors.len()];
 
         Ok(Self {
+            path: path.to_path_buf(),
             maps,
             descriptors,
             checkpoints,
         })
     }
 
-    pub fn get(&self, prf_idx: usize) -> &[u8] {
+    pub fn get(&self, prf_idx: usize) -> anyhow::Result<&[u8]> {
         let desc = self.descriptors[prf_idx];
         let start = desc.offset as usize;
         let end = start + desc.length as usize;
 
-        &self.maps[desc.file_idx].bytes()[start..end]
+        check_null_byte(&self.maps, desc, &self.path)?;
+        Ok(&self.maps[desc.file_idx].bytes()[start..end])
     }
 
-    pub fn next_n(&mut self, prf_idx: usize, n: usize) -> ByteBuffer<'_> {
+    pub fn next_n(&mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer<'_>> {
         let desc = self.descriptors[prf_idx];
         let checkpoint = &mut self.checkpoints[prf_idx];
 
@@ -194,8 +190,17 @@ impl PrefilterDb {
         let end = (desc.offset + desc.length) as usize;
         let remaining = &self.maps[desc.file_idx].bytes()[start..end];
 
-        if n == 0 || remaining.is_empty() {
-            return ByteBuffer::Empty;
+        if n == 0 {
+            return Ok(ByteBuffer::Empty);
+        }
+
+        // the null byte is checked when a take reaches the
+        // end of the record, where its page is read anyway.
+        // checking every record up front in from_path read
+        // one page per record, 6.9 s on a cold 32 GB db
+        if remaining.is_empty() {
+            check_null_byte(&self.maps, desc, &self.path)?;
+            return Ok(ByteBuffer::Empty);
         }
 
         let mut record_cnt = 0;
@@ -206,13 +211,24 @@ impl PrefilterDb {
 
             if record_cnt == n {
                 *checkpoint += (pos + 1) as u64;
-                return ByteBuffer::Complete(&remaining[..=pos]);
+                return Ok(ByteBuffer::Complete(&remaining[..=pos]));
             }
         }
 
+        check_null_byte(&self.maps, desc, &self.path)?;
         *checkpoint = desc.length;
-        ByteBuffer::Partial(remaining, record_cnt)
+        Ok(ByteBuffer::Partial(remaining, record_cnt))
     }
+}
+
+/// Fail unless the byte after a record is its null byte.
+fn check_null_byte(maps: &[MmapSource], desc: Descriptor, path: &Path) -> anyhow::Result<()> {
+    let end = (desc.offset + desc.length) as usize;
+    if maps[desc.file_idx].bytes().get(end) != Some(&0) {
+        bail!("a record in {} does not end in a null byte", path.display());
+    }
+
+    Ok(())
 }
 
 pub struct MmseqsDbPaths {
@@ -742,9 +758,9 @@ mod tests {
     fn prefilter_db_gets_records_across_split_files() -> anyhow::Result<()> {
         let db = split_prefilter_db()?;
 
-        assert_eq!(db.get(0), b"a\nb\nc\n");
-        assert_eq!(db.get(1), b"d\n");
-        assert_eq!(db.get(2), b"");
+        assert_eq!(db.get(0)?, b"a\nb\nc\n");
+        assert_eq!(db.get(1)?, b"d\n");
+        assert_eq!(db.get(2)?, b"");
 
         Ok(())
     }
@@ -754,33 +770,54 @@ mod tests {
         let mut db = split_prefilter_db()?;
 
         // a take of zero lines does not move the checkpoint
-        assert_eq!(db.next_n(0, 0), ByteBuffer::Empty);
-        assert_eq!(db.next_n(0, 2), ByteBuffer::Complete(&b"a\nb\n"[..]));
+        assert_eq!(db.next_n(0, 0)?, ByteBuffer::Empty);
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Complete(&b"a\nb\n"[..]));
 
         // one line is left, so the take is partial and counts it
-        assert_eq!(db.next_n(0, 2), ByteBuffer::Partial(&b"c\n"[..], 1));
-        assert_eq!(db.next_n(0, 2), ByteBuffer::Empty);
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Partial(&b"c\n"[..], 1));
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Empty);
 
         // each record keeps its own checkpoint
-        assert_eq!(db.next_n(1, 1), ByteBuffer::Complete(&b"d\n"[..]));
-        assert_eq!(db.next_n(1, 1), ByteBuffer::Empty);
-        assert_eq!(db.next_n(2, 1), ByteBuffer::Empty);
+        assert_eq!(db.next_n(1, 1)?, ByteBuffer::Complete(&b"d\n"[..]));
+        assert_eq!(db.next_n(1, 1)?, ByteBuffer::Empty);
+        assert_eq!(db.next_n(2, 1)?, ByteBuffer::Empty);
+
+        Ok(())
+    }
+
+    // the file is "a\n\0", and the index gives the one
+    // record a length of 2 with its null byte. so the
+    // record is "a", and the byte after it is "\n"
+    fn unterminated_prefilter_db() -> anyhow::Result<PrefilterDb> {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/prefilter-db-unterminated/pdb");
+        PrefilterDb::from_path(path)
+    }
+
+    #[test]
+    fn prefilter_db_get_refuses_a_record_without_its_null_byte() -> anyhow::Result<()> {
+        let db = unterminated_prefilter_db()?;
+
+        let Err(err) = db.get(0) else {
+            panic!("a record without its null byte was accepted");
+        };
+        assert!(err.to_string().contains("does not end in a null byte"));
 
         Ok(())
     }
 
     #[test]
-    fn prefilter_db_refuses_a_record_without_its_null_byte() {
-        // the file is "a\n\0", and the index gives the one
-        // record a length of 2 with its null byte. so the
-        // record is "a", and the byte after it is "\n"
-        let path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/prefilter-db-unterminated/pdb");
+    fn prefilter_db_next_n_refuses_a_record_without_its_null_byte() -> anyhow::Result<()> {
+        let mut db = unterminated_prefilter_db()?;
 
-        let Err(err) = PrefilterDb::from_path(path) else {
+        // "a" has no newline, so a take of one line reaches
+        // the end of the record and checks the byte after it
+        let Err(err) = db.next_n(0, 1) else {
             panic!("a record without its null byte was accepted");
         };
         assert!(err.to_string().contains("does not end in a null byte"));
+
+        Ok(())
     }
 
     #[test]

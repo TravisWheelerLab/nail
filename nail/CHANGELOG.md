@@ -51,8 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - variant `Queries::Profile` now holds the parsed profiles as `Arc<Vec<Profile>>` instead of a `P7Hmm`, and `read_queries()` parses them
 - `write_mmseqs_profile_database()` now takes `&[Profile]` instead of `&P7Hmm`
 - the `query index` leaf of the `-s` runtime tree now includes parsing hmm queries, which moved out of `pipeline build`
-- struct `PrefilterDb` now maps its split files with `libsail::source::MmapSource`; methods `PrefilterDb::{get(), next_n()}` no longer return `anyhow::Result`, and `get()` takes `&self`
-- `PrefilterDb::from_path()` returns an error for a record that does not end in a null byte, where it panicked
+- struct `PrefilterDb` now maps its split files with `libsail::source::MmapSource`, and method `PrefilterDb::get()` takes `&self`
+- methods `PrefilterDb::{get(), next_n()}` return an error for a record that does not end in a null byte, where they panicked
 - enum `ByteBuffer` now derives `Debug`, `PartialEq`
 - the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before
 
