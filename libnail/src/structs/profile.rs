@@ -642,6 +642,7 @@ impl ProfileBuilder {
             });
 
         // match scores
+        let ambig = prf.alphabet.ambiguity_map();
         prf.emission_scores[Profile::MATCH_IDX]
             .iter_mut()
             .zip(mat_emissions)
@@ -660,7 +661,6 @@ impl ProfileBuilder {
 
                 // compute the ambiguity character
                 // scores using the expected score
-                let ambig = prf.alphabet.ambiguity_map();
                 prf.alphabet
                     .ambiguous_iter()
                     .map(|a| (a as usize, &ambig[a]))
