@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T21:38:55.208620874Z",
-  "updated_at": "2026-10-14T21:38:55.208620874Z",
+  "updated_at": "2026-10-15T19:27:33.343677183Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "93991870",
+      "at": "2026-10-15T19:27:33.343676093Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "Measurements from nail-844b46, for this decision. On the 32 GB prefilter db of the full run (20,795 Pfam profiles against 2,455,940 mgy targets), slicing through the map grows the process's `RssFile` while `RssAnon` stays at 1 MB. A probe that keeps every query active reaches 31.6 GB of `RssFile` after 11 iterations. A real run reads less, because decide terminates queries; the full run peaked at 7.4 GB, against 4.8 GB before `41781f9`. The pages are clean file pages the kernel can drop. Peak RSS counts them, and `read` did not. Whether a cluster scheduler that enforces RSS limits counts mapped file pages has not been checked. The probe and its table are in the note on nail-844b46.\n\nOne option for `PrefilterDb` alone: `pread` from one `File` kept open per split file, into a reused buffer. That would bring RSS back to nail's own allocations. Its cost against the map for slice, decide and merge is not measured. Before `41781f9` those three leaves took 1.25 s together with a file reopened per record, and about 0.96 s with the map.\n\nThe null-byte check that made seeding `[misc.]` slow is gone in `c1cc1c0`, so the time cost no longer depends on this decision.",
+      "commit": "c1cc1c0",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "41781f9",
