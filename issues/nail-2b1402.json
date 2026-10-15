@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-15T19:54:40.440451226Z",
   "defer_until": null,
   "created_at": "2026-10-14T21:38:55.208620874Z",
-  "updated_at": "2026-10-15T19:39:40.440451226Z",
+  "updated_at": "2026-10-15T20:06:09.283588929Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-10-15T19:27:33.343676093Z",
       "author": "Jack Roddy/302d4408",
       "text": "Measurements from nail-844b46, for this decision. On the 32 GB prefilter db of the full run (20,795 Pfam profiles against 2,455,940 mgy targets), slicing through the map grows the process's `RssFile` while `RssAnon` stays at 1 MB. A probe that keeps every query active reaches 31.6 GB of `RssFile` after 11 iterations. A real run reads less, because decide terminates queries; the full run peaked at 7.4 GB, against 4.8 GB before `41781f9`. The pages are clean file pages the kernel can drop. Peak RSS counts them, and `read` did not. Whether a cluster scheduler that enforces RSS limits counts mapped file pages has not been checked. The probe and its table are in the note on nail-844b46.\n\nOne option for `PrefilterDb` alone: `pread` from one `File` kept open per split file, into a reused buffer. That would bring RSS back to nail's own allocations. Its cost against the map for slice, decide and merge is not measured. Before `41781f9` those three leaves took 1.25 s together with a file reopened per record, and about 0.96 s with the map.\n\nThe null-byte check that made seeding `[misc.]` slow is gone in `c1cc1c0`, so the time cost no longer depends on this decision.",
+      "commit": "c1cc1c0",
+      "branch": "dev"
+    },
+    {
+      "id": "eba11fcb",
+      "at": "2026-10-15T20:06:09.283588169Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "Compared both settings of a new cargo feature `mmap`, which picks `MmapSource` or `FileSource` for every input and every mmseqs db (uncommitted on `dev` after `c1cc1c0`). The search was 20,795 Pfam profiles against 2,455,940 mgy targets, `--seed-mode prog`, `-t 8`, on the 16-core box. The mmap build ran first, then the file build. Both wrote 3,031,365 rows, identical once sorted. Script and logs are in `tmp-claude/2026-10-15-prefilter-map/full`.\n\n| leaf | mmap | file |\n|---|---|---|\n| runtime | 698.23 s | 691.97 s |\n| query index | 0.55 s | 0.40 s |\n| target index | 0.44 s | 0.57 s |\n| db write | 0.69 s | 0.71 s |\n| prefilter | 179.58 s | 179.40 s |\n| slice | 7.23 s | 0.71 s |\n| align | 65.85 s | 65.74 s |\n| decide | 0.10 s | 0.11 s |\n| merge | 0.17 s | 0.18 s |\n| seed index | 0.56 s | 0.54 s |\n| alignment | 442.58 s | 443.16 s |\n| peak RSS | 4.93 GB | 5.00 GB |\n\nThe only leaf apart by more than noise is slice. The mmap build's 7.23 s came with 9,906 major faults. The same leaf took 0.72 s with the map at `41781f9`, so it depends on how much of the 32 GB prefilter db is still in the page cache when slicing starts. The file build reads through `pread`, whose disk reads do not show as page faults, so the fault counts do not compare. The 7.4 GB peak RSS of `41781f9` did not recur with the map; the null-byte check that `c1cc1c0` removed probably accounted for part of it.",
       "commit": "c1cc1c0",
       "branch": "dev"
     }
