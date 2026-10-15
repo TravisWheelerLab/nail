@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed a target or query fasta with CRLF line endings stopping nail with a parse error
 - fixed a fasta header with a tab after the name putting the tab and the next word into the name in the output
 - fixed `PrefilterDb::from_path()` placing a record in an empty split file of a prefilter or align db, which could stop `--seed-mode prog` with an error
+- fixed the scores of targets and sequence queries that hold B, J, Z, O, U or X; each such residue scored as another residue or as `-inf`, and an O in a sequence query made every E-value for that query NaN
 
 ## [0.7.1] - 2026-7-31
 

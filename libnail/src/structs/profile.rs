@@ -1227,6 +1227,7 @@ impl fmt::Debug for Profile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alphabet::AminoUtilsUtf8;
     use crate::structs::Sequence;
 
     #[test]
@@ -1304,6 +1305,76 @@ mod tests {
                 "{name}: nail lambda {}, hmmbuild lambda {hmmbuild_lambda}",
                 prf.fwd_lambda
             );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_degenerate_residue_scores_the_background_weighted_mean_of_its_residues(
+    ) -> anyhow::Result<()> {
+        let bytes = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
+        )?;
+        let prf = Profile::from_p7hmm(&bytes)?;
+
+        let cases = [
+            ("B", "ND"),
+            ("J", "IL"),
+            ("Z", "QE"),
+            ("O", "K"),
+            ("U", "C"),
+            ("X", "ACDEFGHIKLMNPQRSTVWY"),
+        ];
+
+        for (letter, residues) in cases {
+            // the code comes from the sequence side, so the
+            // test fails if the two sides number it differently
+            let seq = Sequence::from_fasta(format!(">s\n{letter}\n").as_bytes())?;
+            let code = seq.digital_bytes[1] as usize;
+
+            for profile_idx in 1..=prf.length {
+                let mut weighted_sum = 0.0;
+                let mut weight_sum = 0.0;
+                for residue in residues.chars() {
+                    let canonical = residue.to_digital_amino() as usize;
+                    let weight = AMINO_BACKGROUND_FREQUENCIES[canonical];
+                    weighted_sum += prf.match_score(canonical, profile_idx) * weight;
+                    weight_sum += weight;
+                }
+                let expected = weighted_sum / weight_sum;
+                let score = prf.match_score(code, profile_idx);
+
+                assert!(
+                    (score - expected).abs() < 1e-5,
+                    "{letter} at {profile_idx}: score {score}, expected {expected}"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_degenerate_query_residue_gets_its_own_blosum62_row() -> anyhow::Result<()> {
+        for letter in ["B", "J", "Z", "O", "U", "X"] {
+            let seq = Sequence::from_fasta(format!(">q\nACDEF{letter}HIKL\n").as_bytes())?;
+            let prf = Profile::from_blosum_62_and_seq(&seq)?;
+
+            let row = AMINO_ALPHABET_WITH_DEGENERATE
+                .iter()
+                .position(|l| *l == letter)
+                .unwrap();
+
+            for residue in 0..Profile::MAX_ALPHABET_SIZE {
+                let prob = blosum62::CONDITIONAL_PROB[row][residue];
+                let expected =
+                    (prob as f64 / AMINO_BACKGROUND_FREQUENCIES[residue] as f64).ln() as f32;
+
+                assert_eq!(prf.match_score(residue, 6), expected, "{letter} {residue}");
+            }
+
+            assert!(prf.fwd_lambda.is_finite(), "{letter}: {}", prf.fwd_lambda);
         }
 
         Ok(())

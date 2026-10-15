@@ -338,12 +338,12 @@ pub fn null_two_score(
     // Z ->  [E, Q]
     // 23 -> [3, 13]
     expected_prob_ratios[23] = (expected_prob_ratios[3] + expected_prob_ratios[13]) / 2.0;
-    // U ->  [C]
-    // 24 -> [1]
-    expected_prob_ratios[24] = expected_prob_ratios[1];
     // O ->  [K]
-    // 25 -> [8]
-    expected_prob_ratios[25] = expected_prob_ratios[8];
+    // 24 -> [8]
+    expected_prob_ratios[24] = expected_prob_ratios[8];
+    // U ->  [C]
+    // 25 -> [1]
+    expected_prob_ratios[25] = expected_prob_ratios[1];
     // X ->  [any]
     // 26 -> [0..19]
     expected_prob_ratios[26] = expected_prob_ratios[0..20].iter().sum::<f32>() / 20.0;

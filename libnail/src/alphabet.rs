@@ -155,12 +155,13 @@ impl Alphabet {
             Alphabet::Amino => AmbiguityMap {
                 alphabet: self.clone(),
                 map: vec![
+                    "ND".to_digital_aminos(), // B -> [ N, D ]
+                    "IL".to_digital_aminos(), // J -> [ I, L ]
+                    "QE".to_digital_aminos(), // Z -> [ Q, E ]
                     "K".to_digital_aminos(),  // O -> [ K ]
                     "C".to_digital_aminos(),  // U -> [ C ]
-                    vec![],                   // X -> [ ]
-                    "ND".to_digital_aminos(), // B -> [ N, D ]
-                    "QE".to_digital_aminos(), // Z -> [ Q, E ]
-                    "IL".to_digital_aminos(), // J -> [ I, L]
+                    // X -> [ any canonical residue ]
+                    "ACDEFGHIKLMNPQRSTVWY".to_digital_aminos(),
                 ],
             },
             Alphabet::Dna => todo!("DNA alphabet not implemented"),
@@ -255,12 +256,12 @@ impl AminoUtilsDigital for u8 {
             18u8 => 87, // W
             19u8 => 89, // Y
             // end base alphabet
-            20u8 => 79, // O
-            21u8 => 85, // U
-            22u8 => 88, // X
-            23u8 => 66, // B
-            24u8 => 90, // Z
-            25u8 => 74, // J
+            21u8 => 66, // B
+            22u8 => 74, // J
+            23u8 => 90, // Z
+            24u8 => 79, // O
+            25u8 => 85, // U
+            26u8 => 88, // X
             45u8 => 45, // -
             46u8 => 46, // .
             _ => 32,    // space
@@ -290,12 +291,12 @@ impl AminoUtilsDigital for u8 {
             18u8 => 119, // w
             19u8 => 121, // y
             // end base alphabet
-            111u8 => 79, // o
-            117u8 => 85, // u
-            120u8 => 88, // x
-            98u8 => 66,  // b
-            122u8 => 90, // z
-            106u8 => 74, // j
+            21u8 => 98,  // b
+            22u8 => 106, // j
+            23u8 => 122, // z
+            24u8 => 111, // o
+            25u8 => 117, // u
+            26u8 => 120, // x
             45u8 => 45,  // -
             46u8 => 46,  // .
             _ => 32,     // space
@@ -370,18 +371,18 @@ pub const UTF8_TO_DIGITAL_AMINO: phf::Map<u8, u8> = phf_map! {
     119u8 => 18,  // w
     121u8 => 19,  // y
     // degenerate characters
-    79u8 => 20,   // O
-    85u8 => 21,   // U
-    88u8 => 22,   // X
-    66u8 => 23,   // B
-    90u8 => 24,   // Z
-    74u8 => 25,   // J
-    111u8 => 20,  // o
-    117u8 => 21,  // u
-    120u8 => 22,  // x
-    98u8 => 23,   // b
-    122u8 => 24,  // z
-    106u8 => 25,  // j
+    66u8 => 21,   // B
+    74u8 => 22,   // J
+    90u8 => 23,   // Z
+    79u8 => 24,   // O
+    85u8 => 25,   // U
+    88u8 => 26,   // X
+    98u8 => 21,   // b
+    106u8 => 22,  // j
+    122u8 => 23,  // z
+    111u8 => 24,  // o
+    117u8 => 25,  // u
+    120u8 => 26,  // x
 };
 
 pub const AMINO_INVERSE_MAP: phf::Map<u8, u8> = phf_map! {
@@ -406,12 +407,12 @@ pub const AMINO_INVERSE_MAP: phf::Map<u8, u8> = phf_map! {
     18u8 => 87,   // W
     19u8 => 89,   // Y
     // end base alphabet
-    20u8 => 79,   // O
-    21u8 => 85,   // U
-    22u8 => 88,   // X
-    23u8 => 66,   // B
-    24u8 => 90,   // Z
-    25u8 => 74,   // J
+    21u8 => 66,   // B
+    22u8 => 74,   // J
+    23u8 => 90,   // Z
+    24u8 => 79,   // O
+    25u8 => 85,   // U
+    26u8 => 88,   // X
     45u8 => 45,   // -
     46u8 => 46,   // .
     32u8 => 32,   // space
@@ -440,12 +441,12 @@ pub const AMINO_INVERSE_MAP_LOWER: phf::Map<u8, u8> = phf_map! {
     18u8 => 119,   // w
     19u8 => 121,   // y
     // end base alphabet
-    111u8 => 79,   // o
-    117u8 => 85,   // u
-    120u8 => 88,   // x
-    98u8  => 66,   // b
-    122u8 => 90,   // z
-    106u8 => 74,   // j
+    21u8 => 98,    // b
+    22u8 => 106,   // j
+    23u8 => 122,   // z
+    24u8 => 111,   // o
+    25u8 => 117,   // u
+    26u8 => 120,   // x
     45u8 => 45,    // -
     46u8 => 46,    // .
     32u8 => 32,    // space
@@ -475,3 +476,29 @@ pub const AMINO_BACKGROUND_FREQUENCIES: [f32; 20] = [
     0.0114135, // W
     0.0304133, // Y
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_table_gives_a_residue_its_position_in_the_degenerate_alphabet() {
+        for (code, letter) in AMINO_ALPHABET_WITH_DEGENERATE.iter().enumerate() {
+            // the gap, * and ~ are not residues
+            if ["-", "*", "~"].contains(letter) {
+                continue;
+            }
+
+            let code = code as u8;
+            let upper = letter.as_bytes()[0];
+            let lower = upper.to_ascii_lowercase();
+
+            assert_eq!(UTF8_TO_DIGITAL_AMINO[&upper], code, "{letter}");
+            assert_eq!(UTF8_TO_DIGITAL_AMINO[&lower], code, "{letter}");
+            assert_eq!(AMINO_INVERSE_MAP[&code], upper, "{letter}");
+            assert_eq!(AMINO_INVERSE_MAP_LOWER[&code], lower, "{letter}");
+            assert_eq!(code.to_utf8_byte_amino(), upper, "{letter}");
+            assert_eq!(code.to_lower_utf8_byte_amino(), lower, "{letter}");
+        }
+    }
+}

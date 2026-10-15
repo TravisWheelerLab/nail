@@ -31,15 +31,18 @@ const UNKNOWN_UTF8_BYTE: u8 = 255;
 // checks for every byte. from_fasta indexes this array in
 // place of the phf lookup, which took about 85% of its time
 const UTF8_TO_DIGITAL_AMINO_TABLE: [u8; 256] = {
-    // a byte's position here is its digital code
-    const UPPER: &[u8; 26] = b"ACDEFGHIKLMNPQRSTVWYOUXBZJ";
+    // a byte's position here is its digital code; the
+    // gap at 20 is not a residue, so it stays unknown
+    const UPPER: &[u8; 27] = b"ACDEFGHIKLMNPQRSTVWY-BJZOUX";
 
     let mut table = [UNKNOWN_UTF8_BYTE; 256];
     let mut code = 0;
     while code < UPPER.len() {
         let byte = UPPER[code];
-        table[byte as usize] = code as u8;
-        table[byte.to_ascii_lowercase() as usize] = code as u8;
+        if byte != b'-' {
+            table[byte as usize] = code as u8;
+            table[byte.to_ascii_lowercase() as usize] = code as u8;
+        }
         code += 1;
     }
     table
