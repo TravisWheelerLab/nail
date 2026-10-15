@@ -3,7 +3,7 @@
   "title": "Single-sequence tau calibration, reproduced and checked",
   "body": "For a sequence query, `Profile::from_blosum_62_and_seq` in `libnail/src/structs/profile.rs` sets the forward tau from the sequence length L with a closed form, in place of the simulation hmmbuild runs to calibrate a model. This milestone reproduces the experiment that fit that closed form, checks each step, and sets the formula in nail from the result. The experiment is described here fully enough to run again from this text alone.\n\n## The original experiment\n\nA colleague of Jack's ran it, with files dated 2026-09-13. Jack keeps the archive at `~/Downloads/tau-calibration.zip` on the 16-core box.\n\n- Sequences: `PTHR_190k.fasta`, 189,921 sequences from a random sample of 1,500 of the 15,683 family fastas in PANTHER 19.0, for training. `PTHR_190k_v2.fasta`, 193,872 sequences from a disjoint sample of 1,500 families, held out. The lists of sampled files are not in the archive.\n- For each sequence: `hmmbuild --singlemx --seed N <out.hmm> <one-seq.fa>`, one sequence per file. tau is recorded as minus mu from the `STATS LOCAL FORWARD` line, so it is positive. lambda is from the same line.\n- Runs: training at seeds 42 and 21, held-out at seed 42.\n- Fit: least squares of tau = a*ln(L) + b on training at seed 42. A grid search around that fit then picked the two-decimal (a, b) with the least mean absolute error.\n- Result: tau = 1.34*ln(L) - 2.33. Mean absolute error 0.185 on training, 0.186 held out. Seed 42 against seed 21 on the same sequences gives a mean absolute difference of 0.210.\n\nnail's code does not use that result. Jack typed the formula in by hand in `a9900ba`. In the same sign convention it works out to tau = 1.317*ln(L) - 2.537, which sits 0.33 to 0.35 below hmmbuild on all three of the original data sets (nail-7c334f).\n\n## Units\n\nhmmbuild reports mu and lambda for bit scores. nail's `p_value(score, lambda, tau)` in `libnail/src/align/scoring.rs` returns exp(-lambda * (S - tau)) with S in bits. So a tau from hmmbuild goes into nail's `fwd_tau` as mu, which is minus the experiment's tau. For a score below tau that formula exceeds 1, where HMMER's exponential tail returns 1.\n\n## The rerun\n\nDone in `tmp-claude/2026-10-14-tau-calibration` on the 16-core box, with HMMER 3.4 (Aug 2023), 8 hmmbuild jobs at a time, `--cpu 1` each. The rerun reuses the original sequence files, which have these sha256 sums:\n\n| file | sha256 |\n|---|---|\n| `PTHR_190k.fasta` | `717674d687c53526485893577012026ce7236ca0c7c9ce2f23e41a5b17ece289` |\n| `PTHR_190k_v2.fasta` | `2b768e043a2d2e83254a1fe1e064cb7f8449467fea5aec2c14cd3099cc598b1e` |\n\nThe scripts are new, not the original ones, so a mistake in either shows up as a difference. The children hold the steps and their results.",
   "type": "milestone",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-14T22:50:13.537795166Z",
-  "updated_at": "2026-10-14T22:50:13.537795166Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-15T00:01:32.375889074Z",
+  "closed_at": "2026-10-15T00:01:32.375889074Z",
+  "close_reason": "All children closed. The rerun reproduced the original hmmbuild data (nail-76e419) and fit (nail-62baa5). Commits `9d8f4df` and `85f6793` set nail's single-sequence tau to -(1.34 ln(L) - 2.33), which nail-7c334f and nail-c087ea record.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "b05455b",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "85f6793",
+      "branch": "dev"
+    }
   }
 }
