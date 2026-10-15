@@ -3,26 +3,29 @@
   "title": "A fasta header with a tab after the name puts the tab inside the target name",
   "body": "`Sequence::from_fasta` in `libnail/src/structs/sequence.rs` ends a record's name at the first space only. A header such as `>abc<TAB>some desc` gives the name `abc<TAB>some` and the details `desc`. libsail's `seq::fasta::name_of`, which names the record for nail's index and repeated-name check, ends the name at any ASCII whitespace and gives `abc`. Easel's `header_fasta` in `esl_sqio_ascii.c` does the same with `isspace`.\n\nThe tabular output takes the target name from `Sequence::name`, through `with_target_name(&target.name)` in `align_stage.rs`. So the wrong name reaches the results without any error. With the first space of every header in `fixtures/target.fa` turned into a tab, nail exits 0. 405 of its 408 rows carry the name, a tab, and the first word of the description as the target name, for example `O08858|reviewed|Somatostatin<TAB>receptor`. That adds a tab inside a field of a tab-separated row.\n\n## Proposal\n\nEnd the name at any ASCII whitespace, as libsail and Easel do, and start the details after the run of whitespace that follows it.\n\n## Open\n\n- Whether `from_fasta` should take the name from libsail's `name_of` instead of finding it itself, so the two can't disagree again.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 1,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/95b307ba",
-  "lease_expires": "2026-10-15T00:55:26.598011452Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-15T00:25:13.320672496Z",
-  "updated_at": "2026-10-15T00:40:26.598011452Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-15T01:26:19.174490327Z",
+  "closed_at": "2026-10-15T01:26:19.174490327Z",
+  "close_reason": "Commit `3794e7c` on `dev`: `Sequence::from_fasta` ends the name at any ASCII whitespace. The fixture target with tab-separated headers gives the same 408 hits as with spaces. `from_fasta_ends_the_name_at_a_tab` covers it, and `index_and_output_agree_on_record_names` in nail checks it against libsail's `name_of` on six headers, which answers the open question here without making libnail depend on libsail.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "7db351a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "3794e7c",
+      "branch": "dev"
+    }
   }
 }
