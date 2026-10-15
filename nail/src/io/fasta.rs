@@ -11,7 +11,7 @@ pub struct Fasta(Records);
 
 impl Fasta {
     pub fn from_path(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        Ok(Self(Records::map(path, Format::Fasta)?))
+        Ok(Self(Records::open(path, Format::Fasta)?))
     }
 
     pub fn len(&self) -> usize {

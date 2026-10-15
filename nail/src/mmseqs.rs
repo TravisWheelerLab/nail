@@ -9,7 +9,7 @@ use std::{
 };
 
 use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
-use libsail::source::MmapSource;
+use libsail::source::{FileSource, Source};
 
 use crate::{
     args::SearchArgs,
@@ -31,9 +31,9 @@ pub mod consts {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ByteBuffer<'a> {
-    Complete(&'a [u8]),
-    Partial(&'a [u8], usize),
+pub enum ByteBuffer {
+    Complete(Vec<u8>),
+    Partial(Vec<u8>, usize),
     Empty,
 }
 
@@ -47,8 +47,8 @@ struct Descriptor {
 pub struct PrefilterDb {
     /// The path the db was opened from.
     path: PathBuf,
-    /// The split files, mapped, in suffix order.
-    maps: Vec<MmapSource>,
+    /// The split files, in suffix order.
+    sources: Vec<FileSource>,
     descriptors: Vec<Descriptor>,
     checkpoints: Vec<u64>,
 }
@@ -152,14 +152,10 @@ impl PrefilterDb {
             })
             .collect::<Vec<_>>();
 
-        let maps = paths
+        let sources = paths
             .iter()
             .map(|path| {
-                // SAFETY: mmseqs has finished writing the db
-                //         before nail opens it, and nail never
-                //         writes to it
-                unsafe { MmapSource::open(path) }
-                    .with_context(|| format!("failed to map {}", path.display()))
+                FileSource::open(path).with_context(|| format!("failed to open {}", path.display()))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -167,64 +163,92 @@ impl PrefilterDb {
 
         Ok(Self {
             path: path.to_path_buf(),
-            maps,
+            sources,
             descriptors,
             checkpoints,
         })
     }
 
-    pub fn get(&self, prf_idx: usize) -> anyhow::Result<&[u8]> {
+    pub fn get(&self, prf_idx: usize) -> anyhow::Result<Vec<u8>> {
         let desc = self.descriptors[prf_idx];
-        let start = desc.offset as usize;
-        let end = start + desc.length as usize;
+        let length = desc.length as usize;
 
-        check_null_byte(&self.maps, desc, &self.path)?;
-        Ok(&self.maps[desc.file_idx].bytes()[start..end])
+        // the null byte is read with the record
+        let mut bytes = self.sources[desc.file_idx]
+            .range(desc.offset, length + 1)?
+            .into_owned();
+        if bytes[length] != 0 {
+            bail!(
+                "a record in {} does not end in a null byte",
+                self.path.display()
+            );
+        }
+
+        bytes.truncate(length);
+        Ok(bytes)
     }
 
-    pub fn next_n(&mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer<'_>> {
+    pub fn next_n(&mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer> {
         let desc = self.descriptors[prf_idx];
         let checkpoint = &mut self.checkpoints[prf_idx];
-
-        let start = (desc.offset + *checkpoint) as usize;
-        let end = (desc.offset + desc.length) as usize;
-        let remaining = &self.maps[desc.file_idx].bytes()[start..end];
 
         if n == 0 {
             return Ok(ByteBuffer::Empty);
         }
 
+        let start = desc.offset + *checkpoint;
+        let remaining = (desc.length - *checkpoint) as usize;
+
         // the null byte is checked when a take reaches the
-        // end of the record, where its page is read anyway.
-        // checking every record up front in from_path read
-        // one page per record, 6.9 s on a cold 32 GB db
-        if remaining.is_empty() {
-            check_null_byte(&self.maps, desc, &self.path)?;
+        // end of the record, and not for every record in
+        // from_path: that cost a disk read per record, and
+        // 6.9 s on a cold 32 GB db through a memory map
+        if remaining == 0 {
+            check_null_byte(&self.sources, desc, &self.path)?;
             return Ok(ByteBuffer::Empty);
         }
 
+        let source = &self.sources[desc.file_idx];
+        let mut bytes = vec![];
+        let mut chunk_len = SCAN_CHUNK;
         let mut record_cnt = 0;
-        for (pos, &b) in remaining.iter().enumerate() {
-            if b == b'\n' {
-                record_cnt += 1;
+
+        while bytes.len() < remaining {
+            let scanned = bytes.len();
+            let len = chunk_len.min(remaining - scanned);
+            bytes.extend_from_slice(&source.range(start + scanned as u64, len)?);
+
+            for pos in scanned..bytes.len() {
+                if bytes[pos] == b'\n' {
+                    record_cnt += 1;
+                }
+
+                if record_cnt == n {
+                    *checkpoint += (pos + 1) as u64;
+                    bytes.truncate(pos + 1);
+                    return Ok(ByteBuffer::Complete(bytes));
+                }
             }
 
-            if record_cnt == n {
-                *checkpoint += (pos + 1) as u64;
-                return Ok(ByteBuffer::Complete(&remaining[..=pos]));
-            }
+            chunk_len *= 2;
         }
 
-        check_null_byte(&self.maps, desc, &self.path)?;
+        check_null_byte(&self.sources, desc, &self.path)?;
         *checkpoint = desc.length;
-        Ok(ByteBuffer::Partial(remaining, record_cnt))
+        Ok(ByteBuffer::Partial(bytes, record_cnt))
     }
 }
 
+/// The length of the first range `next_n` reads; each later range doubles.
+//
+// a take reads less than twice the bytes it needs,
+// plus one first range, so a small take reads little
+const SCAN_CHUNK: usize = 1 << 12;
+
 /// Fail unless the byte after a record is its null byte.
-fn check_null_byte(maps: &[MmapSource], desc: Descriptor, path: &Path) -> anyhow::Result<()> {
-    let end = (desc.offset + desc.length) as usize;
-    if maps[desc.file_idx].bytes().get(end) != Some(&0) {
+fn check_null_byte(sources: &[FileSource], desc: Descriptor, path: &Path) -> anyhow::Result<()> {
+    let byte = sources[desc.file_idx].range(desc.offset + desc.length, 1)?;
+    if byte[0] != 0 {
         bail!("a record in {} does not end in a null byte", path.display());
     }
 
@@ -771,14 +795,14 @@ mod tests {
 
         // a take of zero lines does not move the checkpoint
         assert_eq!(db.next_n(0, 0)?, ByteBuffer::Empty);
-        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Complete(&b"a\nb\n"[..]));
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Complete(b"a\nb\n".to_vec()));
 
         // one line is left, so the take is partial and counts it
-        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Partial(&b"c\n"[..], 1));
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Partial(b"c\n".to_vec(), 1));
         assert_eq!(db.next_n(0, 2)?, ByteBuffer::Empty);
 
         // each record keeps its own checkpoint
-        assert_eq!(db.next_n(1, 1)?, ByteBuffer::Complete(&b"d\n"[..]));
+        assert_eq!(db.next_n(1, 1)?, ByteBuffer::Complete(b"d\n".to_vec()));
         assert_eq!(db.next_n(1, 1)?, ByteBuffer::Empty);
         assert_eq!(db.next_n(2, 1)?, ByteBuffer::Empty);
 

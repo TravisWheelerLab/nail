@@ -226,14 +226,14 @@ pub fn seed_progressive(
                         }
                         ByteBuffer::Empty => {
                             prf_state.status = Status::Terminated;
-                            &[]
+                            vec![]
                         }
                     },
-                    Status::Terminated => &[],
+                    Status::Terminated => vec![],
                     Status::Final(_) => unreachable!(),
                 };
 
-                prog_pfdb.write_all(record_bytes)?;
+                prog_pfdb.write_all(&record_bytes)?;
                 prog_pfdb.write_all(&[0])?;
 
                 let n_written = record_bytes.len() + 1;
@@ -346,7 +346,7 @@ pub fn seed_progressive(
             let mut n_written = 0;
             for prog_adb in &prog_adbs {
                 let record_bytes = prog_adb.get(prf_idx)?;
-                adb.write_all(record_bytes)?;
+                adb.write_all(&record_bytes)?;
                 n_written += record_bytes.len();
             }
 

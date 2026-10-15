@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added method `Stats::set_num_threads()`
 - added method `Stats::add_align_iteration()`
 - added per-iteration rows under the `align` leaf of the `-s` runtime tree in `--seed-mode prog`, with an iteration count on the leaf
-- added dependency `libsail` 0.4.2 with feature `mmap`
+- added dependency `libsail` 0.4.2
 - added struct `io::Records`
 - added methods `Fasta::name()`, `P7Hmm::name()`, `P7Hmm::get()`, `Queries::name()`
 - added method `PipelineArgs::validate()`
@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `build_pipeline()` now takes `&Queries` and runs before seeding
 - renamed enum `stats::MmseqsTimed` to `SeedTimed`, and methods `Stats::{set_mmseqs_time(), add_mmseqs_time()}` to `set_seed_time()`, `add_seed_time()`
 - the seeding branch of the `-s` runtime tree is labelled `seeding` instead of `seeding (mmseqs)`
-- `io::Fasta` and `io::P7Hmm` are now structs over a memory-mapped `libsail::index::Framed` instead of aliases of `Database`, and `Fasta::get()` takes `&self` and a record position instead of a name
+- `io::Fasta` and `io::P7Hmm` are now structs over a `libsail::index::Framed` instead of aliases of `Database`, and `Fasta::get()` takes `&self` and a record position instead of a name
 - the seeds file from `--seeds-out` names queries and targets by their position in the input file instead of by name
 - CLI param `--seeds` reads queries and targets as positions by default; a seeds file that names them loads with `--seeds-format names`
 - `Seeds::from_path()` takes a lookup for the query field and one for the target field
@@ -51,7 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - variant `Queries::Profile` now holds the parsed profiles as `Arc<Vec<Profile>>` instead of a `P7Hmm`, and `read_queries()` parses them
 - `write_mmseqs_profile_database()` now takes `&[Profile]` instead of `&P7Hmm`
 - the `query index` leaf of the `-s` runtime tree now includes parsing hmm queries, which moved out of `pipeline build`
-- struct `PrefilterDb` now maps its split files with `libsail::source::MmapSource`, and method `PrefilterDb::get()` takes `&self`
+- struct `PrefilterDb` now reads its split files through `libsail::source::FileSource` instead of reopening a file for every record, and method `PrefilterDb::get()` takes `&self` and returns `Vec<u8>`
+- enum `ByteBuffer` now holds `Vec<u8>` instead of `&[u8]`, and has no lifetime
 - methods `PrefilterDb::{get(), next_n()}` return an error for a record that does not end in a null byte, where they panicked
 - enum `ByteBuffer` now derives `Debug`, `PartialEq`
 - the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before

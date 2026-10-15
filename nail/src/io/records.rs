@@ -9,22 +9,18 @@ use anyhow::{bail, Context};
 use libsail::{
     format::Format,
     index::{Framed, Index},
-    source::MmapSource,
 };
 use rayon::prelude::*;
 
-/// An input file mapped into memory, with every record framed and named.
-pub struct Records(Framed<MmapSource>);
+/// An input file with every record framed and named.
+pub struct Records(Framed);
 
 impl Records {
-    pub fn map(path: impl AsRef<Path>, format: Format) -> anyhow::Result<Self> {
+    pub fn open(path: impl AsRef<Path>, format: Format) -> anyhow::Result<Self> {
         let path = path.as_ref();
 
-        // SAFETY: nothing may modify or truncate the file
-        //         while it is mapped. nail never writes to
-        //         its inputs
-        let mut framed = unsafe { Framed::map(path, format) }
-            .with_context(|| format!("failed to map {}", path.display()))?;
+        let mut framed = Framed::open(path, format)
+            .with_context(|| format!("failed to open {}", path.display()))?;
         framed.name_index()?;
 
         // **note: do not remove this check. nail tells
@@ -143,7 +139,7 @@ mod tests {
                 .num_threads(threads)
                 .build()?;
 
-            let Err(err) = pool.install(|| Records::map(&path, Format::Fasta)) else {
+            let Err(err) = pool.install(|| Records::open(&path, Format::Fasta)) else {
                 panic!("a repeated name was accepted at {threads} threads");
             };
             assert!(err

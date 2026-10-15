@@ -11,7 +11,7 @@ pub struct P7Hmm(Records);
 
 impl P7Hmm {
     pub fn from_path(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        Ok(Self(Records::map(path, Format::Hmm)?))
+        Ok(Self(Records::open(path, Format::Hmm)?))
     }
 
     pub fn len(&self) -> usize {
