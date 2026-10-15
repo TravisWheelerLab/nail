@@ -49,6 +49,11 @@ impl Records {
         }
     }
 
+    /// The position of the record named `name`.
+    pub fn position(&self, name: &str) -> anyhow::Result<Option<usize>> {
+        Ok(self.0.index().position(name.as_bytes())?)
+    }
+
     /// Parse the `n`th record's bytes with `parse`.
     pub fn parse<T>(&self, n: usize, parse: fn(&[u8]) -> anyhow::Result<T>) -> anyhow::Result<T> {
         let bytes = self

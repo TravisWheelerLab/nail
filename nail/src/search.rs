@@ -1,17 +1,19 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::stdout;
+use std::fs::File;
+use std::io::{stdout, BufReader};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::args::{SearchArgs, SeedMode};
-use crate::io::Seeds;
+use crate::args::{SearchArgs, SeedMode, SeedsFormat};
+use crate::io::{parse_position, write_named_seeds, Seeds};
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage, DefaultCloudSearchStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
+    positional_seeds_path, seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage,
+    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput,
+    BLAST_COLUMNS, DEFAULT_COLUMNS,
 };
 use crate::stats::{SerialTimed, SetupTimed, Stats, ThreadedTimed};
 use crate::util::{guess_query_format_from_query_file, FileFormat};
@@ -67,6 +69,41 @@ pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
     }
 }
 
+/// Read the seeds file given to --seeds, in the format --seeds-format names.
+fn read_seeds(
+    path: &Path,
+    queries: &Queries,
+    targets: &Fasta,
+    args: &SearchArgs,
+) -> anyhow::Result<Seeds> {
+    let max_seeds = args.seed_args.max_seeds;
+
+    match args.io_args.seeds_format {
+        SeedsFormat::Positions => {
+            Seeds::from_path(path, max_seeds, &parse_position, &parse_position)
+        }
+        SeedsFormat::Names => {
+            let query_positions = (0..queries.len())
+                .map(|n| Ok((queries.name(n)?, n)))
+                .collect::<anyhow::Result<HashMap<String, usize>>>()?;
+
+            let query_position = |name: &str| {
+                query_positions
+                    .get(name)
+                    .copied()
+                    .with_context(|| format!("seed field \"{name}\" is not a query name"))
+            };
+            let target_position = |name: &str| {
+                targets
+                    .position(name)?
+                    .with_context(|| format!("seed field \"{name}\" is not a target name"))
+            };
+
+            Seeds::from_path(path, max_seeds, &query_position, &target_position)
+        }
+    }
+}
+
 pub fn seed(
     queries: &Queries,
     targets: &Fasta,
@@ -74,7 +111,7 @@ pub fn seed(
     args: &mut SearchArgs,
 ) -> anyhow::Result<Seeds> {
     match args.io_args.seeds_input_path {
-        Some(ref path) => Seeds::from_path(path, args.seed_args.max_seeds),
+        Some(ref path) => read_seeds(path, queries, targets, args),
         None => {
             let now = Instant::now();
 
@@ -100,6 +137,19 @@ pub fn seed(
                 SeedMode::Prog => seed_progressive(queries, targets, &db_paths, stats, args)
                     .context("progessive seeding failed"),
             }?;
+
+            if let (Some(path), SeedsFormat::Names) =
+                (&args.io_args.seeds_output_path, args.io_args.seeds_format)
+            {
+                let positional = BufReader::new(File::open(positional_seeds_path(args)?)?);
+                write_named_seeds(
+                    positional,
+                    path.open(args.io_args.allow_overwrite)?,
+                    &|n| queries.name(n),
+                    &|n| targets.name(n),
+                )
+                .context("failed to write named seeds")?;
+            }
 
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
 

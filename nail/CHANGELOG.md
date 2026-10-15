@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added struct `io::Records`
 - added methods `Fasta::name()`, `P7Hmm::name()`, `P7Hmm::get()`, `Queries::name()`
 - added method `PipelineArgs::validate()`
+- added CLI param `--seeds-format`, which sets whether `--seeds` and `--seeds-out` name queries and targets by position, the default, or by name
+- added enum `args::SeedsFormat`
+- added methods `Records::position()`, `Fasta::position()`
+- added functions `io::write_named_seeds()`, `io::parse_position()`, `pipeline::positional_seeds_path()`
+- added type `io::FieldToPosition`
 
 ### Changed
 - `build_pipeline()` now takes `&Queries` and runs before seeding
@@ -37,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the seeding branch of the `-s` runtime tree is labelled `seeding` instead of `seeding (mmseqs)`
 - `io::Fasta` and `io::P7Hmm` are now structs over a memory-mapped `libsail::index::Framed` instead of aliases of `Database`, and `Fasta::get()` takes `&self` and a record position instead of a name
 - the seeds file from `--seeds-out` names queries and targets by their position in the input file instead of by name
-- CLI param `--seeds` reads queries and targets as positions; a seeds file that names them no longer loads
+- CLI param `--seeds` reads queries and targets as positions by default; a seeds file that names them loads with `--seeds-format names`
+- `Seeds::from_path()` takes a lookup for the query field and one for the target field
 - field `Pipeline::profiles` is now `Arc<Vec<Profile>>`, indexed by query position
 - field `Pipeline::prf` is now `Option<(usize, Profile)>`
 - `Stats::new()` now returns `anyhow::Result<Self>`

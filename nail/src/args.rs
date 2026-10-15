@@ -311,6 +311,19 @@ pub struct IoArgs {
     /// Prefer profile accessions instead of names in output
     #[arg(long, action)]
     pub use_accession: bool,
+
+    /// How a seeds file names its queries and targets, for --seeds and --seeds-out
+    #[arg(long, default_value = "positions", value_name = "FMT")]
+    pub seeds_format: SeedsFormat,
+}
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum SeedsFormat {
+    /// Each record's position in its input file, counting from 0
+    #[default]
+    Positions,
+    /// Each record's name
+    Names,
 }
 
 #[derive(Default, Clone, Copy, Debug, ValueEnum)]

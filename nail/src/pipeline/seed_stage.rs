@@ -1,11 +1,11 @@
-use std::{io::Write, time::Instant};
+use std::{io::Write, path::PathBuf, time::Instant};
 
 use anyhow::Context;
 use libnail::align::{structs::Seed, Bits};
 
 use crate::{
-    args::SearchArgs,
-    io::{Fasta, Seeds},
+    args::{SearchArgs, SeedsFormat},
+    io::{parse_position, Fasta, Seeds},
     mmseqs::{
         consts::{ALIGN_DBTYPE, PREFILTER_DBTYPE},
         run_mmseqs_align, run_mmseqs_convertalis, run_mmseqs_prefilter,
@@ -26,6 +26,22 @@ impl SeedStageResult {}
 pub struct SeedStageStats {
     pub score: Bits,
     pub e_value: f64,
+}
+
+/// The seeds file convertalis writes, which holds positions.
+//
+// it is the --seeds-out path only when that file is to hold
+// positions; for names, nail rewrites it there from this one
+pub fn positional_seeds_path(args: &SearchArgs) -> anyhow::Result<PathBuf> {
+    match (&args.io_args.seeds_output_path, args.io_args.seeds_format) {
+        (Some(path), SeedsFormat::Positions) => Ok(path.clone()),
+        _ => Ok(args
+            .io_args
+            .tmp_dir_path
+            .as_ref()
+            .context("args.io_args.tmp_dir_path is somehow unset")?
+            .join("seeds.tsv")),
+    }
 }
 
 pub fn seed_static(
@@ -81,15 +97,7 @@ pub fn seed_static(
 
     // ---
 
-    let align_tsv = match &args.io_args.seeds_output_path {
-        Some(path) => path,
-        None => &args
-            .io_args
-            .tmp_dir_path
-            .as_ref()
-            .context("args.io_args.tmp_dir_path is somehow unset")?
-            .join("seeds.tsv"),
-    };
+    let align_tsv = &positional_seeds_path(args)?;
 
     let now = Instant::now();
     run_mmseqs_convertalis(
@@ -106,8 +114,13 @@ pub fn seed_static(
     // ---
 
     let now = Instant::now();
-    let seeds =
-        Seeds::from_path(align_tsv, args.seed_args.max_seeds).context("failed to build seeds")?;
+    let seeds = Seeds::from_path(
+        align_tsv,
+        args.seed_args.max_seeds,
+        &parse_position,
+        &parse_position,
+    )
+    .context("failed to build seeds")?;
 
     stats.set_seed_time(SeedTimed::Index, now.elapsed());
     stats.set_seed_time(SeedTimed::Total, time_start.elapsed());
@@ -350,15 +363,7 @@ pub fn seed_progressive(
 
     // ---
 
-    let align_tsv = match &args.io_args.seeds_output_path {
-        Some(path) => path,
-        None => &args
-            .io_args
-            .tmp_dir_path
-            .as_ref()
-            .context("args.io_args.tmp_dir_path is somehow unset")?
-            .join("seeds.tsv"),
-    };
+    let align_tsv = &positional_seeds_path(args)?;
 
     let now = Instant::now();
     run_mmseqs_convertalis(
@@ -376,8 +381,13 @@ pub fn seed_progressive(
 
     let now = Instant::now();
 
-    let seeds =
-        Seeds::from_path(align_tsv, args.seed_args.max_seeds).context("failed to build seeds")?;
+    let seeds = Seeds::from_path(
+        align_tsv,
+        args.seed_args.max_seeds,
+        &parse_position,
+        &parse_position,
+    )
+    .context("failed to build seeds")?;
 
     stats.set_seed_time(SeedTimed::Index, now.elapsed());
     stats.set_seed_time(SeedTimed::Total, time_start.elapsed());

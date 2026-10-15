@@ -23,6 +23,11 @@ impl Fasta {
         self.0.name(n)
     }
 
+    /// The position of the record named `name`.
+    pub fn position(&self, name: &str) -> anyhow::Result<Option<usize>> {
+        self.0.position(name)
+    }
+
     /// The `n`th record.
     pub fn get(&self, n: usize) -> anyhow::Result<Sequence> {
         self.0.parse(n, Sequence::from_fasta)
