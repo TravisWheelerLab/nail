@@ -188,28 +188,39 @@ fn parse_p7hmm_float(token: &[u8]) -> anyhow::Result<f32> {
     const MAX_DIGITS: usize = 7;
     const POWERS_OF_TEN: [f32; MAX_DIGITS + 1] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7];
 
-    let (whole, fraction) = match token.iter().position(|&b| b == b'.') {
-        Some(point) => (&token[..point], &token[point + 1..]),
-        None => (token, &token[token.len()..]),
-    };
-
-    // anything else, such as a sign, an exponent, a bare
-    // point or too many digits, goes to str::parse
-    let digits_only = whole.iter().chain(fraction).all(|b| b.is_ascii_digit());
-    let fits = whole.len() + fraction.len() <= MAX_DIGITS;
-    if !digits_only || !fits || whole.is_empty() {
-        let token = std::str::from_utf8(token)?;
-        return token
-            .parse()
-            .with_context(|| format!("failed to parse HMM float: \"{token}\""));
-    }
-
     let mut n: u32 = 0;
-    for &byte in whole.iter().chain(fraction) {
-        n = n * 10 + (byte - b'0') as u32;
+    let mut digits = 0;
+    let mut point_seen = false;
+    let mut fraction_digits = 0;
+
+    for &byte in token {
+        if byte.is_ascii_digit() && digits < MAX_DIGITS {
+            n = n * 10 + (byte - b'0') as u32;
+            digits += 1;
+            if point_seen {
+                fraction_digits += 1;
+            }
+        } else if byte == b'.' && !point_seen && digits > 0 {
+            point_seen = true;
+        } else {
+            // a sign, an exponent, a leading or second point,
+            // or an eighth digit
+            return parse_with_str(token);
+        }
     }
 
-    Ok(n as f32 / POWERS_OF_TEN[fraction.len()])
+    if digits == 0 {
+        return parse_with_str(token);
+    }
+
+    Ok(n as f32 / POWERS_OF_TEN[fraction_digits])
+}
+
+fn parse_with_str(token: &[u8]) -> anyhow::Result<f32> {
+    let token = std::str::from_utf8(token)?;
+    token
+        .parse()
+        .with_context(|| format!("failed to parse HMM float: \"{token}\""))
 }
 
 fn word_from(buf: &[u8], pos: usize) -> anyhow::Result<&str> {
