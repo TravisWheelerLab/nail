@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-15T04:19:08.467708143Z",
   "defer_until": null,
   "created_at": "2026-10-15T03:52:11.575694242Z",
-  "updated_at": "2026-10-15T04:05:16.699347324Z",
+  "updated_at": "2026-10-15T04:12:31.455960176Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-10-15T04:05:16.699346484Z",
       "author": "Jack Roddy/302d4408",
       "text": "Confirmed at `94eecda`, at the score level and end to end. Both checks used the throwaway code in `tmp-claude/2026-10-14-degenerate-codes`.\n\nAt position 1 of `7tm_1`, from the first record of `fixtures/query.hmm`, `match_score(code, 1)` gives U the score of K, X the score of C, O and B `-inf`, Z the score of the B column, and J the score of the Z column. No nail code remaps `digital_bytes` between `Sequence::from_fasta` and the DP.\n\nEnd to end, I took `O08892` from `fixtures/target.fa` (389 residues) and wrote one variant per degenerate residue, replacing every copy of one residue. Both tools ran without null2 (`hmmsearch --nonull2`, `nail search --no-null2`). Scores are in bits.\n\n| variant | hmmsearch | nail | nail scored the new residue as |\n|---|---|---|---|\n| original | 267.1 | 267.0 | |\n| all 17 K to O | 267.1 | 185.4 | `-inf` |\n| all 13 C to U | 267.1 | 228.0 | K |\n| all 13 C to X | 233.5 | 267.0 | C |\n| all 13 N to B | 261.0 | 212.9 | `-inf` |\n| all 8 Q to Z | 266.3 | 265.0 | B (N, D) |\n| all 45 L to J | 263.6 | 189.5 | Z (Q, E) |\n\nhmmsearch scores O as K and U as C. It scores B, Z and J as a mix of their canon residues, and X as a mix of all 20, since 233.5 sits below 267.1. Every degenerate residue in nail scores differently from hmmsearch.\n\n## What a fix touches\n\n- `UTF8_TO_DIGITAL_AMINO`, `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER`, `to_utf8_byte_amino` and the `UPPER` string of `UTF8_TO_DIGITAL_AMINO_TABLE` in `sequence.rs` would move to the `AminoAcid` order: `-` 20, B 21, J 22, Z 23, O 24, U 25, X 26.\n- `Alphabet::ambiguity_map()` would list B, J, Z, O, U, X in that order, with all 20 canonical residues for X.\n- Callers that index by digital code need checking: `scoring.rs` null2 (`expected_scores[target.digital_bytes[idx]]`), the consensus lookup in `nail/src/mmseqs.rs`, `cloud_search.rs` through `AminoAcid::from_u8`, and `Profile::serialize`.",
+      "commit": "94eecda",
+      "branch": "dev"
+    },
+    {
+      "id": "eedc98b7",
+      "at": "2026-10-15T04:12:31.455959356Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "Sequence queries are affected too. `Profile::from_blosum_62_and_seq` reads `CONDITIONAL_PROB[residue]`, and that table's rows run in the `AminoAcid` order: 20 gap, all zeros, then B, J, Z, O, U, X. A query residue is looked up by its sequence code, so the wrong row comes back.\n\nChecked with `tmp-claude/2026-10-14-degenerate-codes/src/bin/query.rs`. Each query was `ACDEFGHIKL` with position 6 changed to one degenerate letter.\n\n| position 6 | row it got | consensus at 6 | `fwd_lambda` |\n|---|---|---|---|\n| G (control) | G | g | 0.9087 |\n| O | gap, all zero | a | NaN |\n| U | B | d | 0.9229 |\n| X | J | l | 0.9249 |\n| B | Z | e | 0.9276 |\n\nAn O in a query zeroes every emission probability at its position. The `p * log2(p / f)` sum then hits `0 * -inf`, which makes `fwd_lambda` NaN, and every E-value for that query becomes NaN.\n\nRecords with no degenerate letter are unaffected. The canonical codes 0 to 19 agree across every table. The mmseqs prefilter reads `utf8_bytes`, not the digital codes.",
       "commit": "94eecda",
       "branch": "dev"
     }
