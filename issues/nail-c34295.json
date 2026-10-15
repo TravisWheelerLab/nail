@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-15T04:19:08.467708143Z",
   "defer_until": null,
   "created_at": "2026-10-15T03:52:11.575694242Z",
-  "updated_at": "2026-10-15T04:04:08.467708143Z",
+  "updated_at": "2026-10-15T04:05:16.699347324Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "e72717d8",
+      "at": "2026-10-15T04:05:16.699346484Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "Confirmed at `94eecda`, at the score level and end to end. Both checks used the throwaway code in `tmp-claude/2026-10-14-degenerate-codes`.\n\nAt position 1 of `7tm_1`, from the first record of `fixtures/query.hmm`, `match_score(code, 1)` gives U the score of K, X the score of C, O and B `-inf`, Z the score of the B column, and J the score of the Z column. No nail code remaps `digital_bytes` between `Sequence::from_fasta` and the DP.\n\nEnd to end, I took `O08892` from `fixtures/target.fa` (389 residues) and wrote one variant per degenerate residue, replacing every copy of one residue. Both tools ran without null2 (`hmmsearch --nonull2`, `nail search --no-null2`). Scores are in bits.\n\n| variant | hmmsearch | nail | nail scored the new residue as |\n|---|---|---|---|\n| original | 267.1 | 267.0 | |\n| all 17 K to O | 267.1 | 185.4 | `-inf` |\n| all 13 C to U | 267.1 | 228.0 | K |\n| all 13 C to X | 233.5 | 267.0 | C |\n| all 13 N to B | 261.0 | 212.9 | `-inf` |\n| all 8 Q to Z | 266.3 | 265.0 | B (N, D) |\n| all 45 L to J | 263.6 | 189.5 | Z (Q, E) |\n\nhmmsearch scores O as K and U as C. It scores B, Z and J as a mix of their canon residues, and X as a mix of all 20, since 233.5 sits below 267.1. Every degenerate residue in nail scores differently from hmmsearch.\n\n## What a fix touches\n\n- `UTF8_TO_DIGITAL_AMINO`, `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER`, `to_utf8_byte_amino` and the `UPPER` string of `UTF8_TO_DIGITAL_AMINO_TABLE` in `sequence.rs` would move to the `AminoAcid` order: `-` 20, B 21, J 22, Z 23, O 24, U 25, X 26.\n- `Alphabet::ambiguity_map()` would list B, J, Z, O, U, X in that order, with all 20 canonical residues for X.\n- Callers that index by digital code need checking: `scoring.rs` null2 (`expected_scores[target.digital_bytes[idx]]`), the consensus lookup in `nail/src/mmseqs.rs`, `cloud_search.rs` through `AminoAcid::from_u8`, and `Profile::serialize`.",
+      "commit": "94eecda",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "0aae149",
