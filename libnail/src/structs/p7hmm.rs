@@ -116,7 +116,7 @@ impl Profile {
                             }
 
                             parse_p7hmm_floats_into::<{ Profile::MAX_ALPHABET_SIZE }>(
-                                std::str::from_utf8(&line[pos_pos + pos_str.len()..])?,
+                                &line[pos_pos + pos_str.len()..],
                                 &mut emission_buf,
                             )?;
 
@@ -131,7 +131,7 @@ impl Profile {
                         }
                         ModelState::Trans => {
                             parse_p7hmm_floats_into::<{ Profile::NUM_STATE_TRANSITIONS - 1 }>(
-                                std::str::from_utf8(line)?,
+                                line,
                                 &mut trans_buf,
                             )?;
 
@@ -158,20 +158,58 @@ fn negexp(x: f32) -> f32 {
     (-x).exp()
 }
 
-fn parse_p7hmm_floats_into<const N: usize>(floats: &str, out: &mut [f32; N]) -> anyhow::Result<()> {
-    let mut tokens = floats.split_whitespace();
+fn parse_p7hmm_floats_into<const N: usize>(
+    floats: &[u8],
+    out: &mut [f32; N],
+) -> anyhow::Result<()> {
+    let mut tokens = floats
+        .split(|b| b.is_ascii_whitespace())
+        .filter(|token| !token.is_empty());
 
-    out.iter_mut()
-        .take(N)
-        .try_for_each(|item| -> anyhow::Result<()> {
-            *item = match tokens.next() {
-                Some("*") => 0.0,
-                Some(s) => s.parse().map(negexp)?,
-                None => bail!("expected {N} floats, got fewer"),
-            };
+    for item in out.iter_mut() {
+        *item = match tokens.next() {
+            Some(b"*") => 0.0,
+            Some(token) => negexp(parse_p7hmm_float(token)?),
+            None => bail!("expected {N} floats, got fewer"),
+        };
+    }
 
-            Ok(())
-        })
+    Ok(())
+}
+
+/// Parse one float of a p7hmm file, giving the same `f32` as `str::parse`.
+fn parse_p7hmm_float(token: &[u8]) -> anyhow::Result<f32> {
+    // what: read the digits as an integer n and count the
+    //       digits after the point, d; the value is n / 10^d
+    // why: with at most 7 digits, n < 2^24 and 10^d are both
+    //      exact in f32, and IEEE division rounds correctly,
+    //      so the quotient is the f32 nearest the decimal,
+    //      which is what str::parse returns
+    const MAX_DIGITS: usize = 7;
+    const POWERS_OF_TEN: [f32; MAX_DIGITS + 1] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7];
+
+    let (whole, fraction) = match token.iter().position(|&b| b == b'.') {
+        Some(point) => (&token[..point], &token[point + 1..]),
+        None => (token, &token[token.len()..]),
+    };
+
+    // anything else, such as a sign, an exponent, a bare
+    // point or too many digits, goes to str::parse
+    let digits_only = whole.iter().chain(fraction).all(|b| b.is_ascii_digit());
+    let fits = whole.len() + fraction.len() <= MAX_DIGITS;
+    if !digits_only || !fits || whole.is_empty() {
+        let token = std::str::from_utf8(token)?;
+        return token
+            .parse()
+            .with_context(|| format!("failed to parse HMM float: \"{token}\""));
+    }
+
+    let mut n: u32 = 0;
+    for &byte in whole.iter().chain(fraction) {
+        n = n * 10 + (byte - b'0') as u32;
+    }
+
+    Ok(n as f32 / POWERS_OF_TEN[fraction.len()])
 }
 
 fn word_from(buf: &[u8], pos: usize) -> anyhow::Result<&str> {
@@ -204,6 +242,67 @@ mod tests {
     };
 
     use super::*;
+
+    fn assert_parses_like_str_parse(token: &str) {
+        match (parse_p7hmm_float(token.as_bytes()), token.parse::<f32>()) {
+            (Ok(ours), Ok(std)) => assert_eq!(ours.to_bits(), std.to_bits(), "{token}"),
+            (Err(_), Err(_)) => {}
+            (ours, std) => panic!("{token}: ours {ours:?}, str::parse {std:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_p7hmm_float_matches_str_parse_on_every_five_decimal_value() {
+        // p7hmm writes its floats with five decimals, so this
+        // covers every value from 0.00000 to 99.99999
+        for n in 0..10_000_000 {
+            assert_parses_like_str_parse(&format!("{}.{:05}", n / 100_000, n % 100_000));
+        }
+    }
+
+    #[test]
+    fn parse_p7hmm_float_matches_str_parse_at_each_point_position() {
+        for decimals in 0..=8 {
+            let scale = 10u32.pow(decimals);
+            for n in (0..100_000_000).step_by(997) {
+                let token = match decimals {
+                    0 => format!("{n}"),
+                    _ => format!(
+                        "{}.{:0width$}",
+                        n / scale,
+                        n % scale,
+                        width = decimals as usize
+                    ),
+                };
+                assert_parses_like_str_parse(&token);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_p7hmm_float_matches_str_parse_on_other_tokens() {
+        for token in [
+            "0",
+            "1.",
+            ".5",
+            "0.00000",
+            "9999999",
+            "99999999",
+            "16777217",
+            "1.2345678",
+            "+1.0",
+            "-1.0",
+            "1e-3",
+            "inf",
+            "",
+            ".",
+            "-",
+            "1.2.3",
+            "abc",
+        ] {
+            assert_parses_like_str_parse(token);
+        }
+    }
 
     #[test]
     fn test_profile_serialize() -> anyhow::Result<()> {
