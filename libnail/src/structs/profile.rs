@@ -793,21 +793,9 @@ impl Profile {
         // sequences
         const TAU_SLOPE: f32 = 1.34;
 
-        // the relative entropy of BLOSUM62, the matrix behind
-        // every single-sequence profile
-        const KL_BLOSUM62: f32 = 0.589;
-
-        // the weight on the matrix's relative entropy within
-        // the intercept
-        const TAU_KL_WEIGHT: f32 = 0.662;
-
-        // the part of the intercept that does not depend on
-        // the matrix
-        const TAU_BASE: f32 = 1.94;
-
-        // the intercept of the same fit, 2.33, built from the
-        // matrix's share and the base
-        const TAU_INTERCEPT: f32 = TAU_KL_WEIGHT * KL_BLOSUM62 + TAU_BASE;
+        // the intercept of the same fit, which holds only for
+        // BLOSUM62 with this profile's gap probabilities
+        const TAU_INTERCEPT: f32 = 2.33;
 
         let tau = -(TAU_SLOPE * (seq.length as f32).ln() - TAU_INTERCEPT);
 
