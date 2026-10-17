@@ -3,26 +3,29 @@
   "title": "A profile with no Forward lambda reports a missing tau",
   "body": "In `ProfileBuilder::build` (`profile.rs`), a missing `fwd_lambda` returns the error `missing: tau`, the same text as a missing `fwd_tau`. The message for a missing lambda should say lambda. Seen at `1e1bac3`.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/302d4408",
-  "lease_expires": "2026-10-17T04:38:18.670221498Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-15T05:05:39.789780782Z",
-  "updated_at": "2026-10-17T04:23:18.670221498Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-17T04:24:05.57140811Z",
+  "closed_at": "2026-10-17T04:24:05.57140811Z",
+  "close_reason": "Fixed in `bb3c392`: `ProfileBuilder::build` now reports `missing: lambda`, with a test in `profile.rs` and a libnail changelog entry.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "1e1bac3",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "bb3c392",
+      "branch": "dev"
+    }
   }
 }
