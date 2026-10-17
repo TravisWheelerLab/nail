@@ -523,7 +523,7 @@ impl ProfileBuilder {
         let length = self.length.ok_or_else(|| anyhow!("missing: length"))?;
         let accession = self.accession.unwrap_or_default();
         let fwd_tau = self.fwd_tau.ok_or_else(|| anyhow!("missing: tau"))?;
-        let fwd_lambda = self.fwd_lambda.ok_or_else(|| anyhow!("missing: tau"))?;
+        let fwd_lambda = self.fwd_lambda.ok_or_else(|| anyhow!("missing: lambda"))?;
 
         self.mat_emissions[0] = Some([-f32::INFINITY; 20]);
 
@@ -1229,6 +1229,17 @@ mod tests {
     use super::*;
     use crate::alphabet::AminoUtilsUtf8;
     use crate::structs::Sequence;
+
+    #[test]
+    fn build_reports_a_missing_lambda_as_lambda() {
+        let mut prf = ProfileBuilder::default();
+        prf.name("p".to_string()).length(1).fwd_tau(-1.0);
+
+        let Err(err) = prf.build() else {
+            panic!("a profile without a lambda was built");
+        };
+        assert_eq!(err.to_string(), "missing: lambda");
+    }
 
     #[test]
     fn blosum62_profile_lambda_matches_hmmbuild() -> anyhow::Result<()> {

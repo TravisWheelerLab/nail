@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed `p_value()` returning more than 1 for a score below tau; it now returns 1, as HMMER does
 - fixed `Sequence::from_fasta()` failing on a record with CRLF line endings; it skips `\r` as it skips `\n`
 - fixed `Sequence::from_fasta()` ending a record's name only at a space; it ends the name at any whitespace, so a tab no longer lands inside it
+- fixed `ProfileBuilder::build()` reporting a missing Forward lambda as `missing: tau`; it now reports `missing: lambda`
 - fixed the digital codes of the degenerate residues B, J, Z, O, U and X, which sequences and profiles numbered differently; a degenerate target residue scored as another residue or as `-inf`, and an O in a sequence query made `fwd_lambda` NaN
     - const `UTF8_TO_DIGITAL_AMINO`, consts `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER` and methods `AminoUtilsDigital::{to_utf8_byte_amino(), to_lower_utf8_byte_amino()}` now follow the order of enum `AminoAcid`: B 21, J 22, Z 23, O 24, U 25, X 26
     - method `Alphabet::ambiguity_map()` lists B, J, Z, O, U, X in that order and maps X to all 20 canonical residues, so X scores as their background-weighted mean instead of `-inf`
