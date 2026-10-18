@@ -89,12 +89,11 @@ fn refuse_repeated_names(index: &Index, path: &Path) -> anyhow::Result<()> {
     // what: each shard checks the records whose name hash
     //       falls in it, so a repeated name lands twice in
     //       the same shard
-    // why: on 2,455,940 targets at 8 threads this takes
-    //      0.05 s, against 0.15 s for one HashSet on one
-    //      thread and 2.4 s for a binary search per record
-    //      over the name index. the gap should grow with
-    //      the number of targets and the number of threads,
-    //      though no larger run has measured it yet
+    // why: on 40,000,000 mgy targets at 48 threads this
+    //      takes 0.47 s, against 2.6 s for a binary search
+    //      per record over the name index and 6.2 s for one
+    //      HashSet on one thread. on 2,455,940 targets it
+    //      takes 0.04 s at any count from 8 threads up
     (0..shards).into_par_iter().try_for_each(|shard| {
         let mut seen = HashSet::with_capacity(index.len() / shards);
 
