@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-18T02:37:00.821754037Z",
-  "updated_at": "2026-10-18T04:14:37.071143414Z",
+  "updated_at": "2026-10-18T04:15:50.039019269Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -23,6 +23,14 @@
       "at": "2026-10-18T04:14:37.071142594Z",
       "author": "Jack Roddy/302d4408",
       "text": "The official `nail-v0.7.1` release binary, `nail-x86_64-unknown-linux-gnu.tar.gz` from GitHub, published 2026-08-01, also reports the hit on the pair alone: 853.4 bits, E 1.7e-260, from the same seed (hmm 95-1972, target 5-1443, E 1.651e-311). Its row is identical to the build of `0a36fc0` made on the 16-core box, and it reports the hit at `-t 1`, `-t 4` and `-t 16`. A dev build also prints `nail 0.7.1` from `--version`, since `nail/Cargo.toml` is still 0.7.1 on `dev`, so the version string does not pin the commit the coworker ran.",
+      "commit": "bb3c392",
+      "branch": "dev"
+    },
+    {
+      "id": "ed289e41",
+      "at": "2026-10-18T04:15:50.039018269Z",
+      "author": "Jack Roddy/302d4408",
+      "text": "The coworker ran mmseqs `18-8cc5c`, the same version as on the 16-core box, so the mmseqs version does not explain the different seed. Her seed E-value (1.362e-240) and ours (1.651e-311) differ by about 10^71, about 236 bits. Our seed scored 965 bits over all three domains, so hers fits an mmseqs alignment ending after domain 2, as she described. Ours sits below the smallest normal double, so the 236 bits is approximate. Still needed from her: the full nail command line, the seed line for this pair from `--seeds-out`, and the other queries and targets in the run, if any.",
       "commit": "bb3c392",
       "branch": "dev"
     }
