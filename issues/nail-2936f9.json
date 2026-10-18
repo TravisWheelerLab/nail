@@ -1,0 +1,28 @@
+{
+  "id": "nail-2936f9",
+  "title": "`format_secs` prints 5,976.100s for 5,976.997 s",
+  "body": "`Stats::format_secs` in `nail/src/stats.rs` prints a `Duration` as whole seconds with thousands separators, a dot, and two digits of fraction:\n\n```rust\nlet whole = Self::format_num(secs.trunc() as u64);\nlet frac = (secs.fract() * 100.0).round() as u64;\nformat!(\"{whole}.{frac:02}s\")\n```\n\nA fraction of 0.995 or more rounds to 100, and the whole part is never carried. A chunk-size run of the mgy search printed the alignment branch as `cpu 5,976.100s`, where the value was about 5,977.00 s. The `-s` runtime tree is the only place this shows, so results are not affected.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-18T19:11:56.061257191Z",
+  "updated_at": "2026-10-18T19:11:56.061257191Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bb3c392",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
