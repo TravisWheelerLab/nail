@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.42733491Z",
-  "updated_at": "2026-10-18T19:38:14.713934519Z",
+  "updated_at": "2026-10-18T21:21:27.72063476Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -22,10 +22,10 @@
       "id": "f3b56c9f",
       "at": "2026-10-18T19:11:43.728032758Z",
       "author": "jackroddy/4125deb5",
-      "text": "The 93.0% did not reproduce. On the 48-thread box at `bb3c392`, pinned to the 48 physical cores of NUMA node 0 at `-t 48`, the full run reported the alignment stage at 99.0% busy over 124.7 s. The inputs were the same as the 481.8 s run. I do not know how that run was placed on the box, so the difference cannot be put down to pinning or to the code that changed since `432ff65`.\n\nI then swept the chunk size in `par_chunks` in `search.rs`, from a scratch build that reads it from an environment variable. Every run aligned the seeds saved by the full run, through `--seeds`, on the same pinned cores:\n\n| chunk | alignment wall, s | busy |\n|---|---|---|\n| 1 | 124.64 | 100.0% |\n| 10 | 128.08 | 97.3% |\n| 25 | 124.64 | 99.9% |\n| 50 | 124.63 | 99.9% |\n| 100 | 123.82 | 99.5% |\n| 100, repeated | 125.34 | 99.4% |\n| 400 | 128.44 | 97.1% |\n\nThe spread is 123.8 to 128.4 s. The two runs of chunk 100 differ by 1.5 s. Chunk size makes no difference I can separate from run-to-run noise. I see no reason to change the 100 in `search.rs`. Sorted `results.tbl` from chunks 1, 400 and the repeat of 100 match the first chunk-100 run byte for byte.\n\nThe logs are in `tmp-claude/2026-10-18-serial-overhead-48t/sweep` on `catalyst`.",
+      "text": "On the 48-thread box, `catalyst`, the idle reproduces at `432ff65` and is gone at `bb3c392`. Both runs were pinned to the 48 physical cores of NUMA node 0 at `-t 48`, with the flags `stage-times` passes: `-E 10 --mmseqs-s 12.0 --seed-mode prog -s`. The inputs were the `mgy` part of the `stage-times` set, 20,795 Pfam profiles against 2,455,940 MGnify targets.\n\n| commit | alignment wall, s | cpu, s | busy |\n|---|---|---|---|\n| `432ff65`, this issue's run | 175.71 | 7,842.90 | 93.0% |\n| `432ff65`, rerun | 172.28 | 7,699.14 | 93.1% |\n| `bb3c392` | 160.71 | 7,685.28 | 99.6% |\n\nThe two reruns do the same cpu work within 0.2%. At `bb3c392` that work finishes 11.6 s sooner, so the threads stop idling. Nothing is left for this issue to recover at `dev`.\n\nThe logs are in `tmp-claude/2026-10-18-serial-overhead-48t/repro-432ff65` and `full-s12` on `catalyst`.",
       "commit": "bb3c392",
       "branch": "dev",
-      "edited_at": "2026-10-18T19:11:50.419074947Z"
+      "edited_at": "2026-10-18T21:21:27.720634155Z"
     }
   ],
   "stamps": {
