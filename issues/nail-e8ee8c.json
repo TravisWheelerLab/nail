@@ -3,7 +3,7 @@
   "title": "nail drops a PTHR45685 hit when its forward and backward clouds do not meet in 5 attempts",
   "body": "nail reports no hit for the PANTHER profile PTHR45685 (3,230 positions) against one spliced protein, `PTHR45685_NC_003281.10_spliced` (2,014 residues). hmmsearch and mmseqs both find it. A coworker of Jack's reported it. Copies of both files are in `tmp-claude/2026-10-17-lost-hit/input2` on the 16-core box.\n\nhmmsearch 3.4 finds the target at 1,049.1 bits over three domains:\n\n| domain | score | hmm | target |\n|---|---|---|---|\n| 1 | 135.4 | 101-345 | 4-229 |\n| 2 | 589.1 | 581-920 | 411-750 |\n| 3 | 335.3 | 2026-2274 | 1770-2010 |\n\nThe target holds 13 runs of X, the longest at 859-1016 and 1349-1428, all between domains 2 and 3.\n\n## What happens\n\nThe mmseqs seed spans all three domains: hmm 99-2273, target 2-2009, 793 bits, E 1.362e-240. The same seed and no hit come out of the `nail-v0.7.1` release binary, a build of `0a36fc0`, a build of `94eecda` (before nail-c34295), and `bb3c392`, at `-t 4` with mmseqs `8cc5ce3`.\n\n`DefaultCloudSearchStage::run` in `nail/src/pipeline/cloud_stage.rs` runs a forward and a backward cloud search from the seed. If the two clouds are `Disjoint`, it scales α, β and γ by `1.0 + attempt * f` and tries again. After `-a` attempts (default 5, `-f` default 0.5), it returns `StageResult::Filtered`, and the seed is dropped before any score is computed. Here the clouds stay disjoint through 11 attempts and meet on the 12th:\n\n| run, from the same seed | rows |\n|---|---|\n| defaults | 0 |\n| `-C 2 -F 2 -E 1e300 -S 2`, every threshold off | 0 |\n| `-a 10` or `-a 11` | 0 |\n| `-a 12`, `-a 15` or `-a 20`, with or without thresholds | 1: 742.4 bits, E 5.6e-227, target 5-2009, hmm 102-2273 |\n| `-a 20 -A 1000 -B 1000 -G 100` | 1: 745.5 bits, E 6.6e-228 |\n\nThe X runs are not the cause on their own. With every X deleted (1,627 residues), the seed is E 2.4e-202 and nail still reports nothing. With every X replaced by A, nail finds the hit at the defaults: 644.9 bits, E 1.3e-197. So the scores through the 1,000 residues between domains 2 and 3 decide whether the clouds meet. hmmsearch aligns nothing there.\n\nnail scores 742 bits where hmmsearch scores 1,049, as expected: nail configures one hit per target, so one alignment crosses both gaps between the domains.\n\n## Open\n\n- Whether a seed whose clouds never meet should fall back to the seed's rectangle, as `trim_wings` failing already does a few lines further down, instead of being dropped.\n- How often clouds fail to meet on true hits. A count of `Disjoint` filters on a large run, compared against hmmsearch, would say whether this is rare.",
   "type": "bug",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-18T02:37:00.821754037Z",
-  "updated_at": "2026-10-18T04:36:11.049690885Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-18T04:36:38.021735Z",
+  "closed_at": "2026-10-18T04:36:38.021735Z",
+  "close_reason": "A limit of nail's one-hit model, not a bug: the seed's mmseqs alignment runs through 1,000 target residues that hmmsearch leaves unaligned between domains, and nail's clouds cannot bridge them without a J state. Jack decided it is not a concern. The notes have the reproduction and the decoded alignment.",
+  "resolution": "dropped",
   "notes": [
     {
       "id": "b3278815",
@@ -56,6 +56,9 @@
       "commit": "bb3c392",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "bb3c392",
+      "branch": "dev"
+    }
   }
 }
