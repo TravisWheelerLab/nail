@@ -3,7 +3,7 @@
   "title": "Serial overhead around seeding and setup",
   "body": "On a 481.8 s search of all Pfam against one MGnify recall shard of 2,455,940 targets at 48 threads, the `-s` runtime tree shows 30 s of serial work, 6.2% of the run. Two items make up 72% of it, and both have known fixes:\n\n| item | seconds | issue |\n|---|---|---|\n| mmseqs target db write | 15.5 | nail-fc2ac4 |\n| profile parse in `build_pipeline` | 6.2 | nail-65ce8f |\n\nThe rest of the serial work sums to 1.7% of the run. The tree and the breakdown are in the notes. nail-7ea5c0 decided that moving nail's io onto `libsail` is separate work, now nail-167dd7, and neither fix waits on it.\n\n## Out of scope\n\n- Caching the target db across runs. It helps only repeated runs, and those do not matter here.",
   "type": "milestone",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.395993367Z",
-  "updated_at": "2026-10-18T21:21:35.286968175Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-18T21:37:47.154816788Z",
+  "closed_at": "2026-10-18T21:37:47.154816788Z",
+  "close_reason": "Every child is closed. At bb3c392 the serial items come to 8.3 s, 2.0% of the 421.7 s stage-times run, per the runtime tree note.",
+  "resolution": "done",
   "notes": [
     {
       "id": "eaa7ecaa",
@@ -76,6 +76,9 @@
       "commit": "432ff65",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "326797b",
+      "branch": "dev"
+    }
   }
 }
