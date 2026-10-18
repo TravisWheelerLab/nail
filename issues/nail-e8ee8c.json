@@ -1,0 +1,28 @@
+{
+  "id": "nail-e8ee8c",
+  "title": "A coworker's run lost a PTHR45628 hit that nail finds on the pair alone",
+  "body": "A coworker of Jack's reported that nail loses a hit that hmmsearch and mmseqs both find. The query is the PANTHER profile PTHR45628 (2,506 positions). The target is one spliced protein, `PTHR45628_NC_003282.8_spliced` (1,447 residues, with X runs at 335-362, 634-671 and 815-827). In their run, nail had a seed at E 1.362e-240 and reported no hit. Their mmseqs hit covered the first two of hmmsearch's three domains. Copies of both files are in `tmp-claude/2026-10-17-lost-hit/input` on the 16-core box.\n\nhmmsearch 3.4 finds the target at 1,418.6 bits over three domains:\n\n| domain | score | hmm | target |\n|---|---|---|---|\n| 1 | 358.5 | 95-402 | 5-330 |\n| 2 | 315.3 | 468-724 | 375-634 |\n| 3 | 757.0 | 1214-1972 | 689-1443 |\n\nOn the pair alone, at `-t 4` with native mmseqs `8cc5ce3`, nail reports the hit in every build and mode tried:\n\n| build | mode | seed | hit |\n|---|---|---|---|\n| `main` (`0a36fc0`) | static | mmseqs, E 1.651e-311, hmm 95-1972, target 5-1443 | 853.4 bits, E 1.7e-260 |\n| `94eecda`, before nail-c34295 | static | the same | 853.4 bits, E 1.7e-260 |\n| `bb3c392` | static | the same | 875.2 bits, E 4.7e-267 |\n| `bb3c392` | `--seed-mode prog` | | 875.2 bits, E 4.7e-267 |\n\nSeeds given by hand with `--seeds`, on `main` and on `bb3c392`, all gave a hit within the seeded region:\n\n| seed hmm | seed target | `main` | `bb3c392` |\n|---|---|---|---|\n| 95-724 | 5-634 | 642.3 bits | 651.7 bits |\n| 95-402 | 5-330 | 359.6 | 359.8 |\n| 468-724 | 375-634 | 313.6 | 315.2 |\n| 95-724 | 5-660 | 642.4 | 651.7 |\n| 95-700 | 5-345 | 349.0 | 349.2 |\n\nThe loss has not been reproduced. The difference must lie in the coworker's run: a different nail build, mmseqs version or parameters, other targets or queries in the same run, or an exact seed not tried above. Their seed's E-value differs from ours by a factor of 10^71, far more than a change in database size explains, so their mmseqs produced a different alignment.\n\nnail scoring 875 bits against hmmsearch's 1,419 is expected. nail's profile is configured for one hit per target, so one alignment crosses both gaps between domains, and that costs the difference.\n\n## Open\n\n- From the coworker: the nail commit or version, the mmseqs version, the full command line, the size of the target and query sets, and the seed line for this pair from `--seeds-out`.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-18T02:37:00.821754037Z",
+  "updated_at": "2026-10-18T02:37:00.821754037Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "bb3c392",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
