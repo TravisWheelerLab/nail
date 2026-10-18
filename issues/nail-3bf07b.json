@@ -3,7 +3,7 @@
   "title": "The last progressive-seeding align calls run one deep query on one thread",
   "body": "In progressive seeding, `seed_progressive` in `nail/src/pipeline/seed_stage.rs` runs `mmseqs align` once per iteration on a slice of the prefilter db. Each iteration doubles `n_take`, the number of candidates a still-active query takes. The active queries shrink to a handful, and the largest slice doubles every iteration.\n\nOn the 48-thread box at `bb3c392`, with the `stage-times` flags and inputs, the last four iterations ran with few cores busy:\n\n| iteration | queries with pairs | largest query slice | wall, s | cpu |\n|---|---|---|---|---|\n| 8 | 133 | 51,200 | 3.02 | 2729% |\n| 9 | 41 | 102,400 | 3.86 | 1500% |\n| 10 | 4 | 204,800 | 3.04 | 421% |\n| 11 | 1 | 401,544 | 3.92 | 150% |\n\nTogether they took 13.8 s of the 34.4 s align total, in a 421.7 s run. Iterations 0 to 7 ran at 37 to 42 cores busy. The four iterations used about 159 cpu-seconds. At 40 cores busy that is about 4 s of wall time, so the most this could recover is about 10 s, 2.4% of the run. That bound is arithmetic on the cpu column, not a measurement. The full table and the setup are in a note on nail-e52c52.\n\nThe cpu figures fit `mmseqs align` giving each query record of the prefilter db to one thread. Nobody has read the mmseqs source to confirm it.\n\n## Open\n\n- Whether `mmseqs align` accepts one query key in several prefilter records. If it does, nail could split a deep slice into pieces that run on separate threads.\n- Whether a cap on `n_take` once few queries remain would change which seeds nail finds. Recall would have to be checked before making that trade.",
   "type": "task",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": "nail-1964b2",
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-18T19:11:15.30689732Z",
-  "updated_at": "2026-10-18T21:21:49.386305571Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-18T21:37:47.122388729Z",
+  "closed_at": "2026-10-18T21:37:47.122388729Z",
+  "close_reason": "Dropped. nail is moving off mmseqs, and this tail lives inside mmseqs align.",
+  "resolution": "dropped",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "bb3c392",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "326797b",
+      "branch": "dev"
+    }
   }
 }
