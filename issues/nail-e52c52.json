@@ -3,7 +3,7 @@
   "title": "Is the flat per-iteration align cost in progressive seeding a flat alignment count?",
   "body": "In progressive seeding, nail runs `mmseqs align` once per iteration on a slice of the prefilter db. `n_take` doubles each iteration, and the active set of queries shrinks. On the mgy run the 12 iterations cost 2.5 to 4.0 s each, with no trend. The measurements in the notes rule out a fixed cost per call. A call with nothing to align costs 45 ms against 2,455,940 targets.\n\n## Proposal\n\nCapture the alignment count of each iteration on the 48-thread box. The working reading is that the count stays near constant. `n_take` doubles while the active set roughly halves. The queries that survive align deeper candidates, and those are real hits that cost 2 to 3 times as much as a quick reject.\n\nIf the counts are flat, this issue closes with that fact. If the counts fall while the time stays flat, the cost is inside `mmseqs align`, and the next step is to look at its work per query record.\n\n## Rejected\n\n- Fewer iterations, through a larger `--prog-n` or a faster growth factor. All 12 calls together carry at most 0.5 s of fixed cost out of 36 s.",
   "type": "task",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": "nail-1964b2",
@@ -13,10 +13,10 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-09-29T05:20:35.419797876Z",
-  "updated_at": "2026-10-18T21:21:20.532681561Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-18T21:34:00.816140391Z",
+  "closed_at": "2026-10-18T21:34:00.816140391Z",
+  "close_reason": "The counts are not flat. Through iteration 7 wall time follows the count, and after that one deep query slice on one thread sets it. Measured at 12.0 sensitivity on bb3c392, table in note 520a58c9. The tail is nail-3bf07b.",
+  "resolution": "done",
   "notes": [
     {
       "id": "19020129",
@@ -60,6 +60,9 @@
       "commit": "432ff65",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "bb3c392",
+      "branch": "dev"
+    }
   }
 }
