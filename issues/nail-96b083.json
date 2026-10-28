@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-28T21:20:32.827128791Z",
   "defer_until": null,
   "created_at": "2026-10-28T20:09:00.49122426Z",
-  "updated_at": "2026-10-28T21:05:32.827128791Z",
+  "updated_at": "2026-10-28T21:07:34.721822821Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "b697b8ca",
+      "at": "2026-10-28T21:07:34.721822061Z",
+      "author": "Jack Roddy/87ab289b",
+      "text": "How HMMER 3.4 uses the cutoffs, read from the source in `hmmer-3.4/src`. Lines marked checked were read directly; the rest come from a sub-agent's read and are cited for checking.\n\n## Parsing\n\n- `p7_hmmfile.c:1428` (checked): a protein `GA`, `TC` or `NC` line needs two values, and a missing one is a format error. A DNA or RNA line needs one, and the second is copied from it. `atof` reads each value, so a non-number becomes 0.0 without an error. Extra tokens are ignored.\n- value 1 goes to `cutoff[p7_GA1]`, the per-sequence cutoff, and value 2 to `cutoff[p7_GA2]`, the per-domain cutoff (`hmmer.h:73`)\n- unset cutoffs hold `p7_CUTOFF_UNSET`, -99999.0\n\n## Flags\n\n- `hmmsearch.c:50` (checked): each `--cut_*` flag is incompatible with `-E`, `-T`, `--domE`, `--domT`, `--incE`, `--incT`, `--incdomE`, `--incdomT` and the other two `--cut_*` flags\n- `p7_pipeline_Create`, `p7_pipeline.c:168` (checked): the flag switches reporting and inclusion, for sequences and for domains, from E-values to bit scores\n- `p7_pli_NewModelThresholds`, `p7_pipeline.c:538` (checked), runs once per query model: `T = incT = GA1` and `domT = incdomT = GA2`\n\n## Comparison\n\n- `p7_pli_TargetReportable`, `p7_pipeline.c:414` (checked): a sequence passes when `score >= T`\n- the sequence score is the bias-corrected whole-sequence bit score, or the sum of domain scores when that is larger (`p7_pipeline.c` near 832)\n- a domain passes when `dcl[d].bitscore >= domT`\n- the domain thresholds never decide whether a sequence is reported. A sequence above value 1 with no domain above value 2 is still reported, with \"No individual domains that satisfy reporting thresholds\" (`p7_tophits.c:1315`).\n\n## Missing cutoff\n\n`p7_pipeline.c:543` (checked) fails with \"GA bit thresholds unavailable on model %s\". hmmsearch then calls `p7_Fail` and the whole run exits (`hmmsearch.c:503`). Only value 1 is tested for being unset.\n\n## Unchanged by the flags\n\n- `Z`, `domZ` and E-values are computed as usual and still printed\n- the F1, F2 and F3 filter P-value thresholds keep their values, so a hit above the cutoff can still be dropped by a filter\n- the output header gains `# model-specific thresholding:     GA cutoffs` (`hmmsearch.c:243`)\n\n## Answer to the open question\n\nHMMER uses both values. Value 1, the sequence cutoff, alone decides whether a hit is reported. Value 2 decides only which domains of a reported hit are shown.",
+      "commit": "326797b",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "326797b",
