@@ -1,0 +1,28 @@
+{
+  "id": "nail-96b083",
+  "title": "nail supports HMMER's gathering, trusted and noise cutoffs",
+  "body": "HMMER profiles from Pfam and similar libraries carry curated score thresholds in their header. Each of the `GA`, `TC` and `NC` lines holds two bit scores. `hmmsearch` and `hmmscan` use them through `--cut_ga`, `--cut_tc` and `--cut_nc` in place of the E-value thresholds.\n\n```text\nGA    25.00 25.00;\nTC    25.10 25.40;\nNC    24.90 24.70;\n```\n\nnail ignores these lines today. The header parser in `libnail/src/structs/p7hmm.rs` matches `NAME`, `ACC`, `LENG`, `ALPH`, `STATS` and `HMM`, and drops every other keyword. The one reporting filter is `-E` (`PipelineArgs::e_value_threshold`, default 10), applied in `OutputStage` in `nail/src/pipeline/output_stage.rs`.\n\n## Proposal\n\n- parse `GA`, `TC` and `NC` into the profile\n- add CLI flags that report a hit only when its score clears the chosen cutoff, with the same names HMMER uses\n- print a warning line in red whenever a cutoff flag is set, saying that HMMER trained these cutoffs on its own scores and that nail's scores may not line up with them\n\nThe work starts by reading the HMMER source (`p7_pipeline.c` and the model header parsing) to pin down what the flags do. The behaviour to match includes these cases:\n\n- what the flags do to the reporting threshold and to the inclusion threshold\n- whether the flags replace `-E`, `-T`, `--domE` and `--domT`, or sit beside them\n- what HMMER does when a model lacks the requested line\n- whether `--cut_*` changes `Z` or `domZ`\n\n## Open\n\nAre the cutoffs sequence scores or domain scores? From memory of the HMMER user guide, the first value on each line is a per-sequence bit score and the second is a per-domain bit score, and `--cut_ga` applies both. Nobody has checked that against the source yet. If it holds, nail has to decide what its score corresponds to. A nail hit is scored by Forward over the region the cloud search bounds, so it is neither HMMER's whole-sequence score nor a domain score from domain definition. Which of the two values nail compares against is undecided.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-28T20:09:00.49122426Z",
+  "updated_at": "2026-10-28T20:09:00.49122426Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "326797b",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
