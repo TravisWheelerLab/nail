@@ -1,0 +1,28 @@
+{
+  "id": "nail-36cd06",
+  "title": "A batched seeding mode keeps the seeds file from filling the disk",
+  "body": "On a large enough query set and target set, the seeding stage writes a seeds file so large that it fills the disk. nail then fails before the alignment stage starts. Runs have reached terabytes of seeds file.\n\nBoth seeding paths in `nail/src/pipeline/seed_stage.rs` end the same way. `seed_static` runs `mmseqs prefilter` and `mmseqs align` over the whole query and target databases. `seed_progressive` merges its per-round align dbs into one. Each then runs `mmseqs convertalis` over the whole align db into one text file. `positional_seeds_path` chooses that file, which is `seeds.tsv` in the tmp dir unless `--seeds-out` names it. `Seeds::from_path` then reads the file back in full. `--max-seeds` caps how many seeds `Seeds::from_path` keeps per query, but convertalis has already written every alignment by then.\n\n## Proposal\n\nAdd an optional batched seeding mode for very large searches. This is a stopgap until nail drops mmseqs from the pipeline. The goal is to try a few cheap ways to bound the disk nail uses for seeds, and measure each:\n\n- split the queries into batches and run seeding and alignment once per batch, deleting each batch's seeds file before starting the next\n- skip convertalis and read seeds straight from the mmseqs align db, which nail already reads with positioned reads for the prefilter db\n- cap the alignments mmseqs keeps per query at the align step, so convertalis has less to write\n\n## Open\n\n- which of these bounds disk use without changing results; a batched run should give the same `results.tbl` as an unbatched one, compared sorted\n- whether the mode is a flag the user sets, or nail turns it on from the input sizes\n- how much a batched run costs in time, since each batch rebuilds or rereads the target database",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-28T20:09:00.500409245Z",
+  "updated_at": "2026-10-28T20:09:00.500409245Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "326797b",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
