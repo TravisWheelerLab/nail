@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added field `profile_pos` to struct `PipelineResult`
 
 ### Changed
+- enum `util::FileFormat` now derives `PartialEq`
 - `OutputStage::new()` now takes a `ReportThreshold` in place of an E-value
 - `build_pipeline()` now takes `&Queries` and runs before seeding
 - renamed enum `stats::MmseqsTimed` to `SeedTimed`, and methods `Stats::{set_mmseqs_time(), add_mmseqs_time()}` to `set_seed_time()`, `add_seed_time()`
@@ -71,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed dependency `datasize`
 
 ### Fixed
+- fixed `nail search` panicking on a query file that holds only blank lines, or whose first line is not a known format header and is shorter than 11 bytes; blank lines before the first record are now skipped, as HMMER does
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
 - fixed CLI param `-a 0` reaching a panic in cloud search; validation now rejects it at startup
 - fixed the help text of CLI param `-a`, which read as N retries after a first attempt; N counts every attempt

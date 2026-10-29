@@ -42,7 +42,7 @@ pub fn burn(dur: std::time::Duration) {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub enum FileFormat {
     Fasta,
     Stockholm,
@@ -76,21 +76,38 @@ pub fn guess_query_format_from_query_file(
         query_path.as_ref().to_string_lossy()
     ))?;
 
-    let mut reader = BufReader::new(file);
-    let mut first_line = String::new();
-    reader.read_line(&mut first_line)?;
-
-    if &first_line[0..1] == ">" {
-        Ok(FileFormat::Fasta)
-    } else if &first_line[0..11] == "# STOCKHOLM" {
-        Ok(FileFormat::Stockholm)
-    } else if &first_line[0..5] == "HMMER" {
-        Ok(FileFormat::Hmm)
-    } else {
-        Err(UnrecognizedFileFormatError {
+    match guess_query_format(BufReader::new(file))? {
+        Some(format) => Ok(format),
+        None => Err(UnrecognizedFileFormatError {
             path: query_path.as_ref().to_string_lossy().to_string(),
         }
-        .into())
+        .into()),
+    }
+}
+
+/// The format named by the first line that is not blank, if any.
+fn guess_query_format(mut reader: impl BufRead) -> anyhow::Result<Option<FileFormat>> {
+    let mut first_line = String::new();
+
+    // HMMER reads a file with blank lines before its
+    // first record, so the format comes from the
+    // first line that holds anything
+    loop {
+        first_line.clear();
+        let n_read = reader.read_line(&mut first_line)?;
+        if n_read == 0 || !first_line.trim().is_empty() {
+            break;
+        }
+    }
+
+    if first_line.starts_with('>') {
+        Ok(Some(FileFormat::Fasta))
+    } else if first_line.starts_with("# STOCKHOLM") {
+        Ok(Some(FileFormat::Stockholm))
+    } else if first_line.starts_with("HMMER") {
+        Ok(Some(FileFormat::Hmm))
+    } else {
+        Ok(None)
     }
 }
 
@@ -217,4 +234,42 @@ pub fn set_threads(num_threads: usize) -> anyhow::Result<()> {
         .num_threads(num_threads)
         .build_global()
         .context("failed to build rayon global threadpool")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn guess(text: &str) -> anyhow::Result<Option<FileFormat>> {
+        guess_query_format(text.as_bytes())
+    }
+
+    #[test]
+    fn guess_query_format_reads_each_format_from_its_first_line() -> anyhow::Result<()> {
+        assert_eq!(guess(">seq\nACDE\n")?, Some(FileFormat::Fasta));
+        assert_eq!(guess("# STOCKHOLM 1.0\n")?, Some(FileFormat::Stockholm));
+        assert_eq!(guess("HMMER3/f [3.4 | Aug 2023]\n")?, Some(FileFormat::Hmm));
+        Ok(())
+    }
+
+    #[test]
+    fn guess_query_format_skips_leading_blank_lines() -> anyhow::Result<()> {
+        assert_eq!(
+            guess("\nHMMER3/f [3.4 | Aug 2023]\n")?,
+            Some(FileFormat::Hmm)
+        );
+        assert_eq!(guess("\n \t\n\r\n>seq\nACDE\n")?, Some(FileFormat::Fasta));
+        Ok(())
+    }
+
+    #[test]
+    fn guess_query_format_finds_no_format_in_a_short_or_empty_file() -> anyhow::Result<()> {
+        // each of these panicked when the first line
+        // was sliced at fixed lengths
+        assert_eq!(guess("")?, None);
+        assert_eq!(guess("\n\n")?, None);
+        assert_eq!(guess("HMM\n")?, None);
+        assert_eq!(guess("#\n")?, None);
+        Ok(())
+    }
 }
