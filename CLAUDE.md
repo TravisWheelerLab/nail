@@ -85,6 +85,10 @@ in places. Assume it is correct. Record any evidence that part of it may be
 wrong in foam, however small, as a note on the issue being worked or as an
 issue of its own.
 
+A single search result that differs from HMMER's, such as a hit nail misses,
+is not evidence of that kind. Do not dig into individual results, raise them,
+or ask whether to file them, unless Jack asks for that.
+
 Write code to be read. A longer version that reads plainly beats a shorter one
 that a reader has to work out, such as a `matches!` with a guard or a chain of
 combinators standing in for a `match`.
