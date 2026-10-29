@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed dependency `datasize`
 
 ### Fixed
+- fixed `util::relative_entropy()` returning NaN for a vector with a zero probability; a zero now adds nothing, as in Easel
 - fixed `Profile::from_blosum_62_and_seq()` setting lambda to NaN for a sequence containing `*`; a zero probability now adds nothing to the relative entropy, as in Easel
 - fixed `Sequence::from_fasta()` rejecting `*`, the stop codon; it now reads it as the nonresidue code 27, as HMMER does
 - fixed `p_value()` returning more than 1 for a score below tau; it now returns 1, as HMMER does

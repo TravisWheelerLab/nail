@@ -10,7 +10,7 @@ use crate::{
     align::structs::{BackgroundState, CoreState, Trace},
     align::Bits,
     alphabet::{Alphabet, AminoAcid, AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES},
-    util::mean_relative_entropy,
+    util::{mean_relative_entropy, relative_entropy},
 };
 
 use anyhow::{anyhow, Context};
@@ -856,16 +856,7 @@ impl Profile {
             .iter()
             .skip(1)
             .map(|e| e.unwrap())
-            .map(|probs| {
-                probs
-                    .iter()
-                    .zip(AMINO_BACKGROUND_FREQUENCIES)
-                    // a zero probability adds nothing, as in Easel's
-                    // esl_vec_FRelEntropy; computed, it is 0 * -inf,
-                    // which is NaN. a '*' position is all zeros
-                    .map(|(p, f)| if *p == 0.0 { 0.0 } else { p * (p / f).log2() })
-                    .sum::<f32>()
-            })
+            .map(|probs| relative_entropy(&probs, &AMINO_BACKGROUND_FREQUENCIES))
             .sum::<f32>();
 
         // note: we could get also get a pretty good approximation for
