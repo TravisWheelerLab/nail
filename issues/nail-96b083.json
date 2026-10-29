@@ -13,7 +13,7 @@
   "lease_expires": "2026-10-29T15:46:45.615048289Z",
   "defer_until": null,
   "created_at": "2026-10-28T20:09:00.49122426Z",
-  "updated_at": "2026-10-29T15:31:45.615048289Z",
+  "updated_at": "2026-10-29T16:31:33.780385656Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -32,6 +32,14 @@
       "author": "Jack Roddy/87ab289b",
       "text": "Jack decided three points of the design.\n\n- The flags follow nail's kebab-case convention: `--cut-ga`, `--cut-tc`, `--cut-nc`. HMMER's underscore spellings are not accepted.\n- nail checks for the requested cutoff on every profile when it loads them, and fails before seeding when one lacks it. HMMER instead fails when it reaches that model.\n- nail compares against value 2, the per-domain cutoff. A nail score is the Forward score of one alignment over one cloud region. That makes it far closer to HMMER's best-domain score than to HMMER's whole-sequence score.\n\nOne consequence follows from the HMMER notes above. HMMER reports a hit whose sequence score clears value 1 even when no domain clears value 2, and nail does not. Where value 1 and value 2 are equal, as in most Pfam models, the two differ only by the gap between a sequence score and its best domain score.",
       "commit": "326797b",
+      "branch": "dev"
+    },
+    {
+      "id": "b23c3ca5",
+      "at": "2026-10-29T16:31:33.780384726Z",
+      "author": "Jack Roddy/87ab289b",
+      "text": "The libnail side landed in `b85ef4b`. `Profile` has `gathering`, `trusted` and `noise`, each an `Option<Cutoff>` with `sequence` and `domain` in `Bits`, parsed by `Profile::from_p7hmm` and carried by `Profile::serialize`.",
+      "commit": "b85ef4b",
       "branch": "dev"
     }
   ],
