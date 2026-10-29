@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-29T17:48:15.926636559Z",
   "defer_until": null,
   "created_at": "2026-10-29T17:16:02.380865207Z",
-  "updated_at": "2026-10-29T17:33:15.926636559Z",
+  "updated_at": "2026-10-29T17:37:03.660481662Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "f60d427c",
+      "at": "2026-10-29T17:37:03.660480752Z",
+      "author": "Jack Roddy/87ab289b",
+      "text": "HMMER builds a `*` query position from row 27 of its matrix `Q`. `set_degenerate_probs` sets that row to all zeros (`esl_scorematrix.c:1386`), `esl_scorematrix_JointToConditionalOnQuery` stops before it, and nothing renormalizes it afterwards. So the position matches no residue. nail's `CONDITIONAL_PROB` row 27 is all zeros too, and nail builds the same position.\n\nThe one divergence was lambda. `from_blosum_62_and_seq` summed `p * log2(p / f)` over every residue, and a zero `p` gives `0 * -inf`, which is NaN. Every hit then failed the reporting filter. Easel's `esl_vec_FRelEntropy` skips a zero `p`. With that change, `hmmbuild --singlemx` and nail both give lambda 0.78549 for `QDYCAQEGQQEVQRKDLSDLERYLRQSRQR`, with or without a `*`.\n\n`util::relative_entropy`, which `adjust_mean_relative_entropy` calls, computes the same `0 * log2(0)` term. It was left unchanged here.\n\nOn the second record of `fixtures/target.fa` searched against the whole file, with null2 off in both tools, the top score was 1042.6 and 1042.5 bits for the plain query in nail and `phmmer`. It was 1042.6 and 1042.6 with a terminal `*`, and 1036.2 and 1036.2 with an internal `*`.",
+      "commit": "2b202ca",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "4d27113",
