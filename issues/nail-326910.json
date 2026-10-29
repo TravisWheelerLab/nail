@@ -3,26 +3,29 @@
   "title": "`util::relative_entropy` returns NaN for a vector with a zero probability",
   "body": "The function computes `p * log2(p / q)` for every entry. A zero `p` makes that term `0 * -inf`, which is NaN. Easel's `esl_vec_FRelEntropy` skips a zero `p`. `Profile::from_blosum_62_and_seq` kept its own inline copy of the sum, which `8149a3b` fixed for `*` queries. This issue fixes the helper and has `from_blosum_62_and_seq` call it.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/87ab289b",
-  "lease_expires": "2026-10-29T18:34:07.519826262Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-29T18:19:07.499108032Z",
-  "updated_at": "2026-10-29T18:19:07.519826262Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-29T18:28:53.696111466Z",
+  "closed_at": "2026-10-29T18:28:53.696111466Z",
+  "close_reason": "Landed in `7f3b706`. `util::relative_entropy` skips a zero probability, and `from_blosum_62_and_seq` now calls it.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "8149a3b",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "7f3b706",
+      "branch": "dev"
+    }
   }
 }
