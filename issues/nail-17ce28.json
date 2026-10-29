@@ -1,0 +1,28 @@
+{
+  "id": "nail-17ce28",
+  "title": "A `*` in a query sequence may build a profile position unlike HMMER's",
+  "body": "nail builds a profile from each query sequence in `Profile::from_blosum_62_and_seq` in `libnail/src/structs/profile.rs`. At each query position it takes the match emissions from the first 20 entries of row `residue` of `CONDITIONAL_PROB`, a 29 by 29 table. Since nail-de5410, a query fasta can hold `*`, which is code 27, so that position takes row 27. Nobody has checked what row 27 holds or what a profile built from it scores.\n\nHMMER builds a query model the same way in `p7_Seqmodel` (`hmmer-3.4/src/seqmodel.c:62`), from row `dsq[k]` of its matrix `Q`. Nobody has checked what that row holds for code 27 either. `phmmer` runs with a `*` in the query. On the second record of `fixtures/target.fa` searched against the whole file, a terminal `*` left the top score at 1017.1 bits, and an internal `*` dropped it to 1010.8 bits.\n\n## Proposal\n\nRead what `Q` holds at row 27 in HMMER, and make nail build a `*` query position the same way.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-29T17:16:02.380865207Z",
+  "updated_at": "2026-10-29T17:16:02.380865207Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "4d27113",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
