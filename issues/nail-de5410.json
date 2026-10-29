@@ -13,11 +13,20 @@
   "lease_expires": "2026-10-29T17:07:17.309309344Z",
   "defer_until": null,
   "created_at": "2026-10-29T16:51:00.574824456Z",
-  "updated_at": "2026-10-29T16:52:17.309309344Z",
+  "updated_at": "2026-10-29T16:56:48.382706915Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "9cb65cac",
+      "at": "2026-10-29T16:56:48.382706275Z",
+      "author": "Jack Roddy/87ab289b",
+      "text": "How HMMER 3.4 and Easel handle `*` in a protein sequence. The source is `hmmer-3.4`. Lines marked checked were read directly, and the rest come from a sub-agent's read.\n\n## Reading\n\n- `esl_sqio_ascii.c:2978` (checked): the fasta reader accepts `*` in every sequence, with the comment \"accept * as a nonresidue/stop codon character\"\n- `*` is digitized to code 27 (Kp-2), the nonresidue code. Nothing strips a terminal `*`, nothing treats it apart from an internal one, and nothing prints a warning.\n- a byte outside the alphabet fails with \"Line N: illegal character C\"\n\n## Scoring a target\n\n- `modelconfig.c:138` (checked): the match score of `*` is -inf\n- `modelconfig.c:168` (checked): the generic profile gives an insert -inf for `*`. The SSE filters and the SSE Forward and Backward add no insert emission term at all, so in a default `hmmsearch` run a `*` can sit in an insert state at score 0.\n- `generic_fwdback.c:120` (checked): the N, C and J loops never read the residue, so a `*` in a flank costs only the loop transition\n- null2 and the bias filter give `*` an odds ratio of 1.0\n- from a run of `hmmsearch` by the sub-agent: a terminal `*` on HBB_HUMAN left the score at 216.5 bits and only added 1 to L. An internal `*` dropped the score to 209.6 bits and sat in an insert column inside one domain.\n\n## nail today\n\nnail's digital alphabet already matches Easel's, with `*` at code 27 (`Profile::NON_RESIDUE_IDX`). Only `Sequence::from_fasta` and the maps in `alphabet.rs` lack it. nail leaves the match score of code 27 at -inf and gives every insert column 0, which is what the SSE path does. null2 gives code 27 a ratio of 1.0. mmseqs ran without trouble on targets with a terminal and an internal `*`.\n\n## Queries\n\n`phmmer` accepts `*` in a query as well. A terminal `*` left the top score at 1017.1 bits, and an internal `*` dropped it to 1010.8 bits. `p7_Seqmodel` takes the match emissions at each query position from row `dsq[k]` of its matrix `Q`. Nobody has checked what that row holds for code 27.",
+      "commit": "4d27113",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "4d27113",
