@@ -860,7 +860,10 @@ impl Profile {
                 probs
                     .iter()
                     .zip(AMINO_BACKGROUND_FREQUENCIES)
-                    .map(|(p, f)| p * (p / f).log2())
+                    // a zero probability adds nothing, as in Easel's
+                    // esl_vec_FRelEntropy; computed, it is 0 * -inf,
+                    // which is NaN. a '*' position is all zeros
+                    .map(|(p, f)| if *p == 0.0 { 0.0 } else { p * (p / f).log2() })
                     .sum::<f32>()
             })
             .sum::<f32>();
@@ -1335,6 +1338,19 @@ mod tests {
             (
                 "sp|B3EWN4|2SSL_RICCO",
                 "QDYCAQEGQQEVQRKDLSDLERYLRQSRQR",
+                0.78549,
+            ),
+            // the same sequence with a stop codon at the end
+            // and in the middle; '*' adds a position that
+            // matches no residue, which leaves lambda alone
+            (
+                "sp|B3EWN4|2SSL_RICCO with a terminal *",
+                "QDYCAQEGQQEVQRKDLSDLERYLRQSRQR*",
+                0.78549,
+            ),
+            (
+                "sp|B3EWN4|2SSL_RICCO with an internal *",
+                "QDYCAQEGQQEVQRK*DLSDLERYLRQSRQR",
                 0.78549,
             ),
             (
