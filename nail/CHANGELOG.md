@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed dependency `datasize`
 
 ### Fixed
+- fixed the `-s` runtime tree printing a time whose fraction rounds up to a whole second as `.100`; the carry now goes into the whole seconds
 - fixed `nail search` panicking on a query file that holds only blank lines, or whose first line is not a known format header and is shorter than 11 bytes; blank lines before the first record are now skipped, as HMMER does
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
 - fixed CLI param `-a 0` reaching a panic in cloud search; validation now rejects it at startup

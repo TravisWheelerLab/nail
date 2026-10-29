@@ -704,9 +704,12 @@ impl Stats {
     }
 
     fn format_secs(time: Duration) -> String {
-        let secs = time.as_secs_f64();
-        let whole = Self::format_num(secs.trunc() as u64);
-        let frac = (secs.fract() * 100.0).round() as u64;
+        // round to whole centiseconds before splitting, so
+        // a fraction that rounds up to 1.00 carries into
+        // the whole seconds; a half rounds up
+        let centis = ((time.as_nanos() + 5_000_000) / 10_000_000) as u64;
+        let whole = Self::format_num(centis / 100);
+        let frac = centis % 100;
         format!("{whole}.{frac:02}s")
     }
 
@@ -789,6 +792,31 @@ impl Stats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_secs_carries_a_fraction_that_rounds_up() {
+        let secs = |millis: u64| Stats::format_secs(Duration::from_millis(millis));
+
+        // the old float split printed these as 0.100s
+        // and 999.100s
+        assert_eq!(secs(995), "1.00s");
+        assert_eq!(secs(999_995), "1,000.00s");
+
+        // the old float split printed this as 5,976.99s,
+        // since 5,976.995 is just under it in f64
+        assert_eq!(secs(5_976_995), "5,977.00s");
+    }
+
+    #[test]
+    fn format_secs_rounds_to_two_digits() {
+        let secs = |millis: u64| Stats::format_secs(Duration::from_millis(millis));
+
+        assert_eq!(secs(0), "0.00s");
+        assert_eq!(secs(4), "0.00s");
+        assert_eq!(secs(5), "0.01s");
+        assert_eq!(secs(1_994), "1.99s");
+        assert_eq!(secs(1_234_560), "1,234.56s");
+    }
 
     #[test]
     fn test_runtime_tree_iterations() -> anyhow::Result<()> {
