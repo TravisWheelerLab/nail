@@ -1,7 +1,8 @@
 use anyhow::{anyhow, bail, Context};
 
-use super::profile::{ProfileBuilder, Transition};
+use super::profile::{Cutoff, ProfileBuilder, Transition};
 use super::Profile;
+use crate::align::Bits;
 
 /// The transitions in the order a p7hmm file lists them.
 const P7HMM_TRANSITIONS: [Transition; 7] = [
@@ -78,6 +79,15 @@ impl Profile {
                                 })?);
                             }
                         }
+                        "GA" => {
+                            prf.gathering(parse_cutoff(keyword, value)?);
+                        }
+                        "TC" => {
+                            prf.trusted(parse_cutoff(keyword, value)?);
+                        }
+                        "NC" => {
+                            prf.noise(parse_cutoff(keyword, value)?);
+                        }
                         "HMM" => state = ParseState::Model,
                         _ => {
                             // ignore most flags for now
@@ -152,6 +162,27 @@ impl Profile {
 
         prf.build()
     }
+}
+
+/// Parse the value of a `GA`, `TC` or `NC` header line.
+fn parse_cutoff(keyword: &str, value: &str) -> anyhow::Result<Cutoff> {
+    let mut tokens = value.split_whitespace();
+
+    // tokens past the second are ignored, as HMMER ignores them
+    let (Some(sequence), Some(domain)) = (tokens.next(), tokens.next()) else {
+        bail!("expected two values on HMM {keyword} line: \"{value}\"");
+    };
+
+    let parse = |token: &str| -> anyhow::Result<f32> {
+        token
+            .parse()
+            .with_context(|| format!("failed to parse HMM {keyword} line: \"{value}\""))
+    };
+
+    Ok(Cutoff {
+        sequence: Bits(parse(sequence)?),
+        domain: Bits(parse(domain)?),
+    })
 }
 
 fn negexp(x: f32) -> f32 {
@@ -315,6 +346,82 @@ mod tests {
         }
     }
 
+    fn query_hmm() -> anyhow::Result<String> {
+        Ok(std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
+        )?)
+    }
+
+    #[test]
+    fn from_p7hmm_reads_the_cutoff_lines() -> anyhow::Result<()> {
+        // the fixture's first profile gives each cutoff the same
+        // sequence and domain value, so the domain values are
+        // changed here to tell the two apart
+        let hmm = query_hmm()?
+            .replacen("GA    30.50 30.50", "GA    30.50 28.25", 1)
+            .replacen("TC    30.50 30.50", "TC    30.50 29.25", 1)
+            .replacen("NC    30.40 30.40", "NC    30.40 27.25", 1);
+
+        let prf = Profile::from_p7hmm(hmm.as_bytes())?;
+
+        let gathering = Cutoff {
+            sequence: Bits(30.5),
+            domain: Bits(28.25),
+        };
+        let trusted = Cutoff {
+            sequence: Bits(30.5),
+            domain: Bits(29.25),
+        };
+        let noise = Cutoff {
+            sequence: Bits(30.4),
+            domain: Bits(27.25),
+        };
+        assert_eq!(prf.gathering, Some(gathering));
+        assert_eq!(prf.trusted, Some(trusted));
+        assert_eq!(prf.noise, Some(noise));
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_leaves_a_missing_cutoff_unset() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("TC    30.50 30.50\n", "", 1);
+
+        let prf = Profile::from_p7hmm(hmm.as_bytes())?;
+
+        assert_eq!(prf.trusted, None);
+        assert!(prf.gathering.is_some());
+        assert!(prf.noise.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_rejects_a_cutoff_line_with_one_value() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("GA    30.50 30.50", "GA    30.50", 1);
+
+        let Err(err) = Profile::from_p7hmm(hmm.as_bytes()) else {
+            panic!("a GA line with one value was accepted");
+        };
+        assert_eq!(
+            err.to_string(),
+            "expected two values on HMM GA line: \"30.50\""
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_rejects_a_cutoff_line_with_a_non_number() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("NC    30.40 30.40", "NC    30.40 abc", 1);
+
+        let Err(err) = Profile::from_p7hmm(hmm.as_bytes()) else {
+            panic!("a NC line with a non-number was accepted");
+        };
+        assert_eq!(
+            err.to_string(),
+            "failed to parse HMM NC line: \"30.40 abc\""
+        );
+        Ok(())
+    }
+
     #[test]
     fn test_profile_serialize() -> anyhow::Result<()> {
         let mut bytes = vec![];
@@ -334,6 +441,24 @@ mod tests {
         assert_eq!(prf.consensus_seq_bytes_utf8, de.consensus_seq_bytes_utf8);
         assert_eq!(prf.core_transitions, de.core_transitions);
         assert_eq!(prf.emission_scores[0], de.emission_scores[0]);
+        assert_eq!(prf.gathering, de.gathering);
+        assert_eq!(prf.trusted, de.trusted);
+        assert_eq!(prf.noise, de.noise);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_keeps_a_missing_cutoff_unset() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("TC    30.50 30.50\n", "", 1);
+        let prf = Profile::from_p7hmm(hmm.as_bytes())?;
+
+        let mut buf = vec![];
+        prf.serialize(&mut buf)?;
+        let de = Profile::deserialize(Cursor::new(buf))?;
+
+        assert_eq!(de.trusted, None);
+        assert_eq!(prf.gathering, de.gathering);
+        assert_eq!(prf.noise, de.noise);
         Ok(())
     }
 }

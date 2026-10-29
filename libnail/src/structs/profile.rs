@@ -8,6 +8,7 @@ use crate::alphabet::{AminoUtilsDigital, UTF8_SPACE};
 use crate::util::{LogAbuse, VecMath};
 use crate::{
     align::structs::{BackgroundState, CoreState, Trace},
+    align::Bits,
     alphabet::{Alphabet, AminoAcid, AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES},
     util::mean_relative_entropy,
 };
@@ -215,7 +216,8 @@ fn cantor(a: usize, b: usize) -> usize {
 mod serialize {
     use std::io::{Read, Write};
 
-    use super::Profile;
+    use super::{Cutoff, Profile};
+    use crate::align::Bits;
 
     #[repr(u8)]
     enum Version {
@@ -232,6 +234,39 @@ mod serialize {
         let mut buf = [0u8; 4];
         r.read_exact(&mut buf)?;
         Ok(f32::from_le_bytes(buf))
+    }
+
+    // [CUTOFF] | 9 bytes: 1 byte <u8> 0 or 1 for present,
+    //          | then sequence and domain, 4 bytes <f32> each,
+    //          | written as 0.0 when absent
+    fn write_cutoff<W: Write>(out: &mut W, cutoff: Option<Cutoff>) -> std::io::Result<()> {
+        let (present, cutoff) = match cutoff {
+            Some(cutoff) => (1u8, cutoff),
+            None => (
+                0u8,
+                Cutoff {
+                    sequence: Bits(0.0),
+                    domain: Bits(0.0),
+                },
+            ),
+        };
+        out.write_all(&[present])?;
+        out.write_all(&cutoff.sequence.value().to_le_bytes())?;
+        out.write_all(&cutoff.domain.value().to_le_bytes())
+    }
+
+    fn read_cutoff<R: Read>(r: &mut R) -> anyhow::Result<Option<Cutoff>> {
+        let mut present = [0u8; 1];
+        r.read_exact(&mut present)?;
+        let cutoff = Cutoff {
+            sequence: Bits(read_f32_le(r)?),
+            domain: Bits(read_f32_le(r)?),
+        };
+        match present[0] {
+            0 => Ok(None),
+            1 => Ok(Some(cutoff)),
+            byte => anyhow::bail!("invalid cutoff presence byte: {byte}"),
+        }
     }
 
     impl Profile {
@@ -256,6 +291,11 @@ mod serialize {
 
             // [LAMBDA] | 4 bytes <f32>
             out.write_all(&self.fwd_lambda.to_le_bytes())?;
+
+            // [GATHERING] [TRUSTED] [NOISE] | 9 bytes <CUTOFF> each
+            write_cutoff(out, self.gathering)?;
+            write_cutoff(out, self.trusted)?;
+            write_cutoff(out, self.noise)?;
 
             // [NAME] | N bytes <u8>(UTF8)
             out.write_all(self.name.as_bytes())?;
@@ -297,6 +337,10 @@ mod serialize {
             let fwd_tau = read_f32_le(&mut buf)?;
             let fwd_lambda = read_f32_le(&mut buf)?;
 
+            let gathering = read_cutoff(&mut buf)?;
+            let trusted = read_cutoff(&mut buf)?;
+            let noise = read_cutoff(&mut buf)?;
+
             let mut name = vec![0u8; name_len];
             buf.read_exact(&mut name)?;
 
@@ -332,12 +376,24 @@ mod serialize {
                 consensus_seq_bytes_utf8: consensus,
                 fwd_tau,
                 fwd_lambda,
+                gathering,
+                trusted,
+                noise,
                 core_transitions,
                 emission_scores: [mat_emissions, vec![]],
                 ..Default::default()
             })
         }
     }
+}
+
+/// A pair of bit score thresholds from a p7hmm `GA`, `TC` or `NC` line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cutoff {
+    /// The threshold on a sequence score
+    pub sequence: Bits,
+    /// The threshold on a domain score
+    pub domain: Bits,
 }
 
 #[derive(Clone, PartialEq, Default)]
@@ -368,6 +424,12 @@ pub struct Profile {
     pub alphabet: Alphabet,
     pub fwd_tau: f32,
     pub fwd_lambda: f32,
+    /// The gathering cutoff, from a p7hmm `GA` line
+    pub gathering: Option<Cutoff>,
+    /// The trusted cutoff, from a p7hmm `TC` line
+    pub trusted: Option<Cutoff>,
+    /// The noise cutoff, from a p7hmm `NC` line
+    pub noise: Option<Cutoff>,
 }
 
 impl Display for Profile {
@@ -477,6 +539,9 @@ pub struct ProfileBuilder {
     transitions: Vec<Option<[f32; 7]>>,
     fwd_tau: Option<f32>,
     fwd_lambda: Option<f32>,
+    gathering: Option<Cutoff>,
+    trusted: Option<Cutoff>,
+    noise: Option<Cutoff>,
 }
 
 impl ProfileBuilder {
@@ -514,6 +579,21 @@ impl ProfileBuilder {
 
     pub fn fwd_lambda(&mut self, fwd_lambda: f32) -> &mut Self {
         self.fwd_lambda = Some(fwd_lambda);
+        self
+    }
+
+    pub fn gathering(&mut self, gathering: Cutoff) -> &mut Self {
+        self.gathering = Some(gathering);
+        self
+    }
+
+    pub fn trusted(&mut self, trusted: Cutoff) -> &mut Self {
+        self.trusted = Some(trusted);
+        self
+    }
+
+    pub fn noise(&mut self, noise: Cutoff) -> &mut Self {
+        self.noise = Some(noise);
         self
     }
 
@@ -559,6 +639,9 @@ impl ProfileBuilder {
             alphabet: Alphabet::Amino,
             fwd_tau,
             fwd_lambda,
+            gathering: self.gathering,
+            trusted: self.trusted,
+            noise: self.noise,
         };
 
         for state in 0..Profile::NUM_STATE_TRANSITIONS {
