@@ -13,7 +13,6 @@ use crate::{
 };
 
 use anyhow::{anyhow, Context};
-use datasize::DataSize;
 
 impl AsRef<Profile> for Profile {
     fn as_ref(&self) -> &Profile {
@@ -341,7 +340,7 @@ mod serialize {
     }
 }
 
-#[derive(Clone, PartialEq, Default, DataSize)]
+#[derive(Clone, PartialEq, Default)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,

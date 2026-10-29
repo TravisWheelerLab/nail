@@ -1,6 +1,5 @@
 use std::{fmt::Display, ops::Index};
 
-use datasize::DataSize;
 use phf::phf_map;
 
 pub const UTF8_SPACE: u8 = 32;
@@ -79,7 +78,7 @@ impl Index<u8> for AmbiguityMap {
     }
 }
 
-#[derive(Default, Clone, Copy, DataSize, PartialEq)]
+#[derive(Default, Clone, Copy, PartialEq)]
 pub enum Alphabet {
     Amino,
     Dna,

@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed hidden CLI param `--stats-results-path` and field `DevArgs::stats_results_path`; nothing wrote to it
 - removed method `PrefilterDb::open_file()`
 - removed mod `io::util`, with enum `ReadState` and trait `ReadSeekExt`
+- removed dependency `datasize`
 
 ### Fixed
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
