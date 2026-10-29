@@ -6,20 +6,21 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::args::{SearchArgs, SeedMode, SeedsFormat};
+use crate::args::{CutoffKind, SearchArgs, SeedMode, SeedsFormat};
 use crate::io::{parse_position, write_named_seeds, Seeds};
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
     positional_seeds_path, seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage,
-    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput,
-    BLAST_COLUMNS, DEFAULT_COLUMNS,
+    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline, ReportThreshold,
+    TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
 };
 use crate::stats::{SerialTimed, SetupTimed, Stats, ThreadedTimed};
 use crate::util::{guess_query_format_from_query_file, FileFormat};
 use crate::util::{term::*, PathExt};
 
 use anyhow::{bail, Context};
+use libnail::align::Bits;
 use libnail::output::output_tabular::TableFormat;
 use libnail::structs::Profile;
 use rayon::iter::ParallelIterator;
@@ -182,7 +183,20 @@ pub fn build_pipeline(
         Queries::Profile(profiles) => Arc::clone(profiles),
     };
 
-    let mut output = OutputStage::new(args.pipeline_args.e_value_threshold)?;
+    let threshold = match args.expert_args.cutoff_kind() {
+        None => ReportThreshold::EValue(args.pipeline_args.e_value_threshold),
+        Some(kind) => {
+            if let Queries::Sequence(_) = queries {
+                bail!(
+                    "the argument '{YELLOW}{}{RESET}' needs p7hmm queries",
+                    kind.flag()
+                )
+            }
+            ReportThreshold::Score(domain_cutoffs(&profiles, kind)?)
+        }
+    };
+
+    let mut output = OutputStage::new(threshold)?;
 
     if args.ali_to_stdout {
         output.add(AlignmentOutput::new(stdout()))
@@ -214,6 +228,23 @@ pub fn build_pipeline(
         output: Arc::new(Mutex::new(output)),
         stats,
     })
+}
+
+/// The domain value of each profile's cutoff, in profile order.
+fn domain_cutoffs(profiles: &[Profile], kind: CutoffKind) -> anyhow::Result<Vec<Bits>> {
+    let mut cutoffs = Vec::with_capacity(profiles.len());
+    for prf in profiles {
+        match kind.of(prf) {
+            Some(cutoff) => cutoffs.push(cutoff.domain),
+            None => bail!(
+                "the argument '{YELLOW}{}{RESET}' needs a {} line in every profile, and profile {} has none",
+                kind.flag(),
+                kind.line(),
+                prf.name
+            ),
+        }
+    }
+    Ok(cutoffs)
 }
 
 fn timed_step<T>(
@@ -257,6 +288,15 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
             seed(&queries, &targets, &mut stats, &mut args)
         })?;
         return Ok(());
+    }
+
+    if let Some(kind) = args.expert_args.cutoff_kind() {
+        println!(
+            "{RED}warning: {BOLD}{}{RESET}{RED} applies per-domain {} thresholds to search results{RESET}",
+            kind.flag(),
+            kind.name()
+        );
+        println!("{RED}         If the thresholds were calibrated against HMMER, use caution when applying them to nail results{RESET}");
     }
 
     let (mut pipeline, build_time) = timed_step("building pipeline", || {
@@ -344,4 +384,51 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     pipeline.stats.write_max_seqs_report(&args)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use libnail::structs::profile::Cutoff;
+
+    use super::*;
+
+    fn profile(name: &str, gathering: Option<Cutoff>) -> Profile {
+        Profile {
+            name: name.to_string(),
+            gathering,
+            ..Default::default()
+        }
+    }
+
+    fn cutoff(sequence: f32, domain: f32) -> Option<Cutoff> {
+        Some(Cutoff {
+            sequence: Bits(sequence),
+            domain: Bits(domain),
+        })
+    }
+
+    #[test]
+    fn domain_cutoffs_takes_each_profiles_domain_value() -> anyhow::Result<()> {
+        let profiles = [
+            profile("a", cutoff(30.0, 25.0)),
+            profile("b", cutoff(40.0, 35.0)),
+        ];
+
+        let cutoffs = domain_cutoffs(&profiles, CutoffKind::Gathering)?;
+
+        assert_eq!(cutoffs, vec![Bits(25.0), Bits(35.0)]);
+        Ok(())
+    }
+
+    #[test]
+    fn domain_cutoffs_rejects_a_profile_without_the_line() {
+        let profiles = [profile("a", cutoff(30.0, 25.0)), profile("b", None)];
+
+        let Err(err) = domain_cutoffs(&profiles, CutoffKind::Gathering) else {
+            panic!("a profile without a GA line was accepted");
+        };
+        let message = err.to_string();
+        assert!(message.contains("--cut-ga"));
+        assert!(message.contains("needs a GA line in every profile, and profile b has none"));
+    }
 }

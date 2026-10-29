@@ -37,6 +37,8 @@ impl<D, S> StageResult<D, S> {
 }
 
 pub struct PipelineResult {
+    /// The position of the profile among the queries
+    pub profile_pos: usize,
     pub profile_name: String,
     pub target_name: String,
     pub profile_length: usize,
@@ -147,6 +149,7 @@ impl Pipeline {
         };
 
         Ok(PipelineResult {
+            profile_pos: seed.prf_pos,
             profile_name: prf.name.clone(),
             target_name: seq.name.clone(),
             profile_length: prf.length,

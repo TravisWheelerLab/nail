@@ -35,8 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added methods `Records::position()`, `Fasta::position()`
 - added functions `io::write_named_seeds()`, `io::parse_position()`, `pipeline::positional_seeds_path()`
 - added type `io::FieldToPosition`
+- added CLI params `--cut-ga`, `--cut-tc`, `--cut-nc`, which report hits by each profile's domain cutoff in place of `-E`
+- added enum `args::CutoffKind`
+- added method `ExpertArgs::cutoff_kind()`
+- added enum `pipeline::ReportThreshold`
+- added field `profile_pos` to struct `PipelineResult`
 
 ### Changed
+- `OutputStage::new()` now takes a `ReportThreshold` in place of an E-value
 - `build_pipeline()` now takes `&Queries` and runs before seeding
 - renamed enum `stats::MmseqsTimed` to `SeedTimed`, and methods `Stats::{set_mmseqs_time(), add_mmseqs_time()}` to `set_seed_time()`, `add_seed_time()`
 - the seeding branch of the `-s` runtime tree is labelled `seeding` instead of `seeding (mmseqs)`

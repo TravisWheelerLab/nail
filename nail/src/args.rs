@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use libnail::structs::{profile::Cutoff, Profile};
 use regex::Regex;
 
 use crate::util::{term::*, PathExt};
@@ -267,7 +268,10 @@ impl SearchArgs {
             " ├─ F: {}",
             self.pipeline_args.forward_pvalue_threshold
         )?;
-        writeln!(out, " ├─ E: {}", self.pipeline_args.e_value_threshold)?;
+        match self.expert_args.cutoff_kind() {
+            Some(kind) => writeln!(out, " ├─ cutoff: {}", kind.line())?,
+            None => writeln!(out, " ├─ E: {}", self.pipeline_args.e_value_threshold)?,
+        }
         writeln!(
             out,
             " └─ Z: {}",
@@ -423,6 +427,52 @@ impl PipelineArgs {
     }
 }
 
+/// One of the three cutoffs a p7hmm file can give a profile.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CutoffKind {
+    Gathering,
+    Trusted,
+    Noise,
+}
+
+impl CutoffKind {
+    /// The CLI param that chooses this cutoff.
+    pub fn flag(&self) -> &'static str {
+        match self {
+            CutoffKind::Gathering => "--cut-ga",
+            CutoffKind::Trusted => "--cut-tc",
+            CutoffKind::Noise => "--cut-nc",
+        }
+    }
+
+    /// The name of this cutoff in prose.
+    pub fn name(&self) -> &'static str {
+        match self {
+            CutoffKind::Gathering => "gathering",
+            CutoffKind::Trusted => "trusted",
+            CutoffKind::Noise => "noise",
+        }
+    }
+
+    /// The p7hmm header line that holds this cutoff.
+    pub fn line(&self) -> &'static str {
+        match self {
+            CutoffKind::Gathering => "GA",
+            CutoffKind::Trusted => "TC",
+            CutoffKind::Noise => "NC",
+        }
+    }
+
+    /// This cutoff of a profile, if its p7hmm record has the line.
+    pub fn of(&self, prf: &Profile) -> Option<Cutoff> {
+        match self {
+            CutoffKind::Gathering => prf.gathering,
+            CutoffKind::Trusted => prf.trusted,
+            CutoffKind::Noise => prf.noise,
+        }
+    }
+}
+
 #[derive(Args, Debug, Clone, Default)]
 pub struct ExpertArgs {
     /// Override the number of comparisons used for E-value calculation
@@ -437,6 +487,36 @@ pub struct ExpertArgs {
     /// Don't compute sequence composition bias score correction
     #[arg(long = "no-null2", action)]
     pub no_null_two: bool,
+
+    /// (reporting filter) filter hits that score below the domain value of
+    /// each profile's GA line, in place of -E
+    #[arg(long = "cut-ga", action, conflicts_with_all = ["e_value_threshold", "cut_tc", "cut_nc"])]
+    pub cut_ga: bool,
+
+    /// (reporting filter) filter hits that score below the domain value of
+    /// each profile's TC line, in place of -E
+    #[arg(long = "cut-tc", action, conflicts_with_all = ["e_value_threshold", "cut_ga", "cut_nc"])]
+    pub cut_tc: bool,
+
+    /// (reporting filter) filter hits that score below the domain value of
+    /// each profile's NC line, in place of -E
+    #[arg(long = "cut-nc", action, conflicts_with_all = ["e_value_threshold", "cut_ga", "cut_tc"])]
+    pub cut_nc: bool,
+}
+
+impl ExpertArgs {
+    /// The profile cutoff chosen in place of -E, if any.
+    pub fn cutoff_kind(&self) -> Option<CutoffKind> {
+        if self.cut_ga {
+            Some(CutoffKind::Gathering)
+        } else if self.cut_tc {
+            Some(CutoffKind::Trusted)
+        } else if self.cut_nc {
+            Some(CutoffKind::Noise)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -660,5 +740,45 @@ mod tests {
         };
 
         args.validate()
+    }
+
+    fn parse_search(args: &[&str]) -> Result<SearchArgs, clap::Error> {
+        let argv = ["nail", "search"]
+            .iter()
+            .chain(args)
+            .chain(&["q.hmm", "t.fa"]);
+        match NailCli::try_parse_from(argv)?.command {
+            NailSubCommands::Search(args) => Ok(args),
+            NailSubCommands::Dev(_) => panic!("nail search parsed as a dev command"),
+        }
+    }
+
+    #[test]
+    fn cut_ga_conflicts_with_e() {
+        let Err(err) = parse_search(&["--cut-ga", "-E", "1"]) else {
+            panic!("--cut-ga and -E were accepted together");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn two_cut_flags_conflict() {
+        let Err(err) = parse_search(&["--cut-ga", "--cut-tc"]) else {
+            panic!("--cut-ga and --cut-tc were accepted together");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn cutoff_kind_follows_the_cut_flag() -> anyhow::Result<()> {
+        let kind = |flags: &[&str]| -> anyhow::Result<Option<CutoffKind>> {
+            Ok(parse_search(flags)?.expert_args.cutoff_kind())
+        };
+
+        assert_eq!(kind(&[])?, None);
+        assert_eq!(kind(&["--cut-ga"])?, Some(CutoffKind::Gathering));
+        assert_eq!(kind(&["--cut-tc"])?, Some(CutoffKind::Trusted));
+        assert_eq!(kind(&["--cut-nc"])?, Some(CutoffKind::Noise));
+        Ok(())
     }
 }
