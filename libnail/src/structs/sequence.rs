@@ -33,7 +33,7 @@ const UNKNOWN_UTF8_BYTE: u8 = 255;
 const UTF8_TO_DIGITAL_AMINO_TABLE: [u8; 256] = {
     // a byte's position here is its digital code; the
     // gap at 20 is not a residue, so it stays unknown
-    const UPPER: &[u8; 27] = b"ACDEFGHIKLMNPQRSTVWY-BJZOUX";
+    const UPPER: &[u8; 28] = b"ACDEFGHIKLMNPQRSTVWY-BJZOUX*";
 
     let mut table = [UNKNOWN_UTF8_BYTE; 256];
     let mut code = 0;
@@ -282,6 +282,19 @@ mod tests {
     #[test]
     fn from_fasta_rejects_a_byte_outside_the_alphabet() {
         assert!(Sequence::from_fasta(b">abc\nAC-DE\n").is_err());
+    }
+
+    #[test]
+    fn from_fasta_reads_a_stop_codon_as_the_nonresidue_code() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">abc\nAC*DE*\n")?;
+
+        // A, C, *, D, E, * are 0, 1, 27, 2, 3, 27, between
+        // the leading 255 and the trailing nonresidue code
+        assert_eq!(seq.length, 6);
+        assert_eq!(seq.utf8_bytes[1..], *b"AC*DE*");
+        assert_eq!(seq.digital_bytes, [255, 0, 1, 27, 2, 3, 27, 27]);
+
+        Ok(())
     }
 
     #[test]

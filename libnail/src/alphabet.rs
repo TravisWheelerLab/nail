@@ -261,6 +261,7 @@ impl AminoUtilsDigital for u8 {
             24u8 => 79, // O
             25u8 => 85, // U
             26u8 => 88, // X
+            27u8 => 42, // *
             45u8 => 45, // -
             46u8 => 46, // .
             _ => 32,    // space
@@ -296,6 +297,7 @@ impl AminoUtilsDigital for u8 {
             24u8 => 111, // o
             25u8 => 117, // u
             26u8 => 120, // x
+            27u8 => 42,  // *
             45u8 => 45,  // -
             46u8 => 46,  // .
             _ => 32,     // space
@@ -382,6 +384,8 @@ pub const UTF8_TO_DIGITAL_AMINO: phf::Map<u8, u8> = phf_map! {
     111u8 => 24,  // o
     117u8 => 25,  // u
     120u8 => 26,  // x
+    // the nonresidue character, a stop codon
+    42u8 => 27,   // *
 };
 
 pub const AMINO_INVERSE_MAP: phf::Map<u8, u8> = phf_map! {
@@ -412,6 +416,7 @@ pub const AMINO_INVERSE_MAP: phf::Map<u8, u8> = phf_map! {
     24u8 => 79,   // O
     25u8 => 85,   // U
     26u8 => 88,   // X
+    27u8 => 42,   // *
     45u8 => 45,   // -
     46u8 => 46,   // .
     32u8 => 32,   // space
@@ -446,6 +451,7 @@ pub const AMINO_INVERSE_MAP_LOWER: phf::Map<u8, u8> = phf_map! {
     24u8 => 111,   // o
     25u8 => 117,   // u
     26u8 => 120,   // x
+    27u8 => 42,    // *
     45u8 => 45,    // -
     46u8 => 46,    // .
     32u8 => 32,    // space
@@ -483,8 +489,8 @@ mod tests {
     #[test]
     fn every_table_gives_a_residue_its_position_in_the_degenerate_alphabet() {
         for (code, letter) in AMINO_ALPHABET_WITH_DEGENERATE.iter().enumerate() {
-            // the gap, * and ~ are not residues
-            if ["-", "*", "~"].contains(letter) {
+            // the gap and ~ have no entry in these maps
+            if ["-", "~"].contains(letter) {
                 continue;
             }
 

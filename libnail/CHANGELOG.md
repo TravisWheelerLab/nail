@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added methods `ProfileBuilder::{gathering(), trusted(), noise()}`
 
 ### Changed
+- `UTF8_TO_DIGITAL_AMINO`, `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER` and `AminoUtilsDigital::{to_utf8_byte_amino(), to_lower_utf8_byte_amino()}` now map `*` to and from the nonresidue code 27
 - `Profile::serialize()` and `Profile::deserialize()` now carry the cutoffs
 - renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names
 - `Profile::from_blosum_62_and_seq()` sets tau to `2.33 - 1.34 ln(L)`, a fit to `hmmbuild --singlemx`; the old closed form sat about 0.34 bits above hmmbuild's tau, so p-values for sequence queries are now about 21% smaller
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed dependency `datasize`
 
 ### Fixed
+- fixed `Sequence::from_fasta()` rejecting `*`, the stop codon; it now reads it as the nonresidue code 27, as HMMER does
 - fixed `p_value()` returning more than 1 for a score below tau; it now returns 1, as HMMER does
 - fixed `Sequence::from_fasta()` failing on a record with CRLF line endings; it skips `\r` as it skips `\n`
 - fixed `Sequence::from_fasta()` ending a record's name only at a space; it ends the name at any whitespace, so a tab no longer lands inside it
