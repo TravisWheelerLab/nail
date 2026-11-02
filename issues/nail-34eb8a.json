@@ -1,0 +1,28 @@
+{
+  "id": "nail-34eb8a",
+  "title": "Which inputs that nail accepts silently should warn or fail?",
+  "body": "nail exits 0 with an empty result and no warning on each of these inputs. The input survey on nail-d551f7 ran them against the release binary:\n\n| Input | What nail does |\n|---|---|\n| p7hmm whose last model has no `//` | drops the model; a one-model file gives no queries |\n| p7hmm holding only the `HMMER3/f` header line | finds no queries |\n| empty, binary, hmm or Stockholm target file | finds no targets |\n| text before the first `>` in the target | skips the text |\n| a bare `>`, or a `NAME` line with no value | names the record \"\" |\n| p7hmm with no `ALPH` line | assumes amino acids |\n| empty `--seeds` file | reports no hits |\n\n## Options\n\n- Fail with an error. A user learns at once that the input was wrong. A script that relies on exit 0 for empty input breaks.\n- Warn on stderr and carry on. Nothing breaks, and a warning in a long log is easy to miss.\n- Leave each case as it is where HMMER does the same.\n\nI lean to failing on a query or target file with no records and on a truncated last model, and to warning on an empty name. HMMER's behaviour for each case needs checking first.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:05.768733058Z",
+  "updated_at": "2026-11-02T18:25:05.768733058Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
