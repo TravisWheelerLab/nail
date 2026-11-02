@@ -3,26 +3,29 @@
   "title": "nail's `jemalloc` feature uses the old `jemallocator` crate",
   "body": "nail's optional `jemalloc` feature pulls in `jemallocator = \"0.3\"` and sets it as the global allocator in nail/src/main.rs. Development on `jemallocator` moved to the `tikv-jemallocator` crate.\n\n## Proposal\n\nSwitch the feature to `tikv-jemallocator`, then build with `--features jemalloc` to confirm.",
   "type": "chore",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T22:51:01.735296322Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:26:27.761788259Z",
-  "updated_at": "2026-11-02T22:36:01.735296322Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T22:36:28.515677339Z",
+  "closed_at": "2026-11-02T22:36:28.515677339Z",
+  "close_reason": "nail/Cargo.toml and main.rs use tikv-jemallocator 0.6; built and run with --features jemalloc. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "8575bdb",
+      "branch": "dev"
+    }
   }
 }
