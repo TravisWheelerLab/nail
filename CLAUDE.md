@@ -93,6 +93,13 @@ Write code to be read. A longer version that reads plainly beats a shorter one
 that a reader has to work out, such as a `matches!` with a guard or a chain of
 combinators standing in for a `match`.
 
+## Output streams
+
+stderr carries errors and warnings and nothing else. Everything else nail
+prints goes to stdout. Progress lines, status lines, the `-s` report and
+the results themselves all belong there. Two things a user asks for on
+stdout both print. That is not a conflict and not a bug.
+
 ## Platforms
 
 Linux, macOS and Windows on x86_64 and aarch64; CI builds all of them. Nothing

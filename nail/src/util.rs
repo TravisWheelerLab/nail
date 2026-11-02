@@ -10,6 +10,8 @@ use thiserror::Error;
 
 #[allow(dead_code)]
 pub mod term {
+    use std::io::IsTerminal;
+
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
     pub const UNDERLINE: &str = "\x1b[4m";
@@ -32,6 +34,13 @@ pub mod term {
 
     pub const BG_BLACK: &str = "\x1b[40m";
     pub const BG_BRIGHT_BLACK: &str = "\x1b[100m";
+
+    pub fn cursor_up() -> &'static str {
+        match std::io::stdout().is_terminal() {
+            true => "\x1b[A",
+            false => "",
+        }
+    }
 }
 
 #[allow(dead_code)]

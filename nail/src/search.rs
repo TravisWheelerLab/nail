@@ -253,7 +253,8 @@ fn timed_step<T>(
     let result = step()?;
     let elapsed = now.elapsed();
     println!(
-        "\x1b[A{:<28}done ({:.2}s)",
+        "{}{:<28}done ({:.2}s)",
+        cursor_up(),
         format!("{label}..."),
         elapsed.as_secs_f64()
     );
@@ -360,7 +361,8 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
 
     println!(
-        "\x1b[A{:<28}done ({:.2}s)\n",
+        "{}{:<28}done ({:.2}s)\n",
+        cursor_up(),
         "running nail pipeline...",
         align_timer.elapsed().as_secs_f64()
     );
