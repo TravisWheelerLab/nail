@@ -1,0 +1,28 @@
+{
+  "id": "nail-b81a84",
+  "title": "A query whose length disagrees with its rows panics in `ProfileBuilder`",
+  "body": "`Profile::from_p7hmm` sizes the builder from the `LENG` line through `ProfileBuilder::length`. It then writes one row per model position with `ProfileBuilder::mat_emission(pos, ..)` and `ProfileBuilder::transition(pos, ..)`, which index those vectors with no bounds check. `ProfileBuilder::build` indexes `occupancy[1]` whatever the length, so a length-0 profile panics there. A FASTA query reaches the same builder through `Profile::from_blosum_62_and_seq`.\n\nThe input survey on nail-d551f7 ran each of these against the release binary:\n\n| Input | What the user sees |\n|---|---|\n| p7hmm with `LENG 5` and more rows than that | `index out of bounds: the len is 6 but the index is 6` |\n| p7hmm with `LENG 0` | the same panic |\n| p7hmm with no `LENG` line | `index out of bounds: the len is 0 but the index is 0` |\n| FASTA query record with an empty sequence | `index out of bounds: the len is 1 but the index is 1` |\n\n## Proposal\n\n`Profile::from_p7hmm` returns an error naming the model when `LENG` is missing or 0, when a row's position is past `LENG`, or when the model has fewer rows than `LENG`. A FASTA query record with an empty sequence fails with an error naming the record.\n\n## Open\n\n- whether an empty FASTA query record is an error or is skipped with a warning; nobody has checked what HMMER does",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:24:40.547631301Z",
+  "updated_at": "2026-11-02T18:24:40.547631301Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
