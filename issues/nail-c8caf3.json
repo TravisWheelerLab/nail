@@ -3,20 +3,20 @@
   "title": "The root README disagrees with the current CLI",
   "body": "The root `README.md` disagrees with the current CLI in several places. A survey of `dev` on 2026-11-02 checked the first against the release binary and the rest by reading the code:\n\n- The seeds example names queries and targets (`query1`, `target1`), but `--seeds` reads positions unless `--seeds-format names` is given; following it fails with `invalid digit found in string`.\n- It says alignment output goes to stdout by default; nail writes alignments only with `--ali-out` or `-x`.\n- It names the tmp directory `./tmp/`; nail uses `./tmp-nail/`.\n- It writes `results.bl` for `results.tbl`.\n- It says the pipeline runs `mmseqs search`; nail runs `mmseqs prefilter` and `mmseqs align`.\n- Its results header example is padded, unlike the real output.\n\n## Proposal\n\nCorrect each against the current CLI.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T21:37:24.246123686Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:19.627116244Z",
-  "updated_at": "2026-11-02T21:22:24.246123686Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T21:25:56.079081342Z",
+  "closed_at": "2026-11-02T21:25:56.079081342Z",
+  "close_reason": "Every row of the body is corrected in README.md except the padded header example, which waits on nail-3d2994. The tested MMseqs2 release is now 18-8cc5c. Committed on dev.",
+  "resolution": "done",
   "notes": [
     {
       "id": "dd5081d7",
@@ -32,6 +32,9 @@
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "3675958",
+      "branch": "dev"
+    }
   }
 }
