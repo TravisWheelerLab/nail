@@ -1,0 +1,28 @@
+{
+  "id": "nail-25f831",
+  "title": "A non-executable `--mmseqs-path` is reported as mmseqs missing from the system path",
+  "body": "`check_mmseqs_installed` (nail/src/util.rs) runs `<path> -h` and on failure reports `mmseqs2 does not appear to be in the system path`. When `--mmseqs-path` names a file that is not executable, the user sees that message and `Permission denied`, with no path. The input survey on nail-d551f7 ran this against the release binary.\n\n## Proposal\n\nThe message names the path nail tried, and mentions the system path only when the user gave no `--mmseqs-path`.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:05.779642528Z",
+  "updated_at": "2026-11-02T18:25:05.779642528Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
