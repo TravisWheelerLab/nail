@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T21:12:35.436553136Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:24:40.547631301Z",
-  "updated_at": "2026-11-02T20:57:35.436553136Z",
+  "updated_at": "2026-11-02T20:59:11.221655952Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "6a80e117",
+      "at": "2026-11-02T20:59:11.221655252Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "On the open question: `phmmer` 3.4 given a fasta with an empty first record and one real one reports one query model and says nothing about the empty record. nail reports an error instead. Skipping would shift the position of every later query, which the seeds and the output use to find records, so skipping needs the slot kept and is its own issue if wanted.",
+      "commit": "2b3d1c1",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
