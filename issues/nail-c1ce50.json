@@ -1,0 +1,28 @@
+{
+  "id": "nail-c1ce50",
+  "title": "`-x` silently overrides `--ali-out`, `--tbl-out` and `--tbl-format`",
+  "body": "With `-x`, `SearchArgs::validate` (nail/src/args.rs) sets the tabular output path to `None`, and alignments go to stdout, whatever `--tbl-out`, `--tbl-format` or `--ali-out` say. clap accepts these combinations without a word.\n\n## Proposal\n\nDeclare `conflicts_with_all` on `-x` for the three flags, so clap rejects the combination.\n\n## Cost\n\nA script that passes `-x` with one of them stops working.",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:19.606471397Z",
+  "updated_at": "2026-11-02T18:25:19.606471397Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
