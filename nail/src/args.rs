@@ -1,7 +1,6 @@
 use std::{
     io::{IsTerminal, Write},
     path::PathBuf,
-    str::FromStr,
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -51,7 +50,12 @@ pub struct SearchArgs {
     pub target_path: PathBuf,
 
     /// The number of threads that nail will use
-    #[arg(short = 't', default_value_t = 8usize, value_name = "N")]
+    #[arg(
+        short = 't',
+        default_value_t = 8usize,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
+        value_name = "N"
+    )]
     pub num_threads: usize,
 
     /// Print out pipeline summary statistics
@@ -94,10 +98,6 @@ impl SearchArgs {
             self.io_args.tbl_results_path = None
         }
 
-        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
-            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
-        }
-
         match self.seed_args.seed_mode {
             SeedMode::Static => {
                 if self.seed_args.prog_n.is_some() {
@@ -116,8 +116,6 @@ impl SearchArgs {
                 }
             }
         }
-
-        self.pipeline_args.validate()?;
 
         if let Some(p1) = self.dev_args.bit_p {
             let p2 = *libnail::output::output_tabular::BIT_P.get_or_init(|| p1);
@@ -297,7 +295,11 @@ pub struct IoArgs {
     pub seeds_input_path: Option<PathBuf>,
 
     /// The file where alignment seeds will be written
-    #[arg(long = "seeds-out", default_value = None, value_name = "PATH")]
+    #[arg(
+        long = "seeds-out",
+        default_value_if("only_seed", "true", "./seeds.tsv"),
+        value_name = "PATH"
+    )]
     pub seeds_output_path: Option<PathBuf>,
 
     /// The directory where intermediate files will be placed
@@ -377,7 +379,12 @@ pub struct PipelineArgs {
     /// counts the first attempt too, so nail never restarts when N is 1. N
     /// must be at least 1. The parameters are scaled according to the -f
     /// argument (default: 0.5).
-    #[arg(short = 'a', default_value_t = 5, value_name = "N")]
+    #[arg(
+        short = 'a',
+        default_value_t = 5,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
+        value_name = "N"
+    )]
     pub cloud_max_join_attempts: usize,
 
     /// (cloud search) when cloud search fails, scale cloud search parameters
@@ -415,16 +422,6 @@ pub struct PipelineArgs {
     /// Produce alignment seeds and terminate
     #[arg(long = "only-seed", action)]
     pub only_seed: bool,
-}
-
-impl PipelineArgs {
-    pub fn validate(&self) -> anyhow::Result<()> {
-        if self.cloud_max_join_attempts == 0 {
-            bail!("the argument '{YELLOW}-a{RESET}' must be at least 1")
-        }
-
-        Ok(())
-    }
 }
 
 /// One of the three cutoffs a p7hmm file can give a profile.
@@ -724,28 +721,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn zero_cloud_join_attempts_fails_validation() {
-        let args = PipelineArgs {
-            cloud_max_join_attempts: 0,
-            ..Default::default()
+    fn zero_cloud_join_attempts_is_rejected() {
+        let Err(err) = parse_search(&["-a", "0"]) else {
+            panic!("-a 0 was accepted");
         };
-
-        let Err(err) = args.validate() else {
-            panic!("-a 0 passed validation");
-        };
-        let message = err.to_string();
-        assert!(message.contains("-a"));
-        assert!(message.contains("must be at least 1"));
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
     }
 
     #[test]
-    fn one_cloud_join_attempt_passes_validation() -> anyhow::Result<()> {
-        let args = PipelineArgs {
-            cloud_max_join_attempts: 1,
-            ..Default::default()
+    fn zero_threads_is_rejected() {
+        let Err(err) = parse_search(&["-t", "0"]) else {
+            panic!("-t 0 was accepted");
         };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
 
-        args.validate()
+    #[test]
+    fn only_seed_defaults_the_seeds_output_path() -> anyhow::Result<()> {
+        let args = parse_search(&["--only-seed"])?;
+        assert_eq!(
+            args.io_args.seeds_output_path,
+            Some(PathBuf::from("./seeds.tsv"))
+        );
+
+        let args = parse_search(&[])?;
+        assert_eq!(args.io_args.seeds_output_path, None);
+        Ok(())
     }
 
     fn parse_search(args: &[&str]) -> Result<SearchArgs, clap::Error> {

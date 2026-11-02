@@ -26,7 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added dependency `libsail` 0.4.2
 - added struct `io::Records`
 - added methods `Fasta::name()`, `P7Hmm::get()`, `Queries::name()`
-- added method `PipelineArgs::validate()`
 - added CLI param `--seeds-format`, which sets whether `--seeds` and `--seeds-out` name queries and targets by position, the default, or by name
 - added enum `args::SeedsFormat`
 - added methods `Records::position()`, `Fasta::position()`
@@ -78,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed the `-s` runtime tree printing a time whose fraction rounds up to a whole second as `.100`; the carry now goes into the whole seconds
 - fixed `nail search` panicking on a query file that holds only blank lines, or whose first line is not a known format header and is shorter than 11 bytes; blank lines before the first record are now skipped, as HMMER does
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
-- fixed CLI param `-a 0` reaching a panic in cloud search; validation now rejects it at startup
+- fixed CLI param `-a 0` reaching a panic in cloud search; clap now rejects it
+- fixed CLI param `-t 0` failing inside the mmseqs prefilter; clap now rejects it
 - fixed the help text of CLI param `-a`, which read as N retries after a first attempt; N counts every attempt
 - fixed a target or query fasta with CRLF line endings stopping nail with a parse error
 - fixed a fasta header with a tab after the name putting the tab and the next word into the name in the output
