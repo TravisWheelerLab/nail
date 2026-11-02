@@ -1,7 +1,7 @@
 {
   "id": "nail-d66889",
   "title": "`TableFormat` defaults to `Blast` while `--tbl-format` defaults to nail",
-  "body": "`TableFormat` in nail/src/args.rs derives `Default` with `#[default]` on `Blast`. `--tbl-format` defaults to `nail`, and the help says so. Nothing calls `TableFormat::default()` today, so the mismatch has no effect yet.\n\n## Proposal\n\nMove `#[default]` to `Nail`.",
+  "body": "`TableFormat` in nail/src/args.rs derives `Default` with `#[default]` on `Blast`. `--tbl-format` defaults to `nail`, and the help says so. `IoArgs` derives `Default` too, so `IoArgs::default()` would carry `Blast`. Nothing in nail calls `IoArgs::default()` today, so the mismatch has no effect yet.\n\n## Proposal\n\nMove `#[default]` to `Nail`.",
   "type": "chore",
   "status": "open",
   "priority": 4,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:30.253668947Z",
-  "updated_at": "2026-11-02T18:25:30.253668947Z",
+  "updated_at": "2026-11-02T18:25:48.679736766Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
