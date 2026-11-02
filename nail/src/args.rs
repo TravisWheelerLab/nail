@@ -565,8 +565,11 @@ pub struct SeedArgs {
     /// (MMseqs2 prefilter): Limit the number of prefilter results per query.
     ///
     /// MMseqs2 -h output: Maximum results per query sequence allowed to pass the prefilter
+    ///
+    /// Defaults to 300 under --seed-mode static and 2147483647 under --seed-mode prog
     #[arg(
         long = "mmseqs-max-seqs",
+        hide_default_value = true,
         default_value_t = 2147483647usize,
         default_value_if("seed_mode", "static", "300"),
         default_value_if("seed_mode", "prog", "2147483647"),
