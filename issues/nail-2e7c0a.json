@@ -1,0 +1,28 @@
+{
+  "id": "nail-2e7c0a",
+  "title": "nail and libnail list dependencies they do not use",
+  "body": "No file in nail/src names `strum_macros`, `indexmap` or `colored`, yet nail/Cargo.toml lists all three as dependencies. libnail/Cargo.toml lists `colored` as a dev-dependency, and no file in libnail/src names it.\n\n## Proposal\n\nRemove the four entries, then build and run `cargo test` to confirm nothing used them through a macro.",
+  "type": "chore",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:30.243247884Z",
+  "updated_at": "2026-11-02T18:25:30.243247884Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
