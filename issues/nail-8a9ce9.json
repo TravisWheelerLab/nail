@@ -1,7 +1,7 @@
 {
   "id": "nail-8a9ce9",
   "title": "`-t 0` fails inside mmseqs prefilter",
-  "body": "`-t` sets the thread count for nail and for mmseqs, with a default of 8. `-t 0` passes validation and fails later with `mmseqs prefilter failed`. A survey of `dev` on 2026-11-02 ran this against the release binary.\n\n## Proposal\n\nclap rejects 0 through a range value parser, so the error names `-t`, as nail already does for `-a 0`.",
+  "body": "`-t` sets the thread count for nail and for mmseqs, with a default of 8. `-t 0` passes validation and fails later with `mmseqs prefilter failed`. A survey of `dev` on 2026-11-02 ran this against the release binary.\n\n## Proposal\n\nReject 0 at startup with an error that names `-t`, as `PipelineArgs::validate` does for `-a 0`.",
   "type": "bug",
   "status": "open",
   "priority": 3,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:30.222767086Z",
-  "updated_at": "2026-11-02T18:25:30.222767086Z",
+  "updated_at": "2026-11-02T18:25:48.689799441Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
