@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed variant `HmmBuild` from enum `stats::ThreadedTimed`
 - removed hidden CLI param `--stats-results-path` and field `DevArgs::stats_results_path`; nothing wrote to it
 - removed method `PrefilterDb::open_file()`
+- removed dependencies `strum_macros`, `indexmap`, `colored`; nothing used them
 - removed mod `io::util`, with enum `ReadState` and trait `ReadSeekExt`
 - removed dependency `datasize`
 - removed mods `io::database`, `io::impl_rayon`, with struct `Database`, trait `RecordParser` and their helpers

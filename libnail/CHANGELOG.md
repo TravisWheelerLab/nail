@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed method `Sequence::amino_from_fasta()`
 - removed dependency `seq_io`
 - removed method `Profile::calibrate_tau()`; nothing called it, and `Profile::from_blosum_62_and_seq()` sets tau from a closed form
+- removed dev-dependency `colored`; nothing used it
 - removed the `DataSize` derive from enum `Alphabet` and struct `Profile`
 - removed dependency `datasize`
 
