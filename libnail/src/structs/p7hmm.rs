@@ -68,14 +68,21 @@ impl Profile {
                             };
                         }
                         "STATS" => {
-                            let stats: Vec<&str> = value.split_whitespace().collect();
+                            let mut tokens = value.split_whitespace();
 
-                            if stats[1] == "FORWARD" {
-                                prf.fwd_tau(stats[2].parse().with_context(|| {
-                                    format!("failed to parse HMM Forward tau: \"{}\"", stats[2])
+                            // STATS is LOCAL, a score kind, then two parameters
+                            let (Some(_), Some(kind), Some(first), Some(second)) =
+                                (tokens.next(), tokens.next(), tokens.next(), tokens.next())
+                            else {
+                                bail!("expected four values on HMM STATS line: \"{value}\"");
+                            };
+
+                            if kind == "FORWARD" {
+                                prf.fwd_tau(first.parse().with_context(|| {
+                                    format!("failed to parse HMM Forward tau: \"{first}\"")
                                 })?);
-                                prf.fwd_lambda(stats[3].parse().with_context(|| {
-                                    format!("failed to parse HMM Forward lambda: \"{}\"", stats[3])
+                                prf.fwd_lambda(second.parse().with_context(|| {
+                                    format!("failed to parse HMM Forward lambda: \"{second}\"")
                                 })?);
                             }
                         }
@@ -404,6 +411,24 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "expected two values on HMM GA line: \"30.50\""
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_rejects_a_stats_line_with_three_values() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen(
+            "STATS LOCAL FORWARD   -5.1502  0.70253",
+            "STATS LOCAL FORWARD   -5.1502",
+            1,
+        );
+
+        let Err(err) = Profile::from_p7hmm(hmm.as_bytes()) else {
+            panic!("a STATS line with three values was accepted");
+        };
+        assert_eq!(
+            err.to_string(),
+            "expected four values on HMM STATS line: \"LOCAL FORWARD   -5.1502\""
         );
         Ok(())
     }
