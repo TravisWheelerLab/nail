@@ -3,20 +3,20 @@
   "title": "Reading a malformed mmseqs database can panic",
   "body": "`PrefilterDb` and the db writers in nail/src/mmseqs.rs read files mmseqs wrote, and several reads use `expect`, `unwrap` or unchecked indexing. The input survey on nail-d551f7 found these by reading the code; it triggered none of them:\n\n- `PrefilterDb::from_path`: `.expect(\"failed to parse index line\")` on each `.index` field, unchecked `tokens[1]` and `tokens[2]`, `tokens[2] - 1` underflowing for a record of length 0, and `.expect(\"bad DB split suffix\")`\n- `PrefilterDb::get`: `prefix_sum[file_idx]` and `descriptors[prf_idx]`, which panic when the prefilter db holds fewer records than there are queries\n- the db writers: `db_path.file_name().unwrap().to_str().unwrap()`, on a tmp path that is not UTF-8 or ends in `..`\n- the profile db writer: the consensus residue lookup `.get(..).unwrap()`\n- nail/src/util.rs: the one-byte read helper, with `seek(..).expect` and `read_exact(..).expect`\n\nEach needs a db mmseqs wrote badly, or an odd tmp path.\n\n## Proposal\n\nReturn an error naming the db path and the record in place of each `expect` and `unwrap`.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T21:19:57.421527944Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:24:57.647789226Z",
-  "updated_at": "2026-11-02T21:14:32.715983757Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T21:14:32.726051465Z",
+  "closed_at": "2026-11-02T21:14:32.726051465Z",
+  "close_reason": "PrefilterDb::from_path returns errors naming the .index file and line in place of its four panics. The remaining sites are left as panics, see note. Committed on dev.",
+  "resolution": "done",
   "notes": [
     {
       "id": "493dd77b",
@@ -32,6 +32,9 @@
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "57fc3fe",
+      "branch": "dev"
+    }
   }
 }
