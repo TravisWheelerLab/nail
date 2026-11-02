@@ -3,20 +3,20 @@
   "title": "The `nail search` help text has typos",
   "body": "clap builds `nail search --help` from the doc comments in nail/src/args.rs. A survey of `dev` on 2026-11-02 found these; I confirmed the first two in the source:\n\n- `-a` and `-f` write `ɓ`, a b with a hook, where they mean β.\n- `-S` reads \"the number of taret sequences\".\n- The `--seed-mode` text writes `prog-f` without the `--`, with uneven indentation.\n- `--mmseqs-s` describes the scale as \"1.0 faster; 4.0 fast; 7.5 sensitive\" but defaults to 10 without saying so.\n\n## Proposal\n\nFix each.",
   "type": "chore",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T18:54:49.371923849Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:30.23304264Z",
-  "updated_at": "2026-11-02T18:40:06.902601255Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T18:40:06.913879624Z",
+  "closed_at": "2026-11-02T18:40:06.913879624Z",
+  "close_reason": "Fixed the three real typos in nail/src/args.rs; the default-value claim was wrong, see note. Committed on dev.",
+  "resolution": "done",
   "notes": [
     {
       "id": "d92d30b4",
@@ -32,6 +32,9 @@
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "111c843",
+      "branch": "dev"
+    }
   }
 }
