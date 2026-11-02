@@ -373,7 +373,7 @@ pub struct PipelineArgs {
     /// (cloud search) make at most N cloud search attempts in total
     ///
     /// When the forward and backward clouds fail to intersect, nail restarts
-    /// cloud search using more permissive pruning parameters (α, ɓ, γ). N
+    /// cloud search using more permissive pruning parameters (α, β, γ). N
     /// counts the first attempt too, so nail never restarts when N is 1. N
     /// must be at least 1. The parameters are scaled according to the -f
     /// argument (default: 0.5).
@@ -381,7 +381,7 @@ pub struct PipelineArgs {
     pub cloud_max_join_attempts: usize,
 
     /// (cloud search) when cloud search fails, scale cloud search parameters
-    /// (α, ɓ, γ) by 1.0 + X
+    /// (α, β, γ) by 1.0 + X
     #[arg(short = 'f', default_value_t = 0.5, value_name = "X")]
     pub cloud_param_scale_factor: f32,
 
@@ -389,7 +389,7 @@ pub struct PipelineArgs {
     ///
     /// This filter works via a reasonable approximation of P-values for hits
     /// produced by MMseqs2: E_align = S * Z, where S is the seed filter P-value
-    /// threshold, and Z is the number of taret sequences in the search. The
+    /// threshold, and Z is the number of target sequences in the search. The
     /// call that nail internally makes to 'mmseqs align' is handed the parameter
     /// '-e E_align'
     #[arg(short = 'S', default_value_t = 1e-4, value_name = "X")]
@@ -588,7 +588,7 @@ pub struct SeedArgs {
     ///
     ///   static|0: run the MMseqs2 prefilter, then run MMseqs2 align on the entire prefilter results
     ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following
-    ///             parameterization of --prog-n and prog-f
+    ///             parameterization of --prog-n and --prog-f
     #[arg(
         long,
         default_value = "prog",

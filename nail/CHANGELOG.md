@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed `PrefilterDb::from_path()` placing a record in an empty split file of a prefilter or align db, which could stop `--seed-mode prog` with an error
 - fixed the scores of targets and sequence queries that hold B, J, Z, O, U or X; each such residue scored as another residue or as `-inf`, and an O in a sequence query made every E-value for that query NaN
 - fixed the errors for CLI params `--prog-n` and `--prog-f` under `--seed-mode static`, which named a `--prog-seed` flag that does not exist; they now name `--seed-mode prog`
+- fixed three typos in the `nail search` help text; `-a` and `-f` wrote `ɓ` for β, `-S` wrote "taret", and `--seed-mode` wrote `prog-f` without its `--`
 
 ## [0.7.1] - 2026-7-31
 
