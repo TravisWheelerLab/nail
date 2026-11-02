@@ -3,20 +3,20 @@
   "title": "With `-x`, progress lines and cursor codes land in the alignments on stdout",
   "body": "`-x` sends alignments to stdout in place of the tabular results. `nail search` also prints its progress lines, such as `indexing query database...`, to stdout with `println!`. It rewrites them with raw `ESC[A` cursor codes, and prints the `results written to` line and the `-s` stats there too (nail/src/search.rs, nail/src/util.rs). The first lines of `nail search -x ... > out.txt` hold that text and the escape codes. A survey of `dev` on 2026-11-02 ran this against the release binary.\n\n## Proposal\n\nProgress lines, status lines and stats go to stderr. nail writes the cursor codes only when stderr is a terminal.\n\n## Cost\n\nA script that reads the progress lines from stdout loses them. The output change needs a changelog entry.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T19:26:47.508803627Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:19.586311237Z",
-  "updated_at": "2026-11-02T19:12:54.902722698Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T19:12:54.912652188Z",
+  "closed_at": "2026-11-02T19:12:54.912652188Z",
+  "close_reason": "The cursor-up code is written only when stdout is a terminal (term::cursor_up). Progress lines stay on stdout by design, see note. Warnings moved to stderr in the next commit. Committed on dev.",
+  "resolution": "done",
   "notes": [
     {
       "id": "33a298da",
@@ -32,6 +32,9 @@
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "1721747",
+      "branch": "dev"
+    }
   }
 }
