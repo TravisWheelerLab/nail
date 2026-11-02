@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T21:19:57.421527944Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:24:57.647789226Z",
-  "updated_at": "2026-11-02T21:04:57.421527944Z",
+  "updated_at": "2026-11-02T21:14:32.715983757Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "493dd77b",
+      "at": "2026-11-02T21:14:32.715982887Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "Only PrefilterDb::from_path was hardened, per Jack. The other sites in the body are invariants nail itself holds (prefix_sum and descriptors indexed by query, the consensus residue table) or paths nobody takes (a --tmp-dir ending in .. or not utf-8, an io error inside the one-byte read helper), and a panic stays the outcome there.",
+      "commit": "57fc3fe",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
