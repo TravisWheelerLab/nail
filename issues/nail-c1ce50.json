@@ -3,26 +3,29 @@
   "title": "`-x` silently overrides `--ali-out`, `--tbl-out` and `--tbl-format`",
   "body": "With `-x`, `SearchArgs::validate` (nail/src/args.rs) sets the tabular output path to `None`, and alignments go to stdout, whatever `--tbl-out`, `--tbl-format` or `--ali-out` say. clap accepts these combinations without a word.\n\n## Proposal\n\nDeclare `conflicts_with_all` on `-x` for the three flags, so clap rejects the combination.\n\n## Cost\n\nA script that passes `-x` with one of them stops working.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T19:19:43.184330117Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:19.606471397Z",
-  "updated_at": "2026-11-02T19:04:43.184330117Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T19:06:18.10246104Z",
+  "closed_at": "2026-11-02T19:06:18.10246104Z",
+  "close_reason": "-x carries conflicts_with_all for the three flags and --tbl-out drops its default under -x via default_value_if, in nail/src/args.rs. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "25e71d7",
+      "branch": "dev"
+    }
   }
 }
