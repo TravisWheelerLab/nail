@@ -1,0 +1,28 @@
+{
+  "id": "nail-06b3e4",
+  "title": "Should `results.tbl` rows be sorted?",
+  "body": "nail writes each row of `results.tbl` as an alignment thread finishes it. Within a query, rows are not in E-value or score order; a survey of `dev` on 2026-11-02 saw 8.1e-32 above 5.5e-34. At more than one thread the order also changes between runs (memory `results-tbl-row-order-varies-with-threads`). The root README's example shows sorted rows.\n\n## Options\n\n- Sort each query's rows by E-value. nail would have to hold a query's rows until all its seeds are done.\n- Sort the whole file at the end of the run. That holds every row in memory or rereads the file.\n- Leave the order as it is and say in the README that it is unordered.\n\nI lean to documenting the order for now. Sorting costs memory on large searches.",
+  "type": "decision",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:26:27.77241412Z",
+  "updated_at": "2026-11-02T18:26:27.77241412Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
