@@ -3,6 +3,7 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
     path::Path,
+    str::FromStr,
 };
 
 use anyhow::{bail, Context};
@@ -40,19 +41,17 @@ impl Seeds {
         target_position: FieldToPosition,
     ) -> anyhow::Result<Self> {
         let mut seeds = vec![];
-        for line in buf.lines() {
+        for (line_idx, line) in buf.lines().enumerate() {
             let line = line?;
-            let tokens = line.split_whitespace().collect::<Vec<_>>();
-            seeds.push(Seed {
-                prf_pos: query_position(tokens[0])?,
-                seq_pos: target_position(tokens[1])?,
-                seq_start: tokens[4].parse()?,
-                seq_end: tokens[5].parse()?,
-                prf_start: tokens[2].parse()?,
-                prf_end: tokens[3].parse()?,
-                score: tokens[6].parse()?,
-                e_value: tokens[7].parse()?,
-            })
+            if line.trim().is_empty() {
+                continue;
+            }
+            seeds.push(parse_seed(
+                line_idx + 1,
+                &line,
+                query_position,
+                target_position,
+            )?);
         }
         Ok(Self { seeds })
     }
@@ -68,21 +67,22 @@ impl Seeds {
 
         let mut cnt = 0;
         let mut prev = None;
-        for line in buf.lines() {
+        for (line_idx, line) in buf.lines().enumerate() {
             let line = line?;
-            let tokens = line.split_whitespace().collect::<Vec<_>>();
-
-            if tokens.len() != 8 {
-                bail!("unexpected line format in mmseqs align tsv");
+            if line.trim().is_empty() {
+                continue;
             }
+            let seed = parse_seed(line_idx + 1, &line, query_position, target_position)?;
 
-            let prf = query_position(tokens[0])?;
-
-            if prev != Some(prf) {
-                if !seen.insert(prf) {
-                    bail!("unexpected sorting of mmseqs align tsv");
+            if prev != Some(seed.prf_pos) {
+                if !seen.insert(seed.prf_pos) {
+                    bail!(
+                        "line {}: seeds for query {} are not contiguous",
+                        line_idx + 1,
+                        seed.prf_pos
+                    );
                 }
-                prev = Some(prf);
+                prev = Some(seed.prf_pos);
                 cnt = 0;
             }
 
@@ -90,22 +90,49 @@ impl Seeds {
                 continue;
             }
 
-            seeds.push(Seed {
-                prf_pos: prf,
-                seq_pos: target_position(tokens[1])?,
-                seq_start: tokens[4].parse()?,
-                seq_end: tokens[5].parse()?,
-                prf_start: tokens[2].parse()?,
-                prf_end: tokens[3].parse()?,
-                score: tokens[6].parse()?,
-                e_value: tokens[7].parse()?,
-            });
-
+            seeds.push(seed);
             cnt += 1;
         }
 
         Ok(Self { seeds })
     }
+}
+
+fn parse_seed(
+    line_number: usize,
+    line: &str,
+    query_position: FieldToPosition,
+    target_position: FieldToPosition,
+) -> anyhow::Result<Seed> {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    if fields.len() != 8 {
+        bail!("line {line_number} has {} fields, expected 8", fields.len());
+    }
+
+    Ok(Seed {
+        prf_pos: query_position(fields[0])?,
+        seq_pos: target_position(fields[1])?,
+        prf_start: parse_number(line_number, &fields, 2)?,
+        prf_end: parse_number(line_number, &fields, 3)?,
+        seq_start: parse_number(line_number, &fields, 4)?,
+        seq_end: parse_number(line_number, &fields, 5)?,
+        score: parse_number(line_number, &fields, 6)?,
+        e_value: parse_number(line_number, &fields, 7)?,
+    })
+}
+
+fn parse_number<T>(line_number: usize, fields: &[&str], field_idx: usize) -> anyhow::Result<T>
+where
+    T: FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    let field = fields[field_idx];
+    field.parse().with_context(|| {
+        format!(
+            "line {line_number}, field {}: \"{field}\" is not a number",
+            field_idx + 1
+        )
+    })
 }
 
 /// Copy a seeds file that holds positions, naming each query and target.
@@ -208,6 +235,44 @@ mod tests {
         assert_eq!(from_positions.seeds[0].prf_pos, 0);
         assert_eq!(from_positions.seeds[0].seq_pos, 2);
 
+        Ok(())
+    }
+
+    #[test]
+    fn a_short_line_names_the_line_and_its_field_count() {
+        let seeds = "0\t2\t1\t259\t54\t302\t189\t3.660E-55\n\
+                     0\t1\t3\t120\n";
+
+        let Err(err) = Seeds::new(seeds.as_bytes(), &parse_position, &parse_position) else {
+            panic!("a four-field line was accepted");
+        };
+        assert_eq!(err.to_string(), "line 2 has 4 fields, expected 8");
+    }
+
+    #[test]
+    fn a_non_number_names_the_line_and_field() {
+        let seeds = "0\t2\t1\t259\tfifty\t302\t189\t3.660E-55\n";
+
+        let Err(err) = Seeds::new(seeds.as_bytes(), &parse_position, &parse_position) else {
+            panic!("a word was read as a number");
+        };
+        assert_eq!(
+            err.to_string(),
+            "line 1, field 5: \"fifty\" is not a number"
+        );
+    }
+
+    #[test]
+    fn blank_lines_are_skipped() -> anyhow::Result<()> {
+        let seeds = "\n\
+                     0\t2\t1\t259\t54\t302\t189\t3.660E-55\n\
+                     \n\
+                     1\t0\t3\t120\t10\t130\t95\t1.281E-20\n\
+                     \n";
+
+        let seeds = Seeds::new(seeds.as_bytes(), &parse_position, &parse_position)?;
+        assert_eq!(seeds.seeds.len(), 2);
+        assert_eq!(seeds.seeds[1].prf_pos, 1);
         Ok(())
     }
 
