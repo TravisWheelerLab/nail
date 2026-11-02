@@ -154,7 +154,7 @@ pub fn seed(
                     seed_static(queries, targets, &db_paths, stats, args).context("seeding failed")
                 }
                 SeedMode::Prog => seed_progressive(queries, targets, &db_paths, stats, args)
-                    .context("progessive seeding failed"),
+                    .context("progressive seeding failed"),
             }?;
 
             if let (Some(path), SeedsFormat::Names) =
