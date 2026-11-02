@@ -3,26 +3,29 @@
   "title": "The `--prog-n` and `--prog-f` errors name a `--prog-seed` flag that does not exist",
   "body": "`SearchArgs::validate` (nail/src/args.rs) rejects `--prog-n` and `--prog-f` under static seeding with `the argument '--prog-n' cannot be used without '--prog-seed'`. nail has no `--prog-seed` flag. Progressive seeding is `--seed-mode prog`.\n\n## Proposal\n\nBoth messages name `--seed-mode prog`.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T18:47:30.963014849Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:19.59670837Z",
-  "updated_at": "2026-11-02T18:32:30.963014849Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T18:35:17.297196008Z",
+  "closed_at": "2026-11-02T18:35:17.297196008Z",
+  "close_reason": "Both messages in SearchArgs::validate now name --seed-mode prog. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "95fa058",
+      "branch": "dev"
+    }
   }
 }
