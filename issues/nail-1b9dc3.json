@@ -1,7 +1,7 @@
 {
   "id": "nail-1b9dc3",
   "title": "Which of libnail's public statics and output helpers should stay public?",
-  "body": "libnail makes these items public, and each looks internal:\n\n- `BIT_P`, `F32_P` and `F64_P` in libnail/src/output/output_tabular.rs: global `OnceLock<usize>` precision settings for tabular output. They are public so that nail's dev flags `--bit-p`, `--f32-p` and `--f64-p` can set them.\n- `LOGSUM_LOOKUP` in libnail/src/util.rs: the `lazy_static` table behind `log_add`. Nothing outside util.rs names it.\n- `write_standard_output(&Vec<Alignment>, ..)` in libnail/src/output/output_standard.rs: nothing in either crate calls it.\n- trait `PathBufExt` in libnail/src/output/path_buf_ext.rs: nothing outside its own file uses it; nail has its own `util::PathExt`.\n\n## Options\n\n- Make each private, or remove the ones nothing calls, while the coming minor release allows breaking changes.\n- Leave them public.\n\nI lean to removing `write_standard_output` and `PathBufExt`, and making `LOGSUM_LOOKUP` private. The precision settings follow whatever nail-<dev flags issue> decides about the dev flags.",
+  "body": "libnail makes these items public, and each looks internal:\n\n- `BIT_P`, `F32_P` and `F64_P` in libnail/src/output/output_tabular.rs: global `OnceLock<usize>` precision settings for tabular output. They are public so that nail's dev flags `--bit-p`, `--f32-p` and `--f64-p` can set them.\n- `LOGSUM_LOOKUP` in libnail/src/util.rs: the `lazy_static` table behind `log_add`. Nothing outside util.rs names it.\n- `write_standard_output(&Vec<Alignment>, ..)` in libnail/src/output/output_standard.rs: nothing in either crate calls it.\n- trait `PathBufExt` in libnail/src/output/path_buf_ext.rs: nothing outside its own file uses it; nail has its own `util::PathExt`.\n\n## Options\n\n- Make each private, or remove the ones nothing calls, while the coming minor release allows breaking changes.\n- Leave them public.\n\nI lean to removing `write_standard_output` and `PathBufExt`, and making `LOGSUM_LOOKUP` private. The precision settings follow whatever nail-808a37 decides about the dev flags.",
   "type": "decision",
   "status": "open",
   "priority": 4,
@@ -13,7 +13,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:26:05.237119623Z",
-  "updated_at": "2026-11-02T18:26:05.237119623Z",
+  "updated_at": "2026-11-02T18:26:13.85349425Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
