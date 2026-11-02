@@ -1,0 +1,28 @@
+{
+  "id": "nail-3d2994",
+  "title": "Should `results.tbl` pad its rows to the header's column widths?",
+  "body": "The tabular writer in libnail/src/output/output_tabular.rs pads the header to each column's label width but writes rows unpadded, so the header does not line up with the rows. A survey of `dev` on 2026-11-02 saw this in `results.tbl` from the release binary. `TableFormat` has `update_widths` and `reset_widths`, which nothing in the pipeline calls, and nail/src/pipeline/output_stage.rs carries `// TODO: state for column width formatting`.\n\n## Options\n\n- Pad the rows. The writer needs each column's width before the first row, but nail writes rows as alignment threads finish. That means either fixed widths or holding every row until the end.\n- Drop the header padding. It is a small change, and the columns stay whitespace-separated either way.\n\nI lean to dropping the header padding, since nail writes rows as results arrive.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:26:05.224880207Z",
+  "updated_at": "2026-11-02T18:26:05.224880207Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
