@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added methods `ProfileBuilder::{gathering(), trusted(), noise()}`
 
 ### Changed
+- `rust-version` is 1.87, and keywords and a category are set
 - `UTF8_TO_DIGITAL_AMINO`, `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER` and `AminoUtilsDigital::{to_utf8_byte_amino(), to_lower_utf8_byte_amino()}` now map `*` to and from the nonresidue code 27
 - `Profile::serialize()` and `Profile::deserialize()` now carry the cutoffs
 - renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names

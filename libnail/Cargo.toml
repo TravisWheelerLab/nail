@@ -3,9 +3,12 @@ name = "libnail"
 version = "0.6.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
+rust-version = "1.87"
 license = "BSD-3-Clause"
 repository = "https://github.com/TravisWheelerLab/nail"
 description = "Libnail is a library that performs profile Hidden Markov Model (PHMM) biological sequence alignment."
+keywords = ["bioinformatics", "alignment", "hmm", "hmmer", "mmseqs2"]
+categories = ["science::bioinformatics::sequence-analysis"]
 
 [features]
 default = []

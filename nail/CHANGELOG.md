@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the help text of CLI params `--mmseqs-k`, `--mmseqs-s`, `--mmseqs-max-seqs` now opens with a one-line description and quotes the MMseqs2 help text below it
 - CLI param `-x` now conflicts with `--tbl-out`, `--ali-out` and `--tbl-format`, so clap rejects the combination; `-x` used to win over all three without a word
 - the `jemalloc` feature uses `tikv-jemallocator` 0.6 in place of `jemallocator` 0.3, whose development moved there
+- the crate description reads "A profile HMM sequence aligner for amino acids, seeded by MMseqs2"; `rust-version` is 1.88, and keywords and a category are set
 
 ### Removed
 - removed variant `HmmBuild` from enum `stats::ThreadedTimed`

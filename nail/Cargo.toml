@@ -3,13 +3,13 @@ name = "nail"
 version = "0.7.1"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
+rust-version = "1.88"
 license = "BSD-3-Clause"
 repository = "https://github.com/TravisWheelerLab/nail"
 readme = "README.md"
-description = "nail is an alignment inference tool"
-exclude = [
-    "fixtures/",
-]
+description = "A profile HMM sequence aligner for amino acids, seeded by MMseqs2"
+keywords = ["bioinformatics", "alignment", "hmm", "hmmer", "mmseqs2"]
+categories = ["science::bioinformatics::sequence-analysis"]
 
 [features]
 default = []
