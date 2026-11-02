@@ -3,26 +3,29 @@
   "title": "`TableFormat` defaults to `Blast` while `--tbl-format` defaults to nail",
   "body": "`TableFormat` in nail/src/args.rs derives `Default` with `#[default]` on `Blast`. `--tbl-format` defaults to `nail`, and the help says so. `IoArgs` derives `Default` too, so `IoArgs::default()` would carry `Blast`. Nothing in nail calls `IoArgs::default()` today, so the mismatch has no effect yet.\n\n## Proposal\n\nMove `#[default]` to `Nail`.",
   "type": "chore",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T19:08:17.067743199Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:30.253668947Z",
-  "updated_at": "2026-11-02T18:53:17.067743199Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T18:53:18.154361436Z",
+  "closed_at": "2026-11-02T18:53:18.154361436Z",
+  "close_reason": "#[default] moved to Nail in nail/src/args.rs. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "3c2cbaa",
+      "branch": "dev"
+    }
   }
 }
