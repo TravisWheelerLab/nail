@@ -63,7 +63,11 @@ pub struct SearchArgs {
     pub print_summary_stats: bool,
 
     /// Don't write any tabular results, write alignments to stdout
-    #[arg(short = 'x', action)]
+    #[arg(
+        short = 'x',
+        action,
+        conflicts_with_all = ["tbl_results_path", "ali_results_path", "tbl_format"]
+    )]
     pub ali_to_stdout: bool,
 
     /// The path to the MMseqs2 binary that nail will use for seeding
@@ -94,10 +98,6 @@ pub struct SearchArgs {
 
 impl SearchArgs {
     pub fn validate(&mut self) -> anyhow::Result<()> {
-        if self.ali_to_stdout {
-            self.io_args.tbl_results_path = None
-        }
-
         match self.seed_args.seed_mode {
             SeedMode::Static => {
                 if self.seed_args.prog_n.is_some() {
@@ -283,7 +283,12 @@ impl SearchArgs {
 #[derive(Args, Debug, Clone, Default)]
 pub struct IoArgs {
     /// The file where tabular output will be written
-    #[arg(long = "tbl-out", default_value = "results.tbl", value_name = "PATH")]
+    #[arg(
+        long = "tbl-out",
+        default_value = "results.tbl",
+        default_value_if("ali_to_stdout", "true", None),
+        value_name = "PATH"
+    )]
     pub tbl_results_path: Option<PathBuf>,
 
     /// The file where alignment output will be written
@@ -734,6 +739,27 @@ mod tests {
             panic!("-t 0 was accepted");
         };
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn ali_to_stdout_conflicts_with_tbl_out() {
+        let Err(err) = parse_search(&["-x", "--tbl-out", "x.tbl"]) else {
+            panic!("-x and --tbl-out were accepted together");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn ali_to_stdout_drops_the_tbl_out_default() -> anyhow::Result<()> {
+        let args = parse_search(&["-x"])?;
+        assert_eq!(args.io_args.tbl_results_path, None);
+
+        let args = parse_search(&[])?;
+        assert_eq!(
+            args.io_args.tbl_results_path,
+            Some(PathBuf::from("results.tbl"))
+        );
+        Ok(())
     }
 
     #[test]

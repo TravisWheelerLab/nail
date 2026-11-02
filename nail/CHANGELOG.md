@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - enum `ByteBuffer` now derives `Debug`, `PartialEq`
 - the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before
 - the help text of CLI params `--mmseqs-k`, `--mmseqs-s`, `--mmseqs-max-seqs` now opens with a one-line description and quotes the MMseqs2 help text below it
+- CLI param `-x` now conflicts with `--tbl-out`, `--ali-out` and `--tbl-format`, so clap rejects the combination; `-x` used to win over all three without a word
 
 ### Removed
 - removed variant `HmmBuild` from enum `stats::ThreadedTimed`
