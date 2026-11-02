@@ -1,0 +1,28 @@
+{
+  "id": "nail-4ca1f5",
+  "title": "nail's `jemalloc` feature uses the old `jemallocator` crate",
+  "body": "nail's optional `jemalloc` feature pulls in `jemallocator = \"0.3\"` and sets it as the global allocator in nail/src/main.rs. Development on `jemallocator` moved to the `tikv-jemallocator` crate.\n\n## Proposal\n\nSwitch the feature to `tikv-jemallocator`, then build with `--features jemalloc` to confirm.",
+  "type": "chore",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:26:27.761788259Z",
+  "updated_at": "2026-11-02T18:26:27.761788259Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
