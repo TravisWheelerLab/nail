@@ -18,18 +18,9 @@ impl P7Hmm {
         self.0.len()
     }
 
-    /// The name of the `n`th model.
-    pub fn name(&self, n: usize) -> anyhow::Result<String> {
-        self.0.name(n)
-    }
-
     /// The `n`th model.
     pub fn get(&self, n: usize) -> anyhow::Result<Profile> {
         self.0.parse(n, Profile::from_p7hmm)
-    }
-
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = anyhow::Result<Profile>> + '_ {
-        (0..self.len()).map(|n| self.get(n))
     }
 
     pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = anyhow::Result<Profile>> + '_ {
@@ -49,7 +40,7 @@ mod tests {
     fn test_p7hmm_iter_parse() -> anyhow::Result<()> {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm");
         let database = P7Hmm::from_path(&path)?;
-        let _ = database.iter().collect::<anyhow::Result<Vec<_>>>()?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
         Ok(())
     }
 
@@ -68,7 +59,6 @@ mod tests {
         assert_eq!(p7hmm.len(), names.len());
 
         for (n, name) in names.iter().enumerate() {
-            assert_eq!(&p7hmm.name(n)?, name);
             assert_eq!(&p7hmm.get(n)?.name, name);
         }
 

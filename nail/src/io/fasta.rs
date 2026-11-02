@@ -33,10 +33,6 @@ impl Fasta {
         self.0.parse(n, Sequence::from_fasta)
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = anyhow::Result<Sequence>> + '_ {
-        (0..self.len()).map(|n| self.get(n))
-    }
-
     pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = anyhow::Result<Sequence>> + '_ {
         (0..self.len()).into_par_iter().map(|n| self.get(n))
     }
@@ -82,7 +78,7 @@ pub mod tests {
     fn test_fasta_iter_parse() -> anyhow::Result<()> {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
         let database = Fasta::from_path(&path)?;
-        let _ = database.iter().collect::<anyhow::Result<Vec<_>>>()?;
+        let _ = database.par_iter().collect::<anyhow::Result<Vec<_>>>()?;
         Ok(())
     }
 

@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added per-iteration rows under the `align` leaf of the `-s` runtime tree in `--seed-mode prog`, with an iteration count on the leaf
 - added dependency `libsail` 0.4.2
 - added struct `io::Records`
-- added methods `Fasta::name()`, `P7Hmm::name()`, `P7Hmm::get()`, `Queries::name()`
+- added methods `Fasta::name()`, `P7Hmm::get()`, `Queries::name()`
 - added method `PipelineArgs::validate()`
 - added CLI param `--seeds-format`, which sets whether `--seeds` and `--seeds-out` name queries and targets by position, the default, or by name
 - added enum `args::SeedsFormat`
