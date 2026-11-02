@@ -1,0 +1,28 @@
+{
+  "id": "nail-cf6436",
+  "title": "The `nail search` help text has typos",
+  "body": "clap builds `nail search --help` from the doc comments in nail/src/args.rs. A survey of `dev` on 2026-11-02 found these; I confirmed the first two in the source:\n\n- `-a` and `-f` write `ɓ`, a b with a hook, where they mean β.\n- `-S` reads \"the number of taret sequences\".\n- The `--seed-mode` text writes `prog-f` without the `--`, with uneven indentation.\n- `--mmseqs-s` describes the scale as \"1.0 faster; 4.0 fast; 7.5 sensitive\" but defaults to 10 without saying so.\n\n## Proposal\n\nFix each.",
+  "type": "chore",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:30.23304264Z",
+  "updated_at": "2026-11-02T18:25:30.23304264Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
