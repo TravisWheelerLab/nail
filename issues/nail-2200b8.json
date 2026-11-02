@@ -3,26 +3,29 @@
   "title": "A `--seeds` position outside the queries or targets fails mid-alignment",
   "body": "A `Seed` (libnail) holds a query position, a target position, and start and end coordinates in each. nail checks none of them against the inputs before alignment, so a bad seed from a `--seeds` file fails deep in the pipeline.\n\nThe input survey on nail-d551f7 ran each of these against the release binary:\n\n| Seed | What the user sees |\n|---|---|\n| target end past the sequence | `index out of bounds: the len is 346 but the index is 99999999`, in nail/src/pipeline/cloud_stage.rs |\n| a start after its end | `index out of bounds: the len is 261 but the index is 299`, in libnail/src/align/cloud_search.rs |\n| every coordinate 0 | `index out of bounds`, index 18446744073709551615, a `usize` underflow in cloud_search.rs |\n| query position past the last query | `error: no prf` |\n| target position past the last target | `error: no seq`, caused by `no record 99999` |\n\n## Proposal\n\nCheck every seed read from `--seeds`. The checks are: the positions fall within the query and target counts, each coordinate is at least 1 and within the profile or target length, and no start lies after its end. A bad seed fails with the file, the line and the value out of range.\n\n## Open\n\n- the length checks need each profile and target, so whether they run when the file is read or as each seed reaches the pipeline\n- whether seeds from mmseqs go through the same checks",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T19:45:13.360534847Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:24:57.615186023Z",
-  "updated_at": "2026-11-02T19:30:13.360534847Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T19:56:40.130859457Z",
+  "closed_at": "2026-11-02T19:56:40.130859457Z",
+  "close_reason": "Positions are checked against the counts in read_seeds (search.rs); coordinates are checked in Pipeline::run by check_seed_bounds, gated on Pipeline::check_seed_bounds, which build_pipeline sets when --seeds was given. mmseqs seeds are not checked, per Jack. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "a6b43a2",
+      "branch": "dev"
+    }
   }
 }
