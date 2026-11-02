@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added method `ExpertArgs::cutoff_kind()`
 - added enum `pipeline::ReportThreshold`
 - added field `profile_pos` to struct `PipelineResult`
+- added long names to the single-letter `nail search` options: `--threads`, `--summary`, `--alpha`, `--beta`, `--gamma`, `--cloud-max-attempts`, `--cloud-scale-factor`, `--seed-p`, `--cloud-p`, `--forward-p`, `--e-value`, `--target-db-size`; each letter still works
 
 ### Changed
 - enum `util::FileFormat` now derives `PartialEq`

@@ -52,6 +52,7 @@ pub struct SearchArgs {
     /// The number of threads that nail will use
     #[arg(
         short = 't',
+        long = "threads",
         default_value_t = 8usize,
         value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
         value_name = "N"
@@ -59,7 +60,7 @@ pub struct SearchArgs {
     pub num_threads: usize,
 
     /// Print out pipeline summary statistics
-    #[arg(short = 's', action)]
+    #[arg(short = 's', long = "summary", action)]
     pub print_summary_stats: bool,
 
     /// Don't write any tabular results, write alignments to stdout
@@ -357,7 +358,7 @@ pub struct PipelineArgs {
     /// Scores are in natural log space during dynamic programming, so with
     /// A = 10, cells are pruned when they correspond to a ~20,000 fold
     /// reduction in probability.
-    #[arg(short = 'A', default_value_t = 10.0, value_name = "X")]
+    #[arg(short = 'A', long = "alpha", default_value_t = 10.0, value_name = "X")]
     pub alpha: f32,
 
     /// (cloud search) global score pruning threshold
@@ -370,11 +371,11 @@ pub struct PipelineArgs {
     /// Scores are in natural log space during dynamic programming, so with
     /// B = 16, cells are pruned when they correspond to a ~9 million fold
     /// reduction in probability
-    #[arg(short = 'B', default_value_t = 16.0, value_name = "X")]
+    #[arg(short = 'B', long = "beta", default_value_t = 16.0, value_name = "X")]
     pub beta: f32,
 
     /// (cloud search) at minimum, compute N anti-diagonals
-    #[arg(short = 'G', default_value_t = 5, value_name = "N")]
+    #[arg(short = 'G', long = "gamma", default_value_t = 5, value_name = "N")]
     pub gamma: usize,
 
     /// (cloud search) make at most N cloud search attempts in total
@@ -386,6 +387,7 @@ pub struct PipelineArgs {
     /// argument (default: 0.5).
     #[arg(
         short = 'a',
+        long = "cloud-max-attempts",
         default_value_t = 5,
         value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
         value_name = "N"
@@ -394,7 +396,12 @@ pub struct PipelineArgs {
 
     /// (cloud search) when cloud search fails, scale cloud search parameters
     /// (α, β, γ) by 1.0 + X
-    #[arg(short = 'f', default_value_t = 0.5, value_name = "X")]
+    #[arg(
+        short = 'f',
+        long = "cloud-scale-factor",
+        default_value_t = 0.5,
+        value_name = "X"
+    )]
     pub cloud_param_scale_factor: f32,
 
     /// (seeding filter) filter hits with P-value > X
@@ -404,11 +411,16 @@ pub struct PipelineArgs {
     /// threshold, and Z is the number of target sequences in the search. The
     /// call that nail internally makes to 'mmseqs align' is handed the parameter
     /// '-e E_align'
-    #[arg(short = 'S', default_value_t = 1e-4, value_name = "X")]
+    #[arg(short = 'S', long = "seed-p", default_value_t = 1e-4, value_name = "X")]
     pub seed_pvalue_threshold: f64,
 
     /// (cloud search filter) filter hits with P-value > X
-    #[arg(short = 'C', default_value_t = 1e-2, value_name = "X")]
+    #[arg(
+        short = 'C',
+        long = "cloud-p",
+        default_value_t = 1e-2,
+        value_name = "X"
+    )]
     pub cloud_pvalue_threshold: f64,
 
     /// (forward filter) filter hits with P-value > X
@@ -417,11 +429,21 @@ pub struct PipelineArgs {
     /// entire merged cloud (after cloud search) produces a bad P-value. When
     /// this happens, nail discards the search and doesn't compute Backward or
     /// alignment trace recovery.
-    #[arg(short = 'F', default_value_t = 1e-4, value_name = "X")]
+    #[arg(
+        short = 'F',
+        long = "forward-p",
+        default_value_t = 1e-4,
+        value_name = "X"
+    )]
     pub forward_pvalue_threshold: f64,
 
     /// (reporting filter) filter hits with E-value > X
-    #[arg(short = 'E', default_value_t = 10.0, value_name = "X")]
+    #[arg(
+        short = 'E',
+        long = "e-value",
+        default_value_t = 10.0,
+        value_name = "X"
+    )]
     pub e_value_threshold: f64,
 
     /// Produce alignment seeds and terminate
@@ -483,7 +505,7 @@ pub struct ExpertArgs {
     /// where Z is the number of searches per query (i.e. the number of target
     /// sequences). This flag can be useful when you want to pretend you're doing
     /// a larger or smaller search.
-    #[arg(short = 'Z', value_name = "N")]
+    #[arg(short = 'Z', long = "target-db-size", value_name = "N")]
     pub target_database_size: Option<usize>,
 
     /// Don't compute sequence composition bias score correction
