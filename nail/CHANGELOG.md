@@ -10,9 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Deprecated
 ### Removed
-- removed mods `io::database`, `io::impl_rayon`, with struct `Database`, trait `RecordParser` and their helpers
-- removed structs `FastaParser`, `P7HmmParser`; their parsing moved to `Sequence::from_fasta()` and `Profile::from_p7hmm()` in libnail
-- removed trait `io::ByteBufferExt`
 ### Fixed
 ### Security
 -->
@@ -70,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed method `PrefilterDb::open_file()`
 - removed mod `io::util`, with enum `ReadState` and trait `ReadSeekExt`
 - removed dependency `datasize`
+- removed mods `io::database`, `io::impl_rayon`, with struct `Database`, trait `RecordParser` and their helpers
+- removed structs `FastaParser`, `P7HmmParser`; their parsing moved to `Sequence::from_fasta()` and `Profile::from_p7hmm()` in libnail
+- removed trait `io::ByteBufferExt`
 
 ### Fixed
 - fixed the `-s` runtime tree printing a time whose fraction rounds up to a whole second as `.100`; the carry now goes into the whole seconds
