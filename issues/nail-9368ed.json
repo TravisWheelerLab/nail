@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T22:53:26.417455136Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:26:27.75110667Z",
-  "updated_at": "2026-11-02T22:38:26.417455136Z",
+  "updated_at": "2026-11-02T22:39:59.465522928Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "37b12da6",
+      "at": "2026-11-02T22:39:59.465521758Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "libsail 0.4.2 declares rust-version 1.87 but uses let chains, stable since 1.88, so cargo +1.87 fails inside libsail. nail's floor is therefore 1.88. libnail builds on 1.87; nothing older was tried.",
+      "commit": "06bd45c",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
