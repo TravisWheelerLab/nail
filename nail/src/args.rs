@@ -101,10 +101,10 @@ impl SearchArgs {
         match self.seed_args.seed_mode {
             SeedMode::Static => {
                 if self.seed_args.prog_n.is_some() {
-                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--seed-mode prog{RESET}'")
                 }
                 if self.seed_args.prog_f.is_some() {
-                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--seed-mode prog{RESET}'")
                 }
             }
             SeedMode::Prog => {
