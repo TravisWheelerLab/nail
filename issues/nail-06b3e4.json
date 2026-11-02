@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T22:00:07.471773121Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:26:27.77241412Z",
-  "updated_at": "2026-11-02T21:45:07.471773121Z",
+  "updated_at": "2026-11-02T22:30:29.651595382Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "7bd1865d",
+      "at": "2026-11-02T22:30:29.651594462Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "Jack chose sorting per query block, and wants a later switch for very large searches where holding a query's hits costs memory. Two designs were tried on 2026-11-02 and rejected before commit.\n\nThe first kept, in `OutputStage`, a count of seeds left per query and a held `Vec<PipelineResult>` per query, filled from the seeds after seeding, and wrote a query's hits sorted when its count reached zero. Rejected as too much machinery.\n\nThe second kept one `Vec<PipelineResult>` buffer in `OutputStage`, flushed sorted whenever a result for a different query arrived, with a `finish` call after the loop. Under threads, chunks of 100 seeds from different queries interleave, so a query's block splits into sorted sub-blocks. Rejected for that.\n\nBoth needed `OutputStage::run` to take its results by value, since `PipelineResult` and `Alignment` are not `Clone`, and `Stats::add_sample` to split so the per-result part runs before output. Any design that holds results meets the same two points.\n\nThe sort was last present before commit `38ab2fd`, where it ran per chunk of 100 seeds.",
+      "commit": "1711982",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
