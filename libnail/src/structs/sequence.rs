@@ -148,7 +148,7 @@ impl Sequence {
 
             let digital_byte = UTF8_TO_DIGITAL_AMINO_TABLE[byte as usize];
             if digital_byte == UNKNOWN_UTF8_BYTE {
-                bail!("byte: \"{byte}\" is not in the compressed amino acid alphabet");
+                bail!("{:?} is not in the amino acid alphabet", char::from(byte));
             }
 
             utf8_bytes.push(byte);
@@ -281,7 +281,10 @@ mod tests {
 
     #[test]
     fn from_fasta_rejects_a_byte_outside_the_alphabet() {
-        assert!(Sequence::from_fasta(b">abc\nAC-DE\n").is_err());
+        let Err(err) = Sequence::from_fasta(b">abc\nAC-DE\n") else {
+            panic!("a '-' was read as a residue");
+        };
+        assert_eq!(err.to_string(), "'-' is not in the amino acid alphabet");
     }
 
     #[test]

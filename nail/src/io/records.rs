@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Context};
@@ -13,7 +13,10 @@ use libsail::{
 use rayon::prelude::*;
 
 /// An input file with every record framed and named.
-pub struct Records(Framed);
+pub struct Records {
+    framed: Framed,
+    path: PathBuf,
+}
 
 impl Records {
     pub fn open(path: impl AsRef<Path>, format: Format) -> anyhow::Result<Self> {
@@ -31,33 +34,50 @@ impl Records {
         //         would show the problem
         refuse_repeated_names(framed.index(), path)?;
 
-        Ok(Self(framed))
+        Ok(Self {
+            framed,
+            path: path.to_path_buf(),
+        })
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.framed.len()
     }
 
     pub fn name(&self, n: usize) -> anyhow::Result<String> {
-        match self.0.index().name(n)? {
-            Some(name) => Ok(String::from_utf8(name.into_owned())?),
-            None => bail!("record {n} has no name"),
+        match self.framed.index().name(n)? {
+            Some(name) => String::from_utf8(name.into_owned()).with_context(|| {
+                format!(
+                    "the name of record {n} of {} is not utf-8",
+                    self.path.display()
+                )
+            }),
+            None => bail!("record {n} of {} has no name", self.path.display()),
         }
     }
 
     /// The position of the record named `name`.
     pub fn position(&self, name: &str) -> anyhow::Result<Option<usize>> {
-        Ok(self.0.index().position(name.as_bytes())?)
+        Ok(self.framed.index().position(name.as_bytes())?)
     }
 
     /// Parse the `n`th record's bytes with `parse`.
     pub fn parse<T>(&self, n: usize, parse: fn(&[u8]) -> anyhow::Result<T>) -> anyhow::Result<T> {
         let bytes = self
-            .0
+            .framed
             .record(n)?
-            .with_context(|| format!("no record {n}"))?;
+            .with_context(|| format!("{} has no record {n}", self.path.display()))?;
 
-        parse(&bytes)
+        parse(&bytes).with_context(|| {
+            let name = match self.framed.index().name(n) {
+                Ok(Some(name)) => format!(" (\"{}\")", String::from_utf8_lossy(&name)),
+                _ => String::new(),
+            };
+            format!(
+                "failed to parse record {n}{name} of {}",
+                self.path.display()
+            )
+        })
     }
 }
 
@@ -146,6 +166,25 @@ mod tests {
                 .ends_with("holds more than one record named \"b\""));
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn a_parse_error_names_the_record_and_the_file() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.fa");
+        let records = Records::open(&path, Format::Fasta)?;
+
+        let Err(err) = records.parse(0, |_| -> anyhow::Result<()> { bail!("bad record") }) else {
+            panic!("a failing parser was reported as a success");
+        };
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "failed to parse record 0 (\"7tm_1-consensus\") of {}",
+                path.display()
+            )
+        );
+        assert_eq!(err.root_cause().to_string(), "bad record");
         Ok(())
     }
 }
