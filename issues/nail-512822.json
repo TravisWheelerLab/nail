@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T19:26:47.508803627Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:25:19.586311237Z",
-  "updated_at": "2026-11-02T19:11:47.508803627Z",
+  "updated_at": "2026-11-02T19:12:54.902722698Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "33a298da",
+      "at": "2026-11-02T19:12:54.902722038Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "The proposal in the body is wrong. Progress lines, status lines and the -s report are not errors, so they stay on stdout under the output streams rule in CLAUDE.md. The defect was the raw ESC[A written when stdout is not a terminal, fixed in 00d9fcd. The two warnings and the subprocess failure dump were on stdout and moved to stderr in the following commit.",
+      "commit": "1721747",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
