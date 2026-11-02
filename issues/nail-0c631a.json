@@ -1,0 +1,28 @@
+{
+  "id": "nail-0c631a",
+  "title": "The `--mmseqs-max-seqs` help omits the default for static seeding",
+  "body": "`--mmseqs-max-seqs` takes its default from `--seed-mode` through two `default_value_if` calls in nail/src/args.rs: 300 for `static` and 2147483647 for `prog`. `nail search --help` shows only 2147483647, the default for `prog`, which is the default seed mode. A survey of `dev` on 2026-11-02 saw 300 in the `-s` output of a static run.\n\n## Proposal\n\nThe help text states both defaults.",
+  "type": "bug",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:30.212244694Z",
+  "updated_at": "2026-11-02T18:25:30.212244694Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
