@@ -74,17 +74,44 @@ impl PrefilterDb {
 
         let mut offsets = vec![];
         let mut lengths = vec![];
-        for line in index_reader.lines() {
+        for (line_idx, line) in index_reader.lines().enumerate() {
             let line = line?;
+            let line_number = line_idx + 1;
 
-            let tokens = line
-                .split('\t')
-                .map(|s| s.parse::<u64>().expect("failed to parse index line"))
-                .collect::<Vec<_>>();
+            // an index line is the record key, its offset and its length
+            let mut fields = line.split('\t');
+            let (Some(_), Some(offset), Some(length)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                bail!(
+                    "line {line_number} of {} has fewer than 3 fields",
+                    index_path.display()
+                );
+            };
 
-            offsets.push(tokens[1]);
-            // -1 because the index lengths include a null byte
-            lengths.push(tokens[2] - 1);
+            let offset: u64 = offset.parse().with_context(|| {
+                format!(
+                    "line {line_number} of {}: offset \"{offset}\" is not a number",
+                    index_path.display()
+                )
+            })?;
+            let length: u64 = length.parse().with_context(|| {
+                format!(
+                    "line {line_number} of {}: length \"{length}\" is not a number",
+                    index_path.display()
+                )
+            })?;
+
+            // the index lengths include a null byte, so 0 is malformed
+            if length == 0 {
+                bail!(
+                    "line {line_number} of {} has a record length of 0",
+                    index_path.display()
+                );
+            }
+
+            offsets.push(offset);
+            lengths.push(length - 1);
         }
 
         offsets.shrink_to_fit();
@@ -92,24 +119,27 @@ impl PrefilterDb {
 
         // ---
 
+        // a split db is <name>.0, <name>.1, ... beside <name>
         let re = Regex::new(&format!(r"^{}\.\d+$", regex::escape(name)))?;
-        let mut paths = std::fs::read_dir(dir)?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|s| s.to_str())
-                    .map(|s| re.is_match(s))
-                    .unwrap_or(false)
-            })
-            .collect::<Vec<_>>();
-
-        paths.sort_by_key(|p| {
-            p.extension()
-                .and_then(|e| e.to_str())
-                .and_then(|s| s.parse::<usize>().ok())
-                .expect("bad DB split suffix")
-        });
+        let mut splits = vec![];
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !re.is_match(file_name) {
+                continue;
+            }
+            let suffix: usize = file_name[name.len() + 1..].parse().with_context(|| {
+                format!(
+                    "the split suffix of {} does not fit a usize",
+                    path.display()
+                )
+            })?;
+            splits.push((suffix, path));
+        }
+        splits.sort_by_key(|(suffix, _)| *suffix);
+        let mut paths: Vec<PathBuf> = splits.into_iter().map(|(_, path)| path).collect();
 
         // if we have no paths here, that
         // means the prefilter is one file
