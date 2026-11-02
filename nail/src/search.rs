@@ -78,7 +78,28 @@ fn read_seeds(
 
     match args.io_args.seeds_format {
         SeedsFormat::Positions => {
-            Seeds::from_path(path, max_seeds, &parse_position, &parse_position)
+            let query_position = |field: &str| {
+                let position = parse_position(field)?;
+                if position >= queries.len() {
+                    bail!(
+                        "query position {position} is out of range; there are {} queries",
+                        queries.len()
+                    );
+                }
+                Ok(position)
+            };
+            let target_position = |field: &str| {
+                let position = parse_position(field)?;
+                if position >= targets.len() {
+                    bail!(
+                        "target position {position} is out of range; there are {} targets",
+                        targets.len()
+                    );
+                }
+                Ok(position)
+            };
+
+            Seeds::from_path(path, max_seeds, &query_position, &target_position)
         }
         SeedsFormat::Names => {
             let query_positions = (0..queries.len())
@@ -219,6 +240,7 @@ pub fn build_pipeline(
         profiles,
         prf: None,
         targets: Arc::new(targets),
+        check_seed_bounds: args.io_args.seeds_input_path.is_some(),
         cloud_search: match args.dev_args.full_dp {
             true => Box::<FullDpCloudSearchStage>::default(),
             false => Box::new(DefaultCloudSearchStage::new(args)),

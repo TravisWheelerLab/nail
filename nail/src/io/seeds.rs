@@ -110,8 +110,10 @@ fn parse_seed(
     }
 
     Ok(Seed {
-        prf_pos: query_position(fields[0])?,
-        seq_pos: target_position(fields[1])?,
+        prf_pos: query_position(fields[0])
+            .with_context(|| format!("line {line_number}, field 1"))?,
+        seq_pos: target_position(fields[1])
+            .with_context(|| format!("line {line_number}, field 2"))?,
         prf_start: parse_number(line_number, &fields, 2)?,
         prf_end: parse_number(line_number, &fields, 3)?,
         seq_start: parse_number(line_number, &fields, 4)?,
@@ -283,8 +285,7 @@ mod tests {
         let Err(err) = Seeds::new(named.as_bytes(), &parse_position, &parse_position) else {
             panic!("a name was read as a position");
         };
-        assert!(err
-            .to_string()
-            .contains("\"7tm_1\" is not a record position"));
+        assert!(format!("{err:#}")
+            .starts_with("line 1, field 1: seed field \"7tm_1\" is not a record position"));
     }
 }

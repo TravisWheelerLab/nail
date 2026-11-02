@@ -20,7 +20,7 @@ use libnail::{
 
 use crate::{io::Fasta, stats::Stats};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 
 pub enum StageResult<D, S> {
     Filtered { stats: S },
@@ -115,10 +115,46 @@ pub struct Pipeline {
     /// The profile of the last seed run, and its position.
     pub prf: Option<(usize, Profile)>,
     pub targets: Arc<Fasta>,
+    /// Whether to check each seed's coordinates against its profile and target.
+    pub check_seed_bounds: bool,
     pub cloud_search: Box<dyn CloudSearchStage>,
     pub align: Box<dyn AlignStage>,
     pub output: Arc<Mutex<OutputStage>>,
     pub stats: Stats,
+}
+
+/// Checks that a seed's 1-based, inclusive coordinates lie within
+/// a profile of `prf_length` and a target of `seq_length`.
+pub fn check_seed_bounds(seed: &Seed, prf_length: usize, seq_length: usize) -> anyhow::Result<()> {
+    if seed.prf_start < 1 || seed.prf_end > prf_length {
+        bail!(
+            "query coordinates {}-{} are outside 1-{prf_length}",
+            seed.prf_start,
+            seed.prf_end
+        );
+    }
+    if seed.prf_start > seed.prf_end {
+        bail!(
+            "query start {} is after query end {}",
+            seed.prf_start,
+            seed.prf_end
+        );
+    }
+    if seed.seq_start < 1 || seed.seq_end > seq_length {
+        bail!(
+            "target coordinates {}-{} are outside 1-{seq_length}",
+            seed.seq_start,
+            seed.seq_end
+        );
+    }
+    if seed.seq_start > seed.seq_end {
+        bail!(
+            "target start {} is after target end {}",
+            seed.seq_start,
+            seed.seq_end
+        );
+    }
+    Ok(())
 }
 
 impl Pipeline {
@@ -135,6 +171,15 @@ impl Pipeline {
 
         let (_, prf) = self.prf.as_mut().expect("no prf");
         let seq = self.targets.get(seed.seq_pos).context("no seq")?;
+
+        if self.check_seed_bounds {
+            check_seed_bounds(seed, prf.length, seq.length).with_context(|| {
+                format!(
+                    "seed for query {} against target {} is out of range",
+                    prf.name, seq.name
+                )
+            })?;
+        }
 
         // configuring for the target length adjusts special state transitions
         prf.configure_for_target_length(seq.length);
@@ -164,5 +209,62 @@ impl Pipeline {
             cloud_result: Some(cloud_result),
             align_result,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seed(prf_start: usize, prf_end: usize, seq_start: usize, seq_end: usize) -> Seed {
+        Seed {
+            prf_pos: 0,
+            seq_pos: 0,
+            prf_start,
+            prf_end,
+            seq_start,
+            seq_end,
+            score: 0.0,
+            e_value: 0.0,
+        }
+    }
+
+    #[test]
+    fn a_seed_within_both_lengths_passes() -> anyhow::Result<()> {
+        check_seed_bounds(&seed(1, 250, 1, 300), 250, 300)
+    }
+
+    #[test]
+    fn a_seed_outside_either_length_fails() {
+        let cases = [
+            (
+                seed(0, 10, 1, 10),
+                "query coordinates 0-10 are outside 1-250",
+            ),
+            (
+                seed(1, 251, 1, 10),
+                "query coordinates 1-251 are outside 1-250",
+            ),
+            (seed(20, 10, 1, 10), "query start 20 is after query end 10"),
+            (
+                seed(1, 10, 0, 10),
+                "target coordinates 0-10 are outside 1-300",
+            ),
+            (
+                seed(1, 10, 1, 301),
+                "target coordinates 1-301 are outside 1-300",
+            ),
+            (
+                seed(1, 10, 20, 10),
+                "target start 20 is after target end 10",
+            ),
+        ];
+
+        for (seed, message) in cases {
+            let Err(err) = check_seed_bounds(&seed, 250, 300) else {
+                panic!("{seed:?} passed the bounds check");
+            };
+            assert_eq!(err.to_string(), message);
+        }
     }
 }

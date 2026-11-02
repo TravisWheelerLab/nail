@@ -92,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed the `--cut-*` per-domain warning, the `--max-seqs` saturation warning and the report nail prints when an MMseqs2 command fails going to stdout; they go to stderr
 - fixed three file errors that showed only the os error; a `--seeds` file that cannot be opened or read, a query file that cannot be read, and the intermediate seeds file now name the path
 - fixed a malformed line in a `--seeds` file panicking or failing without saying where; the error names the line, and the field when one does not parse. Blank lines are skipped
+- fixed a `--seeds` seed outside the inputs panicking or failing mid-alignment; a query or target position past the last record fails when the file is read, naming the line, and coordinates outside the profile or target, or a start after its end, fail before cloud search, naming the query and target
 - fixed the error for an MMseqs2 binary that cannot be run, which said mmseqs2 was not on the system path whatever `--mmseqs-path` held; it now names the path, and mentions the system path only for a bare name
 
 ## [0.7.1] - 2026-7-31
