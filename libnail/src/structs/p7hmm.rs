@@ -39,6 +39,7 @@ impl Profile {
 
         let mut prf = ProfileBuilder::default();
         let mut pos = 0;
+        let mut length = 0;
         for line in buf.split(|b| *b == b'\n').filter(|b| !b.is_empty()) {
             match state {
                 ParseState::Header => {
@@ -58,9 +59,10 @@ impl Profile {
                             prf.accession(value.to_string());
                         }
                         "LENG" => {
-                            prf.length(value.parse().with_context(|| {
+                            length = value.parse().with_context(|| {
                                 format!("failed to parse HMM length: \"{}\"", value)
-                            })?);
+                            })?;
+                            prf.length(length);
                         }
                         "ALPH" => {
                             if value != "amino" {
@@ -95,7 +97,12 @@ impl Profile {
                         "NC" => {
                             prf.noise(parse_cutoff(keyword, value)?);
                         }
-                        "HMM" => state = ParseState::Model,
+                        "HMM" => {
+                            if length == 0 {
+                                bail!("LENG is missing or 0");
+                            }
+                            state = ParseState::Model
+                        }
                         _ => {
                             // ignore most flags for now
                         }
@@ -130,6 +137,10 @@ impl Profile {
                                 bail!("non-linear HMM positions: {pos}->{new_pos}");
                             } else {
                                 pos = new_pos
+                            }
+
+                            if pos > length {
+                                bail!("row {pos} is past LENG {length}");
                             }
 
                             parse_p7hmm_floats_into::<{ Profile::MAX_ALPHABET_SIZE }>(
@@ -412,6 +423,39 @@ mod tests {
             err.to_string(),
             "expected two values on HMM GA line: \"30.50\""
         );
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_rejects_leng_zero() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("LENG  260", "LENG  0", 1);
+
+        let Err(err) = Profile::from_p7hmm(hmm.as_bytes()) else {
+            panic!("LENG 0 was accepted");
+        };
+        assert_eq!(err.to_string(), "LENG is missing or 0");
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_rejects_a_missing_leng_line() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("LENG  260\n", "", 1);
+
+        let Err(err) = Profile::from_p7hmm(hmm.as_bytes()) else {
+            panic!("a model with no LENG line was accepted");
+        };
+        assert_eq!(err.to_string(), "LENG is missing or 0");
+        Ok(())
+    }
+
+    #[test]
+    fn from_p7hmm_rejects_more_rows_than_leng() -> anyhow::Result<()> {
+        let hmm = query_hmm()?.replacen("LENG  260", "LENG  259", 1);
+
+        let Err(err) = Profile::from_p7hmm(hmm.as_bytes()) else {
+            panic!("a model with more rows than LENG was accepted");
+        };
+        assert_eq!(err.to_string(), "row 260 is past LENG 259");
         Ok(())
     }
 

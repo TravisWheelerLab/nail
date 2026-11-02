@@ -13,7 +13,7 @@ use crate::{
     util::{mean_relative_entropy, relative_entropy},
 };
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 
 impl AsRef<Profile> for Profile {
     fn as_ref(&self) -> &Profile {
@@ -807,6 +807,10 @@ impl Profile {
         use blosum62::*;
         use Transition::*;
 
+        if seq.length == 0 {
+            bail!("sequence \"{}\" has no residues", seq.name);
+        }
+
         let mut prf = ProfileBuilder::default();
         prf.length(seq.length);
         prf.name(seq.name.clone());
@@ -1477,6 +1481,17 @@ mod tests {
             assert!(prf.fwd_lambda.is_finite(), "{letter}: {}", prf.fwd_lambda);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn from_blosum_62_and_seq_rejects_an_empty_sequence() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">empty\n")?;
+
+        let Err(err) = Profile::from_blosum_62_and_seq(&seq) else {
+            panic!("an empty sequence was accepted");
+        };
+        assert_eq!(err.to_string(), "sequence \"empty\" has no residues");
         Ok(())
     }
 }
