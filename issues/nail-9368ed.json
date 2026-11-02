@@ -3,20 +3,20 @@
   "title": "The Cargo.toml metadata of both crates is thin",
   "body": "crates.io shows what the two `Cargo.toml` files say, and they say little:\n\n- nail's description reads \"nail is an alignment inference tool\".\n- Neither crate sets `rust-version`, `keywords` or `categories`.\n- nail's `exclude = [\"fixtures/\"]` matches nothing, because the fixtures live at the workspace root.\n\n## Proposal\n\n- Give nail a description that says what it does.\n- Set `categories`. `science::bioinformatics::sequence-analysis` looks right, but I have not checked that crates.io lists it.\n- Set `rust-version` to a version both crates build with.\n- Drop the `exclude`.",
   "type": "chore",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T22:53:26.417455136Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:26:27.75110667Z",
-  "updated_at": "2026-11-02T22:39:59.465522928Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T22:39:59.47555341Z",
+  "closed_at": "2026-11-02T22:39:59.47555341Z",
+  "close_reason": "Both Cargo.toml files carry rust-version, keywords and a category; nail has a real description and no exclude. Floors verified by building with 1.87 and 1.88, see note. Committed on dev.",
+  "resolution": "done",
   "notes": [
     {
       "id": "37b12da6",
@@ -32,6 +32,9 @@
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "06bd45c",
+      "branch": "dev"
+    }
   }
 }
