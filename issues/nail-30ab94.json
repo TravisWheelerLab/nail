@@ -1,0 +1,28 @@
+{
+  "id": "nail-30ab94",
+  "title": "The progressive seeding error is spelled \"progessive\"",
+  "body": "`seed` in `nail/src/search.rs` wraps a failed `--seed-mode prog` run with the context `progessive seeding failed`. The word is missing an r. The user sees it as the first line of the error.\n\n## Proposal\n\nSpell it `progressive`.",
+  "type": "chore",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T20:00:10.91358529Z",
+  "updated_at": "2026-11-02T20:00:10.91358529Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "ec3d343",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
