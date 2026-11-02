@@ -1,0 +1,28 @@
+{
+  "id": "nail-864df3",
+  "title": "`nail search` leaves its `tmp-nail` directory behind after every run",
+  "body": "Without `--tmp-dir`, nail creates `./tmp-nail/<unix time in ns>/` (nail/src/args.rs) and writes the mmseqs dbs and `seeds.tsv` there. Nothing in nail deletes that directory at the end of a run. A survey of `dev` on 2026-11-02 found nine left after a few runs. On a large search they hold the prefilter and align dbs and the seeds file, which can be very large.\n\n## Proposal\n\nnail deletes a tmp directory it created once the run succeeds. A directory the user named with `--tmp-dir` stays.\n\n## Open\n\n- whether a failed run keeps its directory for debugging\n- whether a `--keep-tmp` flag is wanted",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:25:19.61673515Z",
+  "updated_at": "2026-11-02T18:25:19.61673515Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
