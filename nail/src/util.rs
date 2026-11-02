@@ -42,22 +42,17 @@ pub fn burn(dur: std::time::Duration) {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FileFormat {
     Fasta,
-    Stockholm,
     Hmm,
-    #[default]
-    Unset,
 }
 
 impl Display for FileFormat {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FileFormat::Fasta => write!(f, "Fasta"),
-            FileFormat::Stockholm => write!(f, "Stockholm"),
             FileFormat::Hmm => write!(f, "HMM"),
-            FileFormat::Unset => write!(f, "Unset"),
         }
     }
 }
@@ -102,8 +97,6 @@ fn guess_query_format(mut reader: impl BufRead) -> anyhow::Result<Option<FileFor
 
     if first_line.starts_with('>') {
         Ok(Some(FileFormat::Fasta))
-    } else if first_line.starts_with("# STOCKHOLM") {
-        Ok(Some(FileFormat::Stockholm))
     } else if first_line.starts_with("HMMER") {
         Ok(Some(FileFormat::Hmm))
     } else {
@@ -247,7 +240,6 @@ mod tests {
     #[test]
     fn guess_query_format_reads_each_format_from_its_first_line() -> anyhow::Result<()> {
         assert_eq!(guess(">seq\nACDE\n")?, Some(FileFormat::Fasta));
-        assert_eq!(guess("# STOCKHOLM 1.0\n")?, Some(FileFormat::Stockholm));
         assert_eq!(guess("HMMER3/f [3.4 | Aug 2023]\n")?, Some(FileFormat::Hmm));
         Ok(())
     }

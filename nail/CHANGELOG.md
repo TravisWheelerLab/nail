@@ -70,8 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - removed mods `io::database`, `io::impl_rayon`, with struct `Database`, trait `RecordParser` and their helpers
 - removed structs `FastaParser`, `P7HmmParser`; their parsing moved to `Sequence::from_fasta()` and `Profile::from_p7hmm()` in libnail
 - removed trait `io::ByteBufferExt`
+- removed variants `Stockholm`, `Unset` from enum `util::FileFormat`, and its `Default` derive
 
 ### Fixed
+- fixed `nail search` panicking on a Stockholm query; it now reports that it can't guess the file format
 - fixed the `-s` runtime tree printing a time whose fraction rounds up to a whole second as `.100`; the carry now goes into the whole seconds
 - fixed `nail search` panicking on a query file that holds only blank lines, or whose first line is not a known format header and is shorter than 11 bytes; blank lines before the first record are now skipped, as HMMER does
 - fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)

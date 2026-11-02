@@ -64,9 +64,6 @@ pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
                 .context("failed to parse query hmm")?;
             Ok(Queries::Profile(Arc::new(profiles)))
         }
-        _ => {
-            panic!()
-        }
     }
 }
 
