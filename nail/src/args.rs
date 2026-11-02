@@ -332,9 +332,9 @@ pub enum SeedsFormat {
 
 #[derive(Default, Clone, Copy, Debug, ValueEnum)]
 pub enum TableFormat {
+    #[default]
     #[value(alias = "0")]
     Nail,
-    #[default]
     #[value(alias = "1")]
     Blast,
 }
