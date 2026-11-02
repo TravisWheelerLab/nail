@@ -289,12 +289,12 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     }
 
     if let Some(kind) = args.expert_args.cutoff_kind() {
-        println!(
+        eprintln!(
             "{RED}warning: {BOLD}{}{RESET}{RED} applies per-domain {} thresholds to search results{RESET}",
             kind.flag(),
             kind.name()
         );
-        println!("{RED}         If the thresholds were calibrated against HMMER, use caution when applying them to nail results{RESET}");
+        eprintln!("{RED}         If the thresholds were calibrated against HMMER, use caution when applying them to nail results{RESET}");
     }
 
     let (mut pipeline, build_time) = timed_step("building pipeline", || {

@@ -473,12 +473,12 @@ impl Stats {
         use crate::util::term::*;
         if let Some(first) = recs.first() {
             if first.1 == args.seed_args.max_seqs as u64 {
-                println!();
-                println!(
+                eprintln!();
+                eprintln!(
                 "{RED}warning{RESET}: one or more queries saturated the mmseqs {YELLOW}--max-seqs{RESET} limit of {YELLOW}{}{RESET}",
                 args.seed_args.max_seqs
             );
-                println!("         for a full report, view the file: {YELLOW}{path:?}{RESET}",);
+                eprintln!("         for a full report, view the file: {YELLOW}{path:?}{RESET}",);
             }
         }
 

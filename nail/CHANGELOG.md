@@ -89,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed three typos in the `nail search` help text; `-a` and `-f` wrote `ɓ` for β, `-S` wrote "taret", and `--seed-mode` wrote `prog-f` without its `--`
 - fixed the `nail search` help for CLI param `--mmseqs-max-seqs`, which showed only the `--seed-mode prog` default; it now states the default for each seed mode
 - fixed `nail search` writing a raw cursor-up escape code before each `done` progress line when stdout is not a terminal; the code is written only to a terminal
+- fixed the `--cut-*` per-domain warning, the `--max-seqs` saturation warning and the report nail prints when an MMseqs2 command fails going to stdout; they go to stderr
 - fixed the error for an MMseqs2 binary that cannot be run, which said mmseqs2 was not on the system path whatever `--mmseqs-path` held; it now names the path, and mentions the system path only for a bare name
 
 ## [0.7.1] - 2026-7-31

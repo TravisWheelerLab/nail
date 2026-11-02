@@ -134,9 +134,9 @@ impl CommandExt for Command {
                 let stderr = std::str::from_utf8(&output.stderr)
                     .context("failed to convert sdterr to UTF8")?;
 
-                println!("command:\n{self:?}\n");
-                println!("stdout:\n{stdout}\n");
-                println!("stderr:\n{stderr}\n");
+                eprintln!("command:\n{self:?}\n");
+                eprintln!("stdout:\n{stdout}\n");
+                eprintln!("stderr:\n{stderr}\n");
                 Err(CommandExitStatusError.into())
             }
         }
