@@ -3,7 +3,7 @@
   "title": "`nail search` leaves its `tmp-nail` directory behind after every run",
   "body": "Without `--tmp-dir`, nail creates `./tmp-nail/<unix time in ns>/` (nail/src/args.rs) and writes the mmseqs dbs and `seeds.tsv` there. Nothing in nail deletes that directory at the end of a run. A survey of `dev` on 2026-11-02 found nine left after a few runs. On a large search they hold the prefilter and align dbs and the seeds file, which can be very large.\n\n## Proposal\n\nnail deletes a tmp directory it created once the run succeeds. A directory the user named with `--tmp-dir` stays.\n\n## Open\n\n- whether a failed run keeps its directory for debugging\n- whether a `--keep-tmp` flag is wanted",
   "type": "bug",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [],
   "parent": null,
@@ -13,16 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:19.61673515Z",
-  "updated_at": "2026-11-02T18:25:19.61673515Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T19:16:17.781275496Z",
+  "closed_at": "2026-11-02T19:16:17.781275496Z",
+  "close_reason": "Not a bug. Jack: leaving the tmp-nail directory behind is intentional. The directory holds the mmseqs dbs, seeds.tsv and max-seqs-report.txt, which the --max-seqs saturation warning points the user at.",
+  "resolution": "dropped",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "1721747",
+      "branch": "dev"
+    }
   }
 }
