@@ -540,7 +540,9 @@ pub struct DevArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct SeedArgs {
-    /// (MMseqs2 prefilter) k-mer length (0: automatically set to optimum)
+    /// (MMseqs2 prefilter) The kmer length that the MMseqs2 prefilter uses.
+    ///
+    /// MMseqs2 -h output: k-mer length (0: automatically set to optimum)
     #[arg(
         long = "mmseqs-k",
         default_value_t = 6usize,
@@ -549,7 +551,9 @@ pub struct SeedArgs {
     )]
     pub k: usize,
 
-    /// (MMseqs2 prefilter) Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
+    /// (MMseqs2 prefilter) The sensitivity of the MMseqs2 prefilter.
+    ///
+    /// MMseqs2 -h output: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
     #[arg(
         long = "mmseqs-s",
         default_value_t = 10.0,
@@ -558,9 +562,9 @@ pub struct SeedArgs {
     )]
     pub s: f32,
 
-    /// (MMseqs2 prefilter): Maximum results per query sequence allowed to pass the prefilter
+    /// (MMseqs2 prefilter): Limit the number of prefilter results per query.
     ///
-    ///
+    /// MMseqs2 -h output: Maximum results per query sequence allowed to pass the prefilter
     #[arg(
         long = "mmseqs-max-seqs",
         default_value_t = 2147483647usize,
@@ -587,8 +591,7 @@ pub struct SeedArgs {
     /// How nail will produce alignment seeds
     ///
     ///   static|0: run the MMseqs2 prefilter, then run MMseqs2 align on the entire prefilter results
-    ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following
-    ///             parameterization of --prog-n and --prog-f
+    ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following parameterization of --prog-n and --prog-f
     #[arg(
         long,
         default_value = "prog",
