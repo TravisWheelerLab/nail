@@ -3,26 +3,29 @@
   "title": "The `--mmseqs-max-seqs` help omits the default for static seeding",
   "body": "`--mmseqs-max-seqs` takes its default from `--seed-mode` through two `default_value_if` calls in nail/src/args.rs: 300 for `static` and 2147483647 for `prog`. `nail search --help` shows only 2147483647, the default for `prog`, which is the default seed mode. A survey of `dev` on 2026-11-02 saw 300 in the `-s` output of a static run.\n\n## Proposal\n\nThe help text states both defaults.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T19:06:42.384248586Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:25:30.212244694Z",
-  "updated_at": "2026-11-02T18:51:42.384248586Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T18:51:59.534326247Z",
+  "closed_at": "2026-11-02T18:51:59.534326247Z",
+  "close_reason": "The --mmseqs-max-seqs doc comment states both defaults and hide_default_value stops clap printing the prog one. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "7e8ef66",
+      "branch": "dev"
+    }
   }
 }
