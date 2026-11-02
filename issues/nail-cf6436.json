@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T18:54:49.371923849Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:25:30.23304264Z",
-  "updated_at": "2026-11-02T18:39:49.371923849Z",
+  "updated_at": "2026-11-02T18:40:06.902601255Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "d92d30b4",
+      "at": "2026-11-02T18:40:06.902600415Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "The fourth claim is wrong. clap prints `[default: 10]` under `--mmseqs-s`, so the help does state the default. The scale text stops at 7.5 and does not place 10 on it; nobody asked for that.",
+      "commit": "111c843",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
