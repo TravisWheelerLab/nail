@@ -3,26 +3,29 @@
   "title": "Should the single-letter `nail search` options get long names?",
   "body": "The pipeline and expert options of `nail search` take single letters only: `-A`, `-B`, `-G`, `-a`, `-f`, `-S`, `-C`, `-F`, `-E` and `-Z`. Two other pairs are easy to mix up. `-s` prints summary stats, and `--mmseqs-s` sets mmseqs sensitivity. `-x` writes alignments to stdout, and `-X` allows overwriting files.\n\n## Options\n\n- Add long names as aliases, such as `--alpha` for `-A`. This breaks nothing.\n- Rename `-x` to a long flag. This breaks scripts that use `-x`.\n- Leave the flags as they are.\n\nI lean to adding long aliases now and leaving `-x` alone.",
   "type": "decision",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [],
   "parent": null,
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/69ba1bc3",
-  "lease_expires": "2026-11-02T23:00:56.557278699Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:26:27.740122244Z",
-  "updated_at": "2026-11-02T22:45:56.557278699Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-02T22:46:55.069647127Z",
+  "closed_at": "2026-11-02T22:46:55.069647127Z",
+  "close_reason": "Twelve long names added in nail/src/args.rs as aliases; -x left alone. Names chosen by Jack. Committed on dev.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "170dc79",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "dcf8896",
+      "branch": "dev"
+    }
   }
 }
