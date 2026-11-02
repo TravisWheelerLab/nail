@@ -22,13 +22,16 @@ impl Seeds {
         query_position: FieldToPosition,
         target_position: FieldToPosition,
     ) -> anyhow::Result<Self> {
-        let file = BufReader::new(File::open(path)?);
+        let path = path.as_ref();
+        let file = File::open(path)
+            .with_context(|| format!("failed to open seeds file: {}", path.display()))?;
+        let file = BufReader::new(file);
 
-        if let Some(max) = max_seeds {
-            Self::new_max(file, max, query_position, target_position)
-        } else {
-            Self::new(file, query_position, target_position)
-        }
+        let seeds = match max_seeds {
+            Some(max) => Self::new_max(file, max, query_position, target_position),
+            None => Self::new(file, query_position, target_position),
+        };
+        seeds.with_context(|| format!("failed to read seeds file: {}", path.display()))
     }
 
     fn new<R: BufRead>(

@@ -80,7 +80,14 @@ pub fn guess_query_format_from_query_file(
         query_path.as_ref().to_string_lossy()
     ))?;
 
-    match guess_query_format(BufReader::new(file))? {
+    let format = guess_query_format(BufReader::new(file)).with_context(|| {
+        format!(
+            "failed to read query file: {}",
+            query_path.as_ref().to_string_lossy()
+        )
+    })?;
+
+    match format {
         Some(format) => Ok(format),
         None => Err(UnrecognizedFileFormatError {
             path: query_path.as_ref().to_string_lossy().to_string(),

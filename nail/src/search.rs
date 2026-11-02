@@ -139,7 +139,11 @@ pub fn seed(
             if let (Some(path), SeedsFormat::Names) =
                 (&args.io_args.seeds_output_path, args.io_args.seeds_format)
             {
-                let positional = BufReader::new(File::open(positional_seeds_path(args)?)?);
+                let positional_path = positional_seeds_path(args)?;
+                let positional = File::open(&positional_path).with_context(|| {
+                    format!("failed to open seeds file: {}", positional_path.display())
+                })?;
+                let positional = BufReader::new(positional);
                 write_named_seeds(
                     positional,
                     path.open(args.io_args.allow_overwrite)?,
