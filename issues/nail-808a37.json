@@ -1,0 +1,28 @@
+{
+  "id": "nail-808a37",
+  "title": "Should the dev subcommand and dev flags ship in release builds?",
+  "body": "nail/src/args.rs defines developer tooling that ships in every release binary:\n\n- a `dev` subcommand with `play`, `search` and `mx`\n- dev flags `--full-dp`, `--bit-p`, `--f32-p` and `--f64-p`, and `--mmseqs-comp-bias-corr`\n- a `-hz` case in `handle_clap_error` that prints a different help layout\n\n## Options\n\n- Put them behind a cargo feature named `dev`, so release builds leave them out.\n- Remove the ones nobody uses any more.\n- Leave them as they are.\n\nI have no lean without knowing which of these Jack still uses.",
+  "type": "decision",
+  "status": "open",
+  "priority": 4,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:26:13.84297117Z",
+  "updated_at": "2026-11-02T18:26:13.84297117Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
