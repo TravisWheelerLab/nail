@@ -1,0 +1,28 @@
+{
+  "id": "nail-196b9d",
+  "title": "The pipeline is restructured for simplicity and flexibility",
+  "body": "The search pipeline in `nail/src/pipeline/` and the alignment loop in `nail/src/search.rs` are to be restructured for simplicity and for more flexibility in what a stage can do with its results. Jack asked for this issue on 2026-11-02 while rejecting two designs for per-query sorting of `results.tbl` on nail-06b3e4; both needed more machinery than the current output stage should carry. No design work has been done yet. This is future work.",
+  "type": "feature",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T22:31:26.58631812Z",
+  "updated_at": "2026-11-02T22:31:26.58631812Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "1711982",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
