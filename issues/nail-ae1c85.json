@@ -1,0 +1,28 @@
+{
+  "id": "nail-ae1c85",
+  "title": "A malformed `--seeds` line panics or fails without naming the file or line",
+  "body": "`Seeds::from_path` (nail/src/io/seeds.rs) reads a seeds file with one of two functions. `Seeds::new`, used without `--max-seeds`, indexes `tokens[0]` through `tokens[7]` with no check of the column count. `Seeds::new_max` checks the count, but its errors call the file \"mmseqs align tsv\". Both parse the numeric columns with a bare `parse()?`. The same functions read the file `mmseqs convertalis` writes, so a message has to fit both sources.\n\nThe input survey on nail-d551f7 ran these against the release binary, except the last row, which was read from the code:\n\n| Line in the `--seeds` file | What the user sees |\n|---|---|\n| fewer than 8 columns, no `--max-seeds` | `index out of bounds: the len is 4 but the index is 4` |\n| a blank line, a trailing one included | `index out of bounds: the len is 0 but the index is 0` |\n| a non-number in columns 3 to 8 | `error: invalid digit found in string` |\n| wrong column count, with `--max-seeds` | `unexpected line format in mmseqs align tsv` |\n| unsorted file, with `--max-seeds` | `unexpected sorting of mmseqs align tsv` |\n\n## Proposal\n\nBoth readers check the column count. Each error names the file, the line number and the column.\n\n## Open\n\n- whether a blank line is skipped or is an error",
+  "type": "bug",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-02T18:24:40.568804906Z",
+  "updated_at": "2026-11-02T18:24:40.568804906Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "170dc79",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
