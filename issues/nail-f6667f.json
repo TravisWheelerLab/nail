@@ -13,11 +13,20 @@
   "lease_expires": "2026-11-02T20:16:49.62521417Z",
   "defer_until": null,
   "created_at": "2026-11-02T18:24:57.636513367Z",
-  "updated_at": "2026-11-02T20:01:49.62521417Z",
+  "updated_at": "2026-11-02T20:52:38.772401664Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "a15b285d",
+      "at": "2026-11-02T20:52:38.772400784Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "Two rows of the table no longer hold on `dev`. A last record with no final newline, and a header-only last record, both run clean at `170dc79`, and `hmmsearch` reads each as two targets. `dev` moved to `libsail` 0.4.2 after the survey, and the `no newline in FASTA record` bail in `Sequence::from_fasta` is now unreachable from a file as far as I can tell. That answers the open question: HMMER accepts both.",
+      "commit": "93f2da9",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
