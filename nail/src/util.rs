@@ -216,10 +216,16 @@ impl<P: AsRef<Path>> PathExt for P {
 }
 
 pub fn check_mmseqs_installed<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
-    Command::new(path.as_ref())
-        .arg("-h")
-        .run()
-        .context("mmseqs2 does not appear to be in the system path")
+    let path = path.as_ref();
+    let is_bare_name = path.components().count() == 1;
+    let context = match is_bare_name {
+        true => format!(
+            "failed to run MMseqs2 as `{}`; it does not appear to be on the system path",
+            path.display()
+        ),
+        false => format!("failed to run MMseqs2 at `{}`", path.display()),
+    };
+    Command::new(path).arg("-h").run().context(context)
 }
 
 pub fn set_threads(num_threads: usize) -> anyhow::Result<()> {
