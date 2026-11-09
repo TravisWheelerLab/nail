@@ -13,11 +13,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-02T18:26:13.84297117Z",
-  "updated_at": "2026-11-02T18:26:13.84297117Z",
+  "updated_at": "2026-11-09T23:27:45.268667813Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "739079a0",
+      "at": "2026-11-09T23:27:45.268667223Z",
+      "author": "Jack Roddy/69ba1bc3",
+      "text": "What ships today, read from `nail/src/args.rs`, `main.rs` and `dev.rs` at `dcf8896`. All of it is already `hide = true`, so `--help` shows none of it.\n\n| Item | State |\n|---|---|\n| `dev play` | an empty function; parses its args and returns |\n| `dev search` | the search loop without summary stats or progress lines; it has needed every change the real loop had |\n| `dev mx` | about 110 lines in `dev.rs` |\n| `--full-dp` | swaps in the full-DP cloud stage |\n| `--bit-p`, `--f32-p`, `--f64-p` | set libnail's output precision statics in `SearchArgs::validate` |\n| `--mmseqs-comp-bias-corr` | passed through to mmseqs |\n| `-hz` | an alternate help layout in `handle_clap_error` |\n\nA `dev` cargo feature would need a `cfg` on each of these and on the reads of `dev_args` in `validate` and `build_pipeline`. The open question is which of them Jack still runs; `dev play` is dead either way, and `dev search` costs the most to keep since it duplicates the search loop.",
+      "commit": "dcf8896",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "170dc79",
