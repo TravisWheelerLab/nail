@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
 ### Added
 - added methods `Sequence::from_fasta()`, `Profile::from_p7hmm()`
 - added struct `Cutoff`
@@ -28,8 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Profile::serialize()` and `Profile::deserialize()` now carry the cutoffs
 - renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names
 - `Profile::from_blosum_62_and_seq()` sets tau to `2.33 - 1.34 ln(L)`, a fit to `hmmbuild --singlemx`; the old closed form sat about 0.34 bits above hmmbuild's tau, so p-values for sequence queries are now about 21% smaller
-
 - `Sequence::from_fasta()` reports a residue outside the alphabet as a character, such as `'1'`, instead of a decimal byte
+
 ### Removed
 - removed method `Sequence::amino_from_fasta()`
 - removed dependency `seq_io`
