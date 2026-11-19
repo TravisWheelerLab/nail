@@ -282,7 +282,16 @@ pub fn mean_relative_entropy(a: &[Vec<f32>], b: &[f32]) -> f32 {
 pub fn relative_entropy(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b)
-        .map(|(p_a, p_b)| p_a * (p_a / p_b).log2())
+        // a zero probability adds nothing, as in Easel's
+        // esl_vec_FRelEntropy; computed, it is 0 * -inf,
+        // which is NaN
+        .map(|(p_a, p_b)| {
+            if *p_a == 0.0 {
+                0.0
+            } else {
+                p_a * (p_a / p_b).log2()
+            }
+        })
         .sum()
 }
 
@@ -382,5 +391,20 @@ pub mod debug {
             fs::create_dir(&dir)?;
         }
         Ok(dir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_entropy_skips_a_zero_probability() {
+        // each nonzero entry adds 0.5 * log2(0.5 / 0.25) = 0.5,
+        // and the zero entry adds nothing
+        let p = [0.5, 0.5, 0.0];
+        let q = [0.25, 0.25, 0.5];
+
+        assert_eq!(relative_entropy(&p, &q), 1.0);
     }
 }

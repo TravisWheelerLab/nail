@@ -1,14 +1,11 @@
 use rand::Rng;
 use rand_pcg::Lcg128Xsl64;
-use seq_io::fasta::{Reader, Record};
 use std::fmt::{Debug, Display, Formatter};
-use std::path::Path;
 
 use crate::alphabet::{
-    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, AMINO_SENTINEL, UTF8_SPACE,
-    UTF8_TO_DIGITAL_AMINO,
+    AMINO_BACKGROUND_FREQUENCIES, AMINO_INVERSE_MAP, AMINO_SENTINEL, UTF8_TO_DIGITAL_AMINO,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Result};
 use thiserror::Error;
 
 use super::Profile;
@@ -24,6 +21,32 @@ pub struct UnknownUtf8SequenceByteError {
 pub struct UnknownDigitalSequenceByteError {
     byte: u8,
 }
+
+/// The value in `UTF8_TO_DIGITAL_AMINO_TABLE` for a byte outside the alphabet.
+const UNKNOWN_UTF8_BYTE: u8 = 255;
+
+/// The digital code of each UTF8 byte, indexed by the byte.
+//
+// the same mapping as UTF8_TO_DIGITAL_AMINO, which a test
+// checks for every byte. from_fasta indexes this array in
+// place of the phf lookup, which took about 85% of its time
+const UTF8_TO_DIGITAL_AMINO_TABLE: [u8; 256] = {
+    // a byte's position here is its digital code; the
+    // gap at 20 is not a residue, so it stays unknown
+    const UPPER: &[u8; 28] = b"ACDEFGHIKLMNPQRSTVWY-BJZOUX*";
+
+    let mut table = [UNKNOWN_UTF8_BYTE; 256];
+    let mut code = 0;
+    while code < UPPER.len() {
+        let byte = UPPER[code];
+        if byte != b'-' {
+            table[byte as usize] = code as u8;
+            table[byte.to_ascii_lowercase() as usize] = code as u8;
+        }
+        code += 1;
+    }
+    table
+};
 
 /// This holds the both the "digital" data and string data of a biological sequence.
 #[derive(Default, PartialEq)]
@@ -87,67 +110,60 @@ impl Sequence {
         }
     }
 
-    pub fn amino_from_fasta<P: AsRef<Path>>(path: P) -> Result<Vec<Self>> {
-        let mut seqs: Vec<Self> = vec![];
+    /// Build a sequence from the bytes of one fasta record.
+    pub fn from_fasta(buf: &[u8]) -> anyhow::Result<Sequence> {
+        let header_newline_pos = match buf.iter().position(|&b| b == b'\n') {
+            Some(pos) => pos,
+            None => bail!("no newline in FASTA record"),
+        };
 
-        let mut reader = Reader::from_path(path).unwrap();
+        let header = buf[1..header_newline_pos].trim_ascii();
+        let sequence_bytes = &buf[(header_newline_pos + 1)..];
 
-        while let Some(record) = reader.next() {
-            let record = record.with_context(|| "failed to read fasta record")?;
-            let mut header_bytes = record.head().to_vec();
-            let first_space_idx = header_bytes.iter().position(|&b| b == UTF8_SPACE);
+        // the name ends at any whitespace, as easel's
+        // header_fasta() ends it, so a tab or the \r of a
+        // CRLF line never lands inside it
+        let name_end = header
+            .iter()
+            .position(|b| b.is_ascii_whitespace())
+            .unwrap_or(header.len());
+        let name = String::from_utf8(header[..name_end].to_vec())?;
 
-            let error_context: fn() -> &'static str =
-                || "failed to create String from fasta header bytes";
+        let details = match header[name_end..].trim_ascii_start() {
+            [] => None,
+            details => Some(String::from_utf8(details.to_vec())?),
+        };
 
-            let (name, details) = match first_space_idx {
-                Some(idx) => {
-                    let details_bytes = header_bytes.split_off(idx + 1);
-                    header_bytes.pop();
-                    (
-                        String::from_utf8(header_bytes).with_context(error_context)?,
-                        Some(String::from_utf8(details_bytes).with_context(error_context)?),
-                    )
-                }
-                None => (
-                    String::from_utf8(header_bytes).with_context(error_context)?,
-                    None,
-                ),
-            };
+        let mut utf8_bytes = Vec::with_capacity(sequence_bytes.len());
+        let mut digital_bytes = Vec::with_capacity(sequence_bytes.len());
 
-            // We want position 1 of the sequence to be at index 1, so we'll buffer with 255
-            let mut utf8_bytes: Vec<u8> = vec![255];
-            let mut digital_bytes: Vec<u8> = vec![255];
+        utf8_bytes.push(255);
+        digital_bytes.push(255);
 
-            for line in record.seq_lines() {
-                for utf8_byte in line {
-                    utf8_bytes.push(*utf8_byte);
-
-                    let digital_byte = match UTF8_TO_DIGITAL_AMINO.get(utf8_byte) {
-                        Some(b) => b,
-                        None => {
-                            return Err(UnknownUtf8SequenceByteError { byte: *utf8_byte }.into())
-                        }
-                    };
-                    digital_bytes.push(*digital_byte)
-                }
+        for &byte in sequence_bytes {
+            // \r is skipped with \n, so a CRLF file reads like an LF one
+            if byte == b'\n' || byte == b'\r' {
+                continue;
             }
 
-            // we put a buffer on the end for backward edge cases
-            digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
+            let digital_byte = UTF8_TO_DIGITAL_AMINO_TABLE[byte as usize];
+            if digital_byte == UNKNOWN_UTF8_BYTE {
+                bail!("{:?} is not in the amino acid alphabet", char::from(byte));
+            }
 
-            utf8_bytes.shrink_to_fit();
-            digital_bytes.shrink_to_fit();
-
-            seqs.push(Sequence {
-                name,
-                details,
-                length: digital_bytes.len() - 2,
-                digital_bytes,
-                utf8_bytes,
-            });
+            utf8_bytes.push(byte);
+            digital_bytes.push(digital_byte);
         }
-        Ok(seqs)
+
+        digital_bytes.push(Profile::NON_RESIDUE_IDX as u8);
+
+        Ok(Sequence {
+            name,
+            details,
+            length: utf8_bytes.len() - 1,
+            digital_bytes,
+            utf8_bytes,
+        })
     }
 
     pub fn from_digital(bytes: &[u8]) -> Result<Self> {
@@ -242,7 +258,81 @@ mod tests {
     use rand::SeedableRng;
     use rand_pcg::Pcg64;
 
-    use crate::{alphabet::AMINO_BACKGROUND_FREQUENCIES, structs::Sequence};
+    use super::{UNKNOWN_UTF8_BYTE, UTF8_TO_DIGITAL_AMINO_TABLE};
+    use crate::{
+        alphabet::{AMINO_BACKGROUND_FREQUENCIES, UTF8_TO_DIGITAL_AMINO},
+        structs::Sequence,
+    };
+
+    #[test]
+    fn utf8_to_digital_amino_table_matches_the_map() {
+        for byte in 0..=255u8 {
+            let expected = match UTF8_TO_DIGITAL_AMINO.get(&byte) {
+                Some(code) => *code,
+                None => UNKNOWN_UTF8_BYTE,
+            };
+
+            assert_eq!(
+                UTF8_TO_DIGITAL_AMINO_TABLE[byte as usize], expected,
+                "byte {byte}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_fasta_rejects_a_byte_outside_the_alphabet() {
+        let Err(err) = Sequence::from_fasta(b">abc\nAC-DE\n") else {
+            panic!("a '-' was read as a residue");
+        };
+        assert_eq!(err.to_string(), "'-' is not in the amino acid alphabet");
+    }
+
+    #[test]
+    fn from_fasta_reads_a_stop_codon_as_the_nonresidue_code() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">abc\nAC*DE*\n")?;
+
+        // A, C, *, D, E, * are 0, 1, 27, 2, 3, 27, between
+        // the leading 255 and the trailing nonresidue code
+        assert_eq!(seq.length, 6);
+        assert_eq!(seq.utf8_bytes[1..], *b"AC*DE*");
+        assert_eq!(seq.digital_bytes, [255, 0, 1, 27, 2, 3, 27, 27]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_fasta_reads_crlf_like_lf() -> anyhow::Result<()> {
+        let lf = Sequence::from_fasta(b">abc some desc\nACDE\nFGHI\n")?;
+        let crlf = Sequence::from_fasta(b">abc some desc\r\nACDE\r\nFGHI\r\n")?;
+
+        assert_eq!(crlf.name, "abc");
+        assert_eq!(crlf.details.as_deref(), Some("some desc"));
+        assert_eq!(crlf.length, 8);
+        assert_eq!(crlf.utf8_bytes, lf.utf8_bytes);
+        assert_eq!(crlf.digital_bytes, lf.digital_bytes);
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_fasta_reads_a_crlf_header_with_no_details() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">abc\r\nACDE\r\n")?;
+
+        assert_eq!(seq.name, "abc");
+        assert_eq!(seq.details, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_fasta_ends_the_name_at_a_tab() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">abc\tsome desc\nACDE\n")?;
+
+        assert_eq!(seq.name, "abc");
+        assert_eq!(seq.details.as_deref(), Some("some desc"));
+
+        Ok(())
+    }
 
     #[test]
     fn test_random_amino() -> anyhow::Result<()> {

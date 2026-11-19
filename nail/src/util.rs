@@ -10,6 +10,8 @@ use thiserror::Error;
 
 #[allow(dead_code)]
 pub mod term {
+    use std::io::IsTerminal;
+
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
     pub const UNDERLINE: &str = "\x1b[4m";
@@ -32,6 +34,13 @@ pub mod term {
 
     pub const BG_BLACK: &str = "\x1b[40m";
     pub const BG_BRIGHT_BLACK: &str = "\x1b[100m";
+
+    pub fn cursor_up() -> &'static str {
+        match std::io::stdout().is_terminal() {
+            true => "\x1b[A",
+            false => "",
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -42,22 +51,17 @@ pub fn burn(dur: std::time::Duration) {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FileFormat {
     Fasta,
-    Stockholm,
     Hmm,
-    #[default]
-    Unset,
 }
 
 impl Display for FileFormat {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FileFormat::Fasta => write!(f, "Fasta"),
-            FileFormat::Stockholm => write!(f, "Stockholm"),
             FileFormat::Hmm => write!(f, "HMM"),
-            FileFormat::Unset => write!(f, "Unset"),
         }
     }
 }
@@ -76,21 +80,43 @@ pub fn guess_query_format_from_query_file(
         query_path.as_ref().to_string_lossy()
     ))?;
 
-    let mut reader = BufReader::new(file);
-    let mut first_line = String::new();
-    reader.read_line(&mut first_line)?;
+    let format = guess_query_format(BufReader::new(file)).with_context(|| {
+        format!(
+            "failed to read query file: {}",
+            query_path.as_ref().to_string_lossy()
+        )
+    })?;
 
-    if &first_line[0..1] == ">" {
-        Ok(FileFormat::Fasta)
-    } else if &first_line[0..11] == "# STOCKHOLM" {
-        Ok(FileFormat::Stockholm)
-    } else if &first_line[0..5] == "HMMER" {
-        Ok(FileFormat::Hmm)
-    } else {
-        Err(UnrecognizedFileFormatError {
+    match format {
+        Some(format) => Ok(format),
+        None => Err(UnrecognizedFileFormatError {
             path: query_path.as_ref().to_string_lossy().to_string(),
         }
-        .into())
+        .into()),
+    }
+}
+
+/// The format named by the first line that is not blank, if any.
+fn guess_query_format(mut reader: impl BufRead) -> anyhow::Result<Option<FileFormat>> {
+    let mut first_line = String::new();
+
+    // HMMER reads a file with blank lines before its
+    // first record, so the format comes from the
+    // first line that holds anything
+    loop {
+        first_line.clear();
+        let n_read = reader.read_line(&mut first_line)?;
+        if n_read == 0 || !first_line.trim().is_empty() {
+            break;
+        }
+    }
+
+    if first_line.starts_with('>') {
+        Ok(Some(FileFormat::Fasta))
+    } else if first_line.starts_with("HMMER") {
+        Ok(Some(FileFormat::Hmm))
+    } else {
+        Ok(None)
     }
 }
 
@@ -115,9 +141,9 @@ impl CommandExt for Command {
                 let stderr = std::str::from_utf8(&output.stderr)
                     .context("failed to convert sdterr to UTF8")?;
 
-                println!("command:\n{self:?}\n");
-                println!("stdout:\n{stdout}\n");
-                println!("stderr:\n{stderr}\n");
+                eprintln!("command:\n{self:?}\n");
+                eprintln!("stdout:\n{stdout}\n");
+                eprintln!("stderr:\n{stderr}\n");
                 Err(CommandExitStatusError.into())
             }
         }
@@ -206,10 +232,16 @@ impl<P: AsRef<Path>> PathExt for P {
 }
 
 pub fn check_mmseqs_installed<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
-    Command::new(path.as_ref())
-        .arg("-h")
-        .run()
-        .context("mmseqs2 does not appear to be in the system path")
+    let path = path.as_ref();
+    let is_bare_name = path.components().count() == 1;
+    let context = match is_bare_name {
+        true => format!(
+            "failed to run MMseqs2 as `{}`; it does not appear to be on the system path",
+            path.display()
+        ),
+        false => format!("failed to run MMseqs2 at `{}`", path.display()),
+    };
+    Command::new(path).arg("-h").run().context(context)
 }
 
 pub fn set_threads(num_threads: usize) -> anyhow::Result<()> {
@@ -217,4 +249,41 @@ pub fn set_threads(num_threads: usize) -> anyhow::Result<()> {
         .num_threads(num_threads)
         .build_global()
         .context("failed to build rayon global threadpool")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn guess(text: &str) -> anyhow::Result<Option<FileFormat>> {
+        guess_query_format(text.as_bytes())
+    }
+
+    #[test]
+    fn guess_query_format_reads_each_format_from_its_first_line() -> anyhow::Result<()> {
+        assert_eq!(guess(">seq\nACDE\n")?, Some(FileFormat::Fasta));
+        assert_eq!(guess("HMMER3/f [3.4 | Aug 2023]\n")?, Some(FileFormat::Hmm));
+        Ok(())
+    }
+
+    #[test]
+    fn guess_query_format_skips_leading_blank_lines() -> anyhow::Result<()> {
+        assert_eq!(
+            guess("\nHMMER3/f [3.4 | Aug 2023]\n")?,
+            Some(FileFormat::Hmm)
+        );
+        assert_eq!(guess("\n \t\n\r\n>seq\nACDE\n")?, Some(FileFormat::Fasta));
+        Ok(())
+    }
+
+    #[test]
+    fn guess_query_format_finds_no_format_in_a_short_or_empty_file() -> anyhow::Result<()> {
+        // each of these panicked when the first line
+        // was sliced at fixed lengths
+        assert_eq!(guess("")?, None);
+        assert_eq!(guess("\n\n")?, None);
+        assert_eq!(guess("HMM\n")?, None);
+        assert_eq!(guess("#\n")?, None);
+        Ok(())
+    }
 }

@@ -1,11 +1,11 @@
 use std::{
     io::{IsTerminal, Write},
     path::PathBuf,
-    str::FromStr,
 };
 
 use anyhow::{anyhow, bail, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use libnail::structs::{profile::Cutoff, Profile};
 use regex::Regex;
 
 use crate::util::{term::*, PathExt};
@@ -50,15 +50,25 @@ pub struct SearchArgs {
     pub target_path: PathBuf,
 
     /// The number of threads that nail will use
-    #[arg(short = 't', default_value_t = 8usize, value_name = "N")]
+    #[arg(
+        short = 't',
+        long = "threads",
+        default_value_t = 8usize,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
+        value_name = "N"
+    )]
     pub num_threads: usize,
 
     /// Print out pipeline summary statistics
-    #[arg(short = 's', action)]
+    #[arg(short = 's', long = "summary", action)]
     pub print_summary_stats: bool,
 
     /// Don't write any tabular results, write alignments to stdout
-    #[arg(short = 'x', action)]
+    #[arg(
+        short = 'x',
+        action,
+        conflicts_with_all = ["tbl_results_path", "ali_results_path", "tbl_format"]
+    )]
     pub ali_to_stdout: bool,
 
     /// The path to the MMseqs2 binary that nail will use for seeding
@@ -89,21 +99,13 @@ pub struct SearchArgs {
 
 impl SearchArgs {
     pub fn validate(&mut self) -> anyhow::Result<()> {
-        if self.ali_to_stdout {
-            self.io_args.tbl_results_path = None
-        }
-
-        if self.pipeline_args.only_seed && self.io_args.seeds_output_path.is_none() {
-            self.io_args.seeds_output_path = Some(PathBuf::from_str("./seeds.tsv")?);
-        }
-
         match self.seed_args.seed_mode {
             SeedMode::Static => {
                 if self.seed_args.prog_n.is_some() {
-                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                    bail!("the argument '{YELLOW}--prog-n{RESET}' cannot be used without '{YELLOW}--seed-mode prog{RESET}'")
                 }
                 if self.seed_args.prog_f.is_some() {
-                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--prog-seed{RESET}'")
+                    bail!("the argument '{YELLOW}--prog-f{RESET}' cannot be used without '{YELLOW}--seed-mode prog{RESET}'")
                 }
             }
             SeedMode::Prog => {
@@ -158,7 +160,6 @@ impl SearchArgs {
             [
                 &self.io_args.ali_results_path,
                 &self.io_args.seeds_output_path,
-                &self.dev_args.stats_results_path,
             ]
             .into_iter()
             .try_for_each(|path| {
@@ -266,7 +267,10 @@ impl SearchArgs {
             " ├─ F: {}",
             self.pipeline_args.forward_pvalue_threshold
         )?;
-        writeln!(out, " ├─ E: {}", self.pipeline_args.e_value_threshold)?;
+        match self.expert_args.cutoff_kind() {
+            Some(kind) => writeln!(out, " ├─ cutoff: {}", kind.line())?,
+            None => writeln!(out, " ├─ E: {}", self.pipeline_args.e_value_threshold)?,
+        }
         writeln!(
             out,
             " └─ Z: {}",
@@ -280,7 +284,12 @@ impl SearchArgs {
 #[derive(Args, Debug, Clone, Default)]
 pub struct IoArgs {
     /// The file where tabular output will be written
-    #[arg(long = "tbl-out", default_value = "results.tbl", value_name = "PATH")]
+    #[arg(
+        long = "tbl-out",
+        default_value = "results.tbl",
+        default_value_if("ali_to_stdout", "true", None),
+        value_name = "PATH"
+    )]
     pub tbl_results_path: Option<PathBuf>,
 
     /// The file where alignment output will be written
@@ -292,7 +301,11 @@ pub struct IoArgs {
     pub seeds_input_path: Option<PathBuf>,
 
     /// The file where alignment seeds will be written
-    #[arg(long = "seeds-out", default_value = None, value_name = "PATH")]
+    #[arg(
+        long = "seeds-out",
+        default_value_if("only_seed", "true", "./seeds.tsv"),
+        value_name = "PATH"
+    )]
     pub seeds_output_path: Option<PathBuf>,
 
     /// The directory where intermediate files will be placed
@@ -310,13 +323,26 @@ pub struct IoArgs {
     /// Prefer profile accessions instead of names in output
     #[arg(long, action)]
     pub use_accession: bool,
+
+    /// How a seeds file names its queries and targets, for --seeds and --seeds-out
+    #[arg(long, default_value = "positions", value_name = "FMT")]
+    pub seeds_format: SeedsFormat,
+}
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum SeedsFormat {
+    /// Each record's position in its input file, counting from 0
+    #[default]
+    Positions,
+    /// Each record's name
+    Names,
 }
 
 #[derive(Default, Clone, Copy, Debug, ValueEnum)]
 pub enum TableFormat {
+    #[default]
     #[value(alias = "0")]
     Nail,
-    #[default]
     #[value(alias = "1")]
     Blast,
 }
@@ -324,83 +350,99 @@ pub enum TableFormat {
 #[derive(Args, Debug, Clone, Default)]
 pub struct PipelineArgs {
     /// (cloud search) local score pruning threshold
-    #[arg(
-        short = 'A',
-        default_value_t = 10.0,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// Cells are pruned when (S_cell < S_max - A), where S_cell is the cell
+    /// score, S_max is the maximum cell score along the anti-diagonal, and
+    /// A is the local pruning threshold parameter.
+    ///
+    /// Scores are in natural log space during dynamic programming, so with
+    /// A = 10, cells are pruned when they correspond to a ~20,000 fold
+    /// reduction in probability.
+    #[arg(short = 'A', long = "alpha", default_value_t = 10.0, value_name = "X")]
     pub alpha: f32,
 
     /// (cloud search) global score pruning threshold
-    #[arg(
-        short = 'B',
-        default_value_t = 16.0,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// Cells are pruned when (S_cell < S_global_max - B), where S_cell is the
+    /// cell score, S_global_max is the global maximum cell score computed
+    /// across all anti-diagonals, and B is the global score pruning threshold
+    /// parameter.
+    ///
+    /// Scores are in natural log space during dynamic programming, so with
+    /// B = 16, cells are pruned when they correspond to a ~9 million fold
+    /// reduction in probability
+    #[arg(short = 'B', long = "beta", default_value_t = 16.0, value_name = "X")]
     pub beta: f32,
 
     /// (cloud search) at minimum, compute N anti-diagonals
-    #[arg(
-        short = 'G',
-        default_value_t = 5,
-        value_name = "N",
-        verbatim_doc_comment
-    )]
+    #[arg(short = 'G', long = "gamma", default_value_t = 5, value_name = "N")]
     pub gamma: usize,
 
-    /// (cloud search) allow at most N attempts to recover disjoint clouds
+    /// (cloud search) make at most N cloud search attempts in total
+    ///
+    /// When the forward and backward clouds fail to intersect, nail restarts
+    /// cloud search using more permissive pruning parameters (α, β, γ). N
+    /// counts the first attempt too, so nail never restarts when N is 1. N
+    /// must be at least 1. The parameters are scaled according to the -f
+    /// argument (default: 0.5).
     #[arg(
         short = 'a',
+        long = "cloud-max-attempts",
         default_value_t = 5,
-        value_name = "N",
-        verbatim_doc_comment
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..),
+        value_name = "N"
     )]
     pub cloud_max_join_attempts: usize,
 
-    /// (cloud search) when cloud search fails, scale cloud search parameters (α, ɓ, γ) by 1.0 + X
+    /// (cloud search) when cloud search fails, scale cloud search parameters
+    /// (α, β, γ) by 1.0 + X
     #[arg(
         short = 'f',
+        long = "cloud-scale-factor",
         default_value_t = 0.5,
-        value_name = "X",
-        verbatim_doc_comment
+        value_name = "X"
     )]
     pub cloud_param_scale_factor: f32,
 
     /// (seeding filter) filter hits with P-value > X
-    #[arg(
-        short = 'S',
-        default_value_t = 1e-4,
-        value_name = "X",
-        verbatim_doc_comment
-    )]
+    ///
+    /// This filter works via a reasonable approximation of P-values for hits
+    /// produced by MMseqs2: E_align = S * Z, where S is the seed filter P-value
+    /// threshold, and Z is the number of target sequences in the search. The
+    /// call that nail internally makes to 'mmseqs align' is handed the parameter
+    /// '-e E_align'
+    #[arg(short = 'S', long = "seed-p", default_value_t = 1e-4, value_name = "X")]
     pub seed_pvalue_threshold: f64,
 
     /// (cloud search filter) filter hits with P-value > X
     #[arg(
         short = 'C',
+        long = "cloud-p",
         default_value_t = 1e-2,
-        value_name = "X",
-        verbatim_doc_comment
+        value_name = "X"
     )]
     pub cloud_pvalue_threshold: f64,
 
     /// (forward filter) filter hits with P-value > X
+    ///
+    /// The forward filter catches cases where the Forward score across the
+    /// entire merged cloud (after cloud search) produces a bad P-value. When
+    /// this happens, nail discards the search and doesn't compute Backward or
+    /// alignment trace recovery.
     #[arg(
         short = 'F',
+        long = "forward-p",
         default_value_t = 1e-4,
-        value_name = "X",
-        verbatim_doc_comment
+        value_name = "X"
     )]
     pub forward_pvalue_threshold: f64,
 
     /// (reporting filter) filter hits with E-value > X
     #[arg(
         short = 'E',
+        long = "e-value",
         default_value_t = 10.0,
-        value_name = "X",
-        verbatim_doc_comment
+        value_name = "X"
     )]
     pub e_value_threshold: f64,
 
@@ -409,23 +451,100 @@ pub struct PipelineArgs {
     pub only_seed: bool,
 }
 
+/// One of the three cutoffs a p7hmm file can give a profile.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CutoffKind {
+    Gathering,
+    Trusted,
+    Noise,
+}
+
+impl CutoffKind {
+    /// The CLI param that chooses this cutoff.
+    pub fn flag(&self) -> &'static str {
+        match self {
+            CutoffKind::Gathering => "--cut-ga",
+            CutoffKind::Trusted => "--cut-tc",
+            CutoffKind::Noise => "--cut-nc",
+        }
+    }
+
+    /// The name of this cutoff in prose.
+    pub fn name(&self) -> &'static str {
+        match self {
+            CutoffKind::Gathering => "gathering",
+            CutoffKind::Trusted => "trusted",
+            CutoffKind::Noise => "noise",
+        }
+    }
+
+    /// The p7hmm header line that holds this cutoff.
+    pub fn line(&self) -> &'static str {
+        match self {
+            CutoffKind::Gathering => "GA",
+            CutoffKind::Trusted => "TC",
+            CutoffKind::Noise => "NC",
+        }
+    }
+
+    /// This cutoff of a profile, if its p7hmm record has the line.
+    pub fn of(&self, prf: &Profile) -> Option<Cutoff> {
+        match self {
+            CutoffKind::Gathering => prf.gathering,
+            CutoffKind::Trusted => prf.trusted,
+            CutoffKind::Noise => prf.noise,
+        }
+    }
+}
+
 #[derive(Args, Debug, Clone, Default)]
 pub struct ExpertArgs {
     /// Override the number of comparisons used for E-value calculation
-    #[arg(short = 'Z', value_name = "N")]
+    ///
+    /// In the p7HMM alignment model, E-value computation is simply: E = P * Z,
+    /// where Z is the number of searches per query (i.e. the number of target
+    /// sequences). This flag can be useful when you want to pretend you're doing
+    /// a larger or smaller search.
+    #[arg(short = 'Z', long = "target-db-size", value_name = "N")]
     pub target_database_size: Option<usize>,
 
     /// Don't compute sequence composition bias score correction
     #[arg(long = "no-null2", action)]
     pub no_null_two: bool,
+
+    /// (reporting filter) filter hits that score below the domain value of
+    /// each profile's GA line, in place of -E
+    #[arg(long = "cut-ga", action, conflicts_with_all = ["e_value_threshold", "cut_tc", "cut_nc"])]
+    pub cut_ga: bool,
+
+    /// (reporting filter) filter hits that score below the domain value of
+    /// each profile's TC line, in place of -E
+    #[arg(long = "cut-tc", action, conflicts_with_all = ["e_value_threshold", "cut_ga", "cut_nc"])]
+    pub cut_tc: bool,
+
+    /// (reporting filter) filter hits that score below the domain value of
+    /// each profile's NC line, in place of -E
+    #[arg(long = "cut-nc", action, conflicts_with_all = ["e_value_threshold", "cut_ga", "cut_tc"])]
+    pub cut_nc: bool,
+}
+
+impl ExpertArgs {
+    /// The profile cutoff chosen in place of -E, if any.
+    pub fn cutoff_kind(&self) -> Option<CutoffKind> {
+        if self.cut_ga {
+            Some(CutoffKind::Gathering)
+        } else if self.cut_tc {
+            Some(CutoffKind::Trusted)
+        } else if self.cut_nc {
+            Some(CutoffKind::Noise)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct DevArgs {
-    /// Where to place stats output
-    #[arg(long, value_name = "PATH", hide = true)]
-    pub stats_results_path: Option<PathBuf>,
-
     /// Compute the full DP matrices
     #[arg(long, action, hide = true)]
     pub full_dp: bool,
@@ -445,7 +564,9 @@ pub struct DevArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct SeedArgs {
-    /// (MMseqs2 prefilter) k-mer length (0: automatically set to optimum)
+    /// (MMseqs2 prefilter) The kmer length that the MMseqs2 prefilter uses.
+    ///
+    /// MMseqs2 -h output: k-mer length (0: automatically set to optimum)
     #[arg(
         long = "mmseqs-k",
         default_value_t = 6usize,
@@ -454,7 +575,9 @@ pub struct SeedArgs {
     )]
     pub k: usize,
 
-    /// (MMseqs2 prefilter) Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
+    /// (MMseqs2 prefilter) The sensitivity of the MMseqs2 prefilter.
+    ///
+    /// MMseqs2 -h output: Sensitivity: 1.0 faster; 4.0 fast; 7.5 sensitive
     #[arg(
         long = "mmseqs-s",
         default_value_t = 10.0,
@@ -463,11 +586,14 @@ pub struct SeedArgs {
     )]
     pub s: f32,
 
-    /// (MMseqs2 prefilter): Maximum results per query sequence allowed to pass the prefilter
+    /// (MMseqs2 prefilter): Limit the number of prefilter results per query.
     ///
+    /// MMseqs2 -h output: Maximum results per query sequence allowed to pass the prefilter
     ///
+    /// Defaults to 300 under --seed-mode static and 2147483647 under --seed-mode prog
     #[arg(
         long = "mmseqs-max-seqs",
+        hide_default_value = true,
         default_value_t = 2147483647usize,
         default_value_if("seed_mode", "static", "300"),
         default_value_if("seed_mode", "prog", "2147483647"),
@@ -492,8 +618,7 @@ pub struct SeedArgs {
     /// How nail will produce alignment seeds
     ///
     ///   static|0: run the MMseqs2 prefilter, then run MMseqs2 align on the entire prefilter results
-    ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following
-    ///             parameterization of --prog-n and prog-f
+    ///     prog|1: run the MMseqs2 prefilter, then progressively run MMseqs2 align following parameterization of --prog-n and --prog-f
     #[arg(
         long,
         default_value = "prog",
@@ -615,5 +740,100 @@ pub fn print_help_summary_zebra(e: &clap::Error) {
 
     for (h, i) in headers.into_iter().zip(info.into_iter().skip(1)) {
         print!("{h}{i}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_cloud_join_attempts_is_rejected() {
+        let Err(err) = parse_search(&["-a", "0"]) else {
+            panic!("-a 0 was accepted");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn zero_threads_is_rejected() {
+        let Err(err) = parse_search(&["-t", "0"]) else {
+            panic!("-t 0 was accepted");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn ali_to_stdout_conflicts_with_tbl_out() {
+        let Err(err) = parse_search(&["-x", "--tbl-out", "x.tbl"]) else {
+            panic!("-x and --tbl-out were accepted together");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn ali_to_stdout_drops_the_tbl_out_default() -> anyhow::Result<()> {
+        let args = parse_search(&["-x"])?;
+        assert_eq!(args.io_args.tbl_results_path, None);
+
+        let args = parse_search(&[])?;
+        assert_eq!(
+            args.io_args.tbl_results_path,
+            Some(PathBuf::from("results.tbl"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn only_seed_defaults_the_seeds_output_path() -> anyhow::Result<()> {
+        let args = parse_search(&["--only-seed"])?;
+        assert_eq!(
+            args.io_args.seeds_output_path,
+            Some(PathBuf::from("./seeds.tsv"))
+        );
+
+        let args = parse_search(&[])?;
+        assert_eq!(args.io_args.seeds_output_path, None);
+        Ok(())
+    }
+
+    fn parse_search(args: &[&str]) -> Result<SearchArgs, clap::Error> {
+        let argv = ["nail", "search"]
+            .iter()
+            .chain(args)
+            .chain(&["q.hmm", "t.fa"]);
+        match NailCli::try_parse_from(argv)?.command {
+            NailSubCommands::Search(args) => Ok(args),
+            NailSubCommands::Dev(_) => panic!("nail search parsed as a dev command"),
+        }
+    }
+
+    #[test]
+    fn cut_ga_conflicts_with_e() {
+        let Err(err) = parse_search(&["--cut-ga", "-E", "1"]) else {
+            panic!("--cut-ga and -E were accepted together");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn two_cut_flags_conflict() {
+        let Err(err) = parse_search(&["--cut-ga", "--cut-tc"]) else {
+            panic!("--cut-ga and --cut-tc were accepted together");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn cutoff_kind_follows_the_cut_flag() -> anyhow::Result<()> {
+        let kind = |flags: &[&str]| -> anyhow::Result<Option<CutoffKind>> {
+            Ok(parse_search(flags)?.expert_args.cutoff_kind())
+        };
+
+        assert_eq!(kind(&[])?, None);
+        assert_eq!(kind(&["--cut-ga"])?, Some(CutoffKind::Gathering));
+        assert_eq!(kind(&["--cut-tc"])?, Some(CutoffKind::Trusted));
+        assert_eq!(kind(&["--cut-nc"])?, Some(CutoffKind::Noise));
+        Ok(())
     }
 }

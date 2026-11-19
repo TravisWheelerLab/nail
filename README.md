@@ -22,13 +22,13 @@ A few example input files may be found under the `fixtures/` directory at the ro
 
 ## Dependencies
 
-The `nail search` pipeline uses the `mmseqs search` tool as an alignment prefilter.
+The `nail search` pipeline runs `mmseqs prefilter` and `mmseqs align` from MMseqs2 to find alignment seeds.
 In the future, we will replace this with our own prefiltering strategies.
 
-nail has been tested with [MMseqs2 Release 15-6f452](https://github.com/soedinglab/MMseqs2/releases/tag/15-6f452).
+nail has been tested with [MMseqs2 Release 18-8cc5c](https://github.com/soedinglab/MMseqs2/releases/tag/18-8cc5c).
 We have not tested nail against other versions of MMseqs2, but they may work.
 
-To run the `nail search` pipeline, `mmseqs search` must be available in your system path.
+To run the `nail search` pipeline, the `mmseqs` binary must be on your system path, or named with `--mmseqs-path`.
 
 ## Installation
 
@@ -65,20 +65,25 @@ The `nail search` command runs the entire nail pipeline, including running MMseq
 
 The input to `nail search` is a query file (p7HMM or FASTA) and a target sequence database file (FASTA).
 
-By default, the search results will be written to `./results.tbl` in a tabular format, and alignment output is written to stdout.
-In addition, a collection of temporary files required to run `mmseqs search`, will be written to the `./tmp/` directory.
+By default, the search results are written to `./results.tbl` in a tabular format.
+Alignments are written only when you ask for them.
+`--ali-out <PATH>` writes them to a file and `-x` writes them to stdout.
+The temporary files for mmseqs are written under the `./tmp-nail/` directory.
 
 For example, when running nail search, you'll see something like:
 
-    $ nail search query.hmm target.fa 
-    reading query database...   done (0.00s)
+    $ nail search query.hmm target.fa
+    indexing query database...  done (0.00s)
     indexing target database... done (0.00s)
-    running mmseqs...           done (0.44s)
-    running nail pipeline...    done (0.16s)    
+    building pipeline...        done (0.00s)
+    seeding...                  done (0.44s)
+    running nail pipeline...    done (0.16s)
+
+    tabular results written to: "results.tbl"
 
 Checking the `results.tbl` will look something like:
 
-    $ head -n 15 results.bl
+    $ head -n 15 results.tbl
     #                                                                         target target query query       comp         cell  
     # target                                                  query           start  end    start end   score bias evalue  frac  
     # ------------------------------------------------------- --------------- ------ ------ ----- ----- ----- ---- ------- ----- 
@@ -195,21 +200,24 @@ Seeds can be provided to `nail search` using the `--seeds <seeds.tsv>` flag, whi
 
     $ nail search --seeds seeds.tsv query.hmm target.fa
 
-In practice, these seeds may be produced from any source; the input file just needs to be a tsv of the following shape:
+Seeds may come from any source. The file is a tsv of the following shape.
+The first two columns are the positions of the query and target records in their files, counted from 0.
+That is what `--seeds-out` writes.
+With `--seeds-format names` on both `--seeds-out` and `--seeds`, the two columns hold record names instead.
 
 | query  | target   | query start | query end | target start | target end | score | E-value   |
 |--------|----------|-------------|-----------|--------------|------------|-------|-----------|
-| query1 | target1  | 5           | 247       | 54           | 302        | 189   | 3.660E-55 |
-| query1 | target2  | 12          | 255       | 58           | 305        | 187   | 1.281E-54 |
-| query1 | target3  | 3           | 263       | 51           | 315        | 182   | 7.499E-53 |
-| query1 | target4  | 18          | 240       | 43           | 325        | 176   | 8.188E-51 |
-| query2 | target5  | 7           | 238       | 579          | 838        | 183   | 2.854E-53 |
-| query2 | target6  | 2           | 262       | 570          | 829        | 181   | 9.992E-53 |
-| query2 | target7  | 15          | 244       | 573          | 832        | 181   | 9.992E-53 |
-| query2 | target8  | 9           | 233       | 581          | 840        | 181   | 9.992E-53 |
-| query3 | target9  | 4           | 118       | 192          | 324        | 125   | 1.899E-35 |
-| query3 | target10 | 10          | 141       | 204          | 336        | 124   | 3.571E-35 |
-| query3 | target11 | 6           | 122       | 190          | 322        | 123   | 1.732E-34 |
+| 0      | 0        | 5           | 247       | 54           | 302        | 189   | 3.660E-55 |
+| 0      | 1        | 12          | 255       | 58           | 305        | 187   | 1.281E-54 |
+| 0      | 2        | 3           | 263       | 51           | 315        | 182   | 7.499E-53 |
+| 0      | 3        | 18          | 240       | 43           | 325        | 176   | 8.188E-51 |
+| 1      | 4        | 7           | 238       | 579          | 838        | 183   | 2.854E-53 |
+| 1      | 5        | 2           | 262       | 570          | 829        | 181   | 9.992E-53 |
+| 1      | 6        | 15          | 244       | 573          | 832        | 181   | 9.992E-53 |
+| 1      | 7        | 9           | 233       | 581          | 840        | 181   | 9.992E-53 |
+| 2      | 8        | 4           | 118       | 192          | 324        | 125   | 1.899E-35 |
+| 2      | 9        | 10          | 141       | 204          | 336        | 124   | 3.571E-35 |
+| 2      | 10       | 6           | 122       | 190          | 322        | 123   | 1.732E-34 |
 
 We plan to make the use of custom seeds more robust in the future.
 

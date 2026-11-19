@@ -16,6 +16,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
+### Added
+- added methods `Sequence::from_fasta()`, `Profile::from_p7hmm()`
+- added struct `Cutoff`
+- added fields `gathering`, `trusted`, `noise` to struct `Profile`
+- added methods `ProfileBuilder::{gathering(), trusted(), noise()}`
+
+### Changed
+- `rust-version` is 1.87, and keywords and a category are set
+- `UTF8_TO_DIGITAL_AMINO`, `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER` and `AminoUtilsDigital::{to_utf8_byte_amino(), to_lower_utf8_byte_amino()}` now map `*` to and from the nonresidue code 27
+- `Profile::serialize()` and `Profile::deserialize()` now carry the cutoffs
+- renamed fields `Seed::{prf, seq}` to `prf_pos`, `seq_pos`, which hold `usize` positions instead of `String` names
+- `Profile::from_blosum_62_and_seq()` sets tau to `2.33 - 1.34 ln(L)`, a fit to `hmmbuild --singlemx`; the old closed form sat about 0.34 bits above hmmbuild's tau, so p-values for sequence queries are now about 21% smaller
+- `Sequence::from_fasta()` reports a residue outside the alphabet as a character, such as `'1'`, instead of a decimal byte
+
+### Removed
+- removed method `Sequence::amino_from_fasta()`
+- removed dependency `seq_io`
+- removed method `Profile::calibrate_tau()`; nothing called it, and `Profile::from_blosum_62_and_seq()` sets tau from a closed form
+- removed dev-dependency `colored`; nothing used it
+- removed the `DataSize` derive from enum `Alphabet` and struct `Profile`
+- removed dependency `datasize`
+
+### Fixed
+- fixed `util::relative_entropy()` returning NaN for a vector with a zero probability; a zero now adds nothing, as in Easel
+- fixed `Profile::from_blosum_62_and_seq()` setting lambda to NaN for a sequence containing `*`; a zero probability now adds nothing to the relative entropy, as in Easel
+- fixed `Profile::from_p7hmm()` panicking on a `STATS` line with fewer than four values; it now returns an error quoting the line
+- fixed `Profile::from_p7hmm()` panicking on a model whose `LENG` is missing or 0, or that has more rows than its `LENG`; each is an error
+- fixed `Profile::from_blosum_62_and_seq()` panicking on a sequence with no residues; it returns an error naming the sequence
+- fixed `Sequence::from_fasta()` rejecting `*`, the stop codon; it now reads it as the nonresidue code 27, as HMMER does
+- fixed `p_value()` returning more than 1 for a score below tau; it now returns 1, as HMMER does
+- fixed `Sequence::from_fasta()` failing on a record with CRLF line endings; it skips `\r` as it skips `\n`
+- fixed `Sequence::from_fasta()` ending a record's name only at a space; it ends the name at any whitespace, so a tab no longer lands inside it
+- fixed `ProfileBuilder::build()` reporting a missing Forward lambda as `missing: tau`; it now reports `missing: lambda`
+- fixed the digital codes of the degenerate residues B, J, Z, O, U and X, which sequences and profiles numbered differently; a degenerate target residue scored as another residue or as `-inf`, and an O in a sequence query made `fwd_lambda` NaN
+    - const `UTF8_TO_DIGITAL_AMINO`, consts `AMINO_INVERSE_MAP`, `AMINO_INVERSE_MAP_LOWER` and methods `AminoUtilsDigital::{to_utf8_byte_amino(), to_lower_utf8_byte_amino()}` now follow the order of enum `AminoAcid`: B 21, J 22, Z 23, O 24, U 25, X 26
+    - method `Alphabet::ambiguity_map()` lists B, J, Z, O, U, X in that order and maps X to all 20 canonical residues, so X scores as their background-weighted mean instead of `-inf`
+    - null2 scores O as K and U as C; it had the two swapped
+
 ## [0.6.0] - 2026-7-31
 
 ### Added

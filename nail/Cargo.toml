@@ -1,36 +1,34 @@
 [package]
 name = "nail"
-version = "0.7.1"
+version = "0.8.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
+rust-version = "1.88"
 license = "BSD-3-Clause"
 repository = "https://github.com/TravisWheelerLab/nail"
-description = "nail is an alignment inference tool"
-exclude = [
-    "fixtures/",
-]
+readme = "README.md"
+description = "A profile HMM sequence aligner for amino acids, seeded by MMseqs2"
+keywords = ["bioinformatics", "alignment", "hmm", "hmmer", "mmseqs2"]
+categories = ["science::bioinformatics::sequence-analysis"]
 
 [features]
 default = []
 debug = ["libnail/debug"]
-jemalloc = ["jemallocator"]
+jemalloc = ["tikv-jemallocator"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jemallocator = { version = "0.3", optional = true }
+tikv-jemallocator = { version = "0.6", optional = true }
 clap = { version = "4.6.1", features = ["derive", "wrap_help"] }
-libnail = { path = "../libnail", version = "0.6.0" }
+libnail = { path = "../libnail", version = "0.7.0" }
+libsail = "0.4.2"
 anyhow = "1.0.66"
 thiserror = "1.0.37"
 rayon = "1.7.0"
 thread_local = "1.1.7"
 dyn-clone = "1.0.17"
 strum = { version = "0.26.3", features = ["derive"] }
-strum_macros = "0.26.4"
 derive_builder = "0.20.1"
-indexmap = "2.7.0"
-colored = "3.0.0"
 color-backtrace = "0.7.0"
-datasize = "0.2.15"
 regex = "1.12.2"

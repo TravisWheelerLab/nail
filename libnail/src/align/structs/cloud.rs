@@ -533,9 +533,9 @@ impl Cloud {
             if !bound.is_valid() {
                 bail!("forward cloud trimming failed: invalid bound: {bound:?}");
             } else if bound.idx() - 1 != prev.idx() {
-                println!("{prev}");
-                println!("{bound}");
-                println!("{left_distance} | {right_distance}");
+                // println!("{prev}");
+                // println!("{bound}");
+                // println!("{left_distance} | {right_distance}");
                 panic!(
                     "forward cloud trimming failed: AD index mismatch: {} | {}",
                     bound.idx(),

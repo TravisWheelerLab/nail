@@ -1,23 +1,26 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::stdout;
+use std::fs::File;
+use std::io::{stdout, BufReader};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use crate::args::{SearchArgs, SeedMode};
-use crate::io::Seeds;
+use crate::args::{CutoffKind, SearchArgs, SeedMode, SeedsFormat};
+use crate::io::{parse_position, write_named_seeds, Seeds};
 use crate::io::{Fasta, P7Hmm};
 use crate::mmseqs::MmseqsDbPaths;
 use crate::pipeline::{
-    seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage, DefaultCloudSearchStage,
-    FullDpCloudSearchStage, OutputStage, Pipeline, TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
+    positional_seeds_path, seed_progressive, seed_static, AlignmentOutput, DefaultAlignStage,
+    DefaultCloudSearchStage, FullDpCloudSearchStage, OutputStage, Pipeline, ReportThreshold,
+    TableOutput, BLAST_COLUMNS, DEFAULT_COLUMNS,
 };
-use crate::stats::{SerialTimed, Stats, ThreadedTimed};
+use crate::stats::{SerialTimed, SetupTimed, Stats, ThreadedTimed};
 use crate::util::{guess_query_format_from_query_file, FileFormat};
 use crate::util::{term::*, PathExt};
 
 use anyhow::{bail, Context};
+use libnail::align::Bits;
 use libnail::output::output_tabular::TableFormat;
 use libnail::structs::Profile;
 use rayon::iter::ParallelIterator;
@@ -26,7 +29,7 @@ use thread_local::ThreadLocal;
 
 pub enum Queries {
     Sequence(Fasta),
-    Profile(P7Hmm),
+    Profile(Arc<Vec<Profile>>),
 }
 
 impl Queries {
@@ -34,6 +37,13 @@ impl Queries {
         match self {
             Queries::Sequence(q) => q.len(),
             Queries::Profile(q) => q.len(),
+        }
+    }
+
+    pub fn name(&self, n: usize) -> anyhow::Result<String> {
+        match self {
+            Queries::Sequence(q) => q.name(n),
+            Queries::Profile(q) => Ok(q[n].name.clone()),
         }
     }
 }
@@ -47,11 +57,68 @@ pub fn read_queries(path: impl AsRef<Path>) -> anyhow::Result<Queries> {
             Ok(Queries::Sequence(queries))
         }
         FileFormat::Hmm => {
-            let queries = P7Hmm::from_path(&path).context("failed to index query hmm")?;
-            Ok(Queries::Profile(queries))
+            let p7hmm = P7Hmm::from_path(&path).context("failed to index query hmm")?;
+            let profiles = p7hmm
+                .par_iter()
+                .collect::<anyhow::Result<Vec<_>>>()
+                .context("failed to parse query hmm")?;
+            Ok(Queries::Profile(Arc::new(profiles)))
         }
-        _ => {
-            panic!()
+    }
+}
+
+/// Read the seeds file given to --seeds, in the format --seeds-format names.
+fn read_seeds(
+    path: &Path,
+    queries: &Queries,
+    targets: &Fasta,
+    args: &SearchArgs,
+) -> anyhow::Result<Seeds> {
+    let max_seeds = args.seed_args.max_seeds;
+
+    match args.io_args.seeds_format {
+        SeedsFormat::Positions => {
+            let query_position = |field: &str| {
+                let position = parse_position(field)?;
+                if position >= queries.len() {
+                    bail!(
+                        "query position {position} is out of range; there are {} queries",
+                        queries.len()
+                    );
+                }
+                Ok(position)
+            };
+            let target_position = |field: &str| {
+                let position = parse_position(field)?;
+                if position >= targets.len() {
+                    bail!(
+                        "target position {position} is out of range; there are {} targets",
+                        targets.len()
+                    );
+                }
+                Ok(position)
+            };
+
+            Seeds::from_path(path, max_seeds, &query_position, &target_position)
+        }
+        SeedsFormat::Names => {
+            let query_positions = (0..queries.len())
+                .map(|n| Ok((queries.name(n)?, n)))
+                .collect::<anyhow::Result<HashMap<String, usize>>>()?;
+
+            let query_position = |name: &str| {
+                query_positions
+                    .get(name)
+                    .copied()
+                    .with_context(|| format!("seed field \"{name}\" is not a query name"))
+            };
+            let target_position = |name: &str| {
+                targets
+                    .position(name)?
+                    .with_context(|| format!("seed field \"{name}\" is not a target name"))
+            };
+
+            Seeds::from_path(path, max_seeds, &query_position, &target_position)
         }
     }
 }
@@ -63,7 +130,7 @@ pub fn seed(
     args: &mut SearchArgs,
 ) -> anyhow::Result<Seeds> {
     match args.io_args.seeds_input_path {
-        Some(ref path) => Seeds::from_path(path, args.seed_args.max_seeds),
+        Some(ref path) => read_seeds(path, queries, targets, args),
         None => {
             let now = Instant::now();
 
@@ -87,14 +154,31 @@ pub fn seed(
                     seed_static(queries, targets, &db_paths, stats, args).context("seeding failed")
                 }
                 SeedMode::Prog => seed_progressive(queries, targets, &db_paths, stats, args)
-                    .context("progessive seeding failed"),
+                    .context("progressive seeding failed"),
             }?;
+
+            if let (Some(path), SeedsFormat::Names) =
+                (&args.io_args.seeds_output_path, args.io_args.seeds_format)
+            {
+                let positional_path = positional_seeds_path(args)?;
+                let positional = File::open(&positional_path).with_context(|| {
+                    format!("failed to open seeds file: {}", positional_path.display())
+                })?;
+                let positional = BufReader::new(positional);
+                write_named_seeds(
+                    positional,
+                    path.open(args.io_args.allow_overwrite)?,
+                    &|n| queries.name(n),
+                    &|n| targets.name(n),
+                )
+                .context("failed to write named seeds")?;
+            }
 
             stats.set_serial_time(SerialTimed::Seeding, now.elapsed());
 
             let mut counts: HashMap<String, u64> = HashMap::new();
             for seed in &seeds.seeds {
-                *counts.entry(seed.prf.clone()).or_insert(0) += 1;
+                *counts.entry(queries.name(seed.prf_pos)?).or_insert(0) += 1;
             }
 
             stats.set_seed_counts(counts);
@@ -105,27 +189,36 @@ pub fn seed(
 }
 
 pub fn build_pipeline(
-    queries: Queries,
+    queries: &Queries,
     targets: Fasta,
     stats: Stats,
     args: &mut SearchArgs,
 ) -> anyhow::Result<Pipeline> {
-    let profiles: Arc<HashMap<String, Profile>> = Arc::new(
-        match queries {
-            Queries::Sequence(fasta) => fasta
+    let profiles: Arc<Vec<Profile>> = match queries {
+        Queries::Sequence(fasta) => Arc::new(
+            fasta
                 .par_iter()
                 .map(|s| Profile::from_blosum_62_and_seq(&s?))
-                .collect::<anyhow::Result<Vec<_>>>(),
-            // Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
-            Queries::Profile(p7hmm) => p7hmm.iter().collect::<anyhow::Result<Vec<_>>>(),
-        }
-        .context("failed to build profiles")?
-        .into_iter()
-        .map(|p| (p.name.clone(), p))
-        .collect(),
-    );
+                .collect::<anyhow::Result<Vec<_>>>()
+                .context("failed to build profiles")?,
+        ),
+        Queries::Profile(profiles) => Arc::clone(profiles),
+    };
 
-    let mut output = OutputStage::new(args.pipeline_args.e_value_threshold)?;
+    let threshold = match args.expert_args.cutoff_kind() {
+        None => ReportThreshold::EValue(args.pipeline_args.e_value_threshold),
+        Some(kind) => {
+            if let Queries::Sequence(_) = queries {
+                bail!(
+                    "the argument '{YELLOW}{}{RESET}' needs p7hmm queries",
+                    kind.flag()
+                )
+            }
+            ReportThreshold::Score(domain_cutoffs(&profiles, kind)?)
+        }
+    };
+
+    let mut output = OutputStage::new(threshold)?;
 
     if args.ali_to_stdout {
         output.add(AlignmentOutput::new(stdout()))
@@ -146,7 +239,8 @@ pub fn build_pipeline(
     Ok(Pipeline {
         profiles,
         prf: None,
-        targets,
+        targets: Arc::new(targets),
+        check_seed_bounds: args.io_args.seeds_input_path.is_some(),
         cloud_search: match args.dev_args.full_dp {
             true => Box::<FullDpCloudSearchStage>::default(),
             false => Box::new(DefaultCloudSearchStage::new(args)),
@@ -159,46 +253,92 @@ pub fn build_pipeline(
     })
 }
 
+/// The domain value of each profile's cutoff, in profile order.
+fn domain_cutoffs(profiles: &[Profile], kind: CutoffKind) -> anyhow::Result<Vec<Bits>> {
+    let mut cutoffs = Vec::with_capacity(profiles.len());
+    for prf in profiles {
+        match kind.of(prf) {
+            Some(cutoff) => cutoffs.push(cutoff.domain),
+            None => bail!(
+                "the argument '{YELLOW}{}{RESET}' needs a {} line in every profile, and profile {} has none",
+                kind.flag(),
+                kind.line(),
+                prf.name
+            ),
+        }
+    }
+    Ok(cutoffs)
+}
+
+fn timed_step<T>(
+    label: &str,
+    step: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<(T, Duration)> {
+    let now = Instant::now();
+    println!("{label}...");
+    let result = step()?;
+    let elapsed = now.elapsed();
+    println!(
+        "{}{:<28}done ({:.2}s)",
+        cursor_up(),
+        format!("{label}..."),
+        elapsed.as_secs_f64()
+    );
+    Ok((result, elapsed))
+}
+
 pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     let start_time = Instant::now();
 
-    let now = Instant::now();
-    println!("indexing query database...");
-    let queries = read_queries(&args.query_path)?;
-    println!(
-        "\x1b[Aindexing query database...  done ({:.2}s)",
-        now.elapsed().as_secs_f64()
-    );
+    let (queries, query_index_time) =
+        timed_step("indexing query database", || read_queries(&args.query_path))?;
 
-    let now = Instant::now();
-    println!("indexing target database...");
-    let targets = Fasta::from_path(&args.target_path).context("failed to index target fasta")?;
-    println!(
-        "\x1b[Aindexing target database... done ({:.2}s)",
-        now.elapsed().as_secs_f64()
-    );
+    let (targets, target_index_time) = timed_step("indexing target database", || {
+        Fasta::from_path(&args.target_path).context("failed to index target fasta")
+    })?;
 
-    let mut stats = Stats::new(&queries, targets.len());
+    let mut stats = Stats::new(&queries, targets.len())?;
+    stats.set_num_threads(args.num_threads);
+    stats.set_setup_time(SetupTimed::QueryIndex, query_index_time);
+    stats.set_setup_time(SetupTimed::TargetIndex, target_index_time);
 
     match args.expert_args.target_database_size {
         Some(_) => {}
         None => args.expert_args.target_database_size = Some(targets.len()),
     }
 
-    let now = Instant::now();
-    println!("seeding...");
-    let seeds = seed(&queries, &targets, &mut stats, &mut args)?;
-    println!(
-        "\x1b[Aseeding...                  done ({:.2}s)",
-        now.elapsed().as_secs_f64()
-    );
-
     if args.pipeline_args.only_seed {
+        timed_step("seeding", || {
+            seed(&queries, &targets, &mut stats, &mut args)
+        })?;
         return Ok(());
     }
 
-    let mut pipeline =
-        build_pipeline(queries, targets, stats, &mut args).context("failed to build pipeline")?;
+    if let Some(kind) = args.expert_args.cutoff_kind() {
+        eprintln!(
+            "{RED}warning: {BOLD}{}{RESET}{RED} applies per-domain {} thresholds to search results{RESET}",
+            kind.flag(),
+            kind.name()
+        );
+        eprintln!("{RED}         If the thresholds were calibrated against HMMER, use caution when applying them to nail results{RESET}");
+    }
+
+    let (mut pipeline, build_time) = timed_step("building pipeline", || {
+        build_pipeline(&queries, targets, stats, &mut args).context("failed to build pipeline")
+    })?;
+    pipeline
+        .stats
+        .set_setup_time(SetupTimed::PipelineBuild, build_time);
+    pipeline
+        .stats
+        .set_setup_time(SetupTimed::Total, start_time.elapsed());
+    pipeline
+        .stats
+        .set_serial_time(SerialTimed::Setup, start_time.elapsed());
+
+    let (seeds, _) = timed_step("seeding", || {
+        seed(&queries, &pipeline.targets, &mut pipeline.stats, &mut args)
+    })?;
 
     let align_timer = Instant::now();
     println!("running nail pipeline...");
@@ -247,7 +387,9 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
         .set_serial_time(SerialTimed::Alignment, align_timer.elapsed());
 
     println!(
-        "\x1b[Arunning nail pipeline...    done ({:.2}s)\n",
+        "{}{:<28}done ({:.2}s)\n",
+        cursor_up(),
+        "running nail pipeline...",
         align_timer.elapsed().as_secs_f64()
     );
 
@@ -267,4 +409,51 @@ pub fn search(mut args: SearchArgs) -> anyhow::Result<()> {
     pipeline.stats.write_max_seqs_report(&args)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use libnail::structs::profile::Cutoff;
+
+    use super::*;
+
+    fn profile(name: &str, gathering: Option<Cutoff>) -> Profile {
+        Profile {
+            name: name.to_string(),
+            gathering,
+            ..Default::default()
+        }
+    }
+
+    fn cutoff(sequence: f32, domain: f32) -> Option<Cutoff> {
+        Some(Cutoff {
+            sequence: Bits(sequence),
+            domain: Bits(domain),
+        })
+    }
+
+    #[test]
+    fn domain_cutoffs_takes_each_profiles_domain_value() -> anyhow::Result<()> {
+        let profiles = [
+            profile("a", cutoff(30.0, 25.0)),
+            profile("b", cutoff(40.0, 35.0)),
+        ];
+
+        let cutoffs = domain_cutoffs(&profiles, CutoffKind::Gathering)?;
+
+        assert_eq!(cutoffs, vec![Bits(25.0), Bits(35.0)]);
+        Ok(())
+    }
+
+    #[test]
+    fn domain_cutoffs_rejects_a_profile_without_the_line() {
+        let profiles = [profile("a", cutoff(30.0, 25.0)), profile("b", None)];
+
+        let Err(err) = domain_cutoffs(&profiles, CutoffKind::Gathering) else {
+            panic!("a profile without a GA line was accepted");
+        };
+        let message = err.to_string();
+        assert!(message.contains("--cut-ga"));
+        assert!(message.contains("needs a GA line in every profile, and profile b has none"));
+    }
 }

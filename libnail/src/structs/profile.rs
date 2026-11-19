@@ -7,18 +7,13 @@ use super::Sequence;
 use crate::alphabet::{AminoUtilsDigital, UTF8_SPACE};
 use crate::util::{LogAbuse, VecMath};
 use crate::{
-    align::{
-        forward, null_one_score,
-        structs::{BackgroundState, CoreState, DpMatrixSparse, RowBounds, Trace},
-    },
+    align::structs::{BackgroundState, CoreState, Trace},
+    align::Bits,
     alphabet::{Alphabet, AminoAcid, AMINO_ALPHABET_WITH_DEGENERATE, AMINO_BACKGROUND_FREQUENCIES},
-    util::mean_relative_entropy,
+    util::{mean_relative_entropy, relative_entropy},
 };
 
-use anyhow::{anyhow, Context};
-use datasize::DataSize;
-use rand::SeedableRng;
-use rand_pcg::Pcg64;
+use anyhow::{anyhow, bail, Context};
 
 impl AsRef<Profile> for Profile {
     fn as_ref(&self) -> &Profile {
@@ -221,7 +216,8 @@ fn cantor(a: usize, b: usize) -> usize {
 mod serialize {
     use std::io::{Read, Write};
 
-    use super::Profile;
+    use super::{Cutoff, Profile};
+    use crate::align::Bits;
 
     #[repr(u8)]
     enum Version {
@@ -238,6 +234,39 @@ mod serialize {
         let mut buf = [0u8; 4];
         r.read_exact(&mut buf)?;
         Ok(f32::from_le_bytes(buf))
+    }
+
+    // [CUTOFF] | 9 bytes: 1 byte <u8> 0 or 1 for present,
+    //          | then sequence and domain, 4 bytes <f32> each,
+    //          | written as 0.0 when absent
+    fn write_cutoff<W: Write>(out: &mut W, cutoff: Option<Cutoff>) -> std::io::Result<()> {
+        let (present, cutoff) = match cutoff {
+            Some(cutoff) => (1u8, cutoff),
+            None => (
+                0u8,
+                Cutoff {
+                    sequence: Bits(0.0),
+                    domain: Bits(0.0),
+                },
+            ),
+        };
+        out.write_all(&[present])?;
+        out.write_all(&cutoff.sequence.value().to_le_bytes())?;
+        out.write_all(&cutoff.domain.value().to_le_bytes())
+    }
+
+    fn read_cutoff<R: Read>(r: &mut R) -> anyhow::Result<Option<Cutoff>> {
+        let mut present = [0u8; 1];
+        r.read_exact(&mut present)?;
+        let cutoff = Cutoff {
+            sequence: Bits(read_f32_le(r)?),
+            domain: Bits(read_f32_le(r)?),
+        };
+        match present[0] {
+            0 => Ok(None),
+            1 => Ok(Some(cutoff)),
+            byte => anyhow::bail!("invalid cutoff presence byte: {byte}"),
+        }
     }
 
     impl Profile {
@@ -262,6 +291,11 @@ mod serialize {
 
             // [LAMBDA] | 4 bytes <f32>
             out.write_all(&self.fwd_lambda.to_le_bytes())?;
+
+            // [GATHERING] [TRUSTED] [NOISE] | 9 bytes <CUTOFF> each
+            write_cutoff(out, self.gathering)?;
+            write_cutoff(out, self.trusted)?;
+            write_cutoff(out, self.noise)?;
 
             // [NAME] | N bytes <u8>(UTF8)
             out.write_all(self.name.as_bytes())?;
@@ -303,6 +337,10 @@ mod serialize {
             let fwd_tau = read_f32_le(&mut buf)?;
             let fwd_lambda = read_f32_le(&mut buf)?;
 
+            let gathering = read_cutoff(&mut buf)?;
+            let trusted = read_cutoff(&mut buf)?;
+            let noise = read_cutoff(&mut buf)?;
+
             let mut name = vec![0u8; name_len];
             buf.read_exact(&mut name)?;
 
@@ -338,6 +376,9 @@ mod serialize {
                 consensus_seq_bytes_utf8: consensus,
                 fwd_tau,
                 fwd_lambda,
+                gathering,
+                trusted,
+                noise,
                 core_transitions,
                 emission_scores: [mat_emissions, vec![]],
                 ..Default::default()
@@ -346,7 +387,16 @@ mod serialize {
     }
 }
 
-#[derive(Clone, PartialEq, Default, DataSize)]
+/// A pair of bit score thresholds from a p7hmm `GA`, `TC` or `NC` line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cutoff {
+    /// The threshold on a sequence score
+    pub sequence: Bits,
+    /// The threshold on a domain score
+    pub domain: Bits,
+}
+
+#[derive(Clone, PartialEq, Default)]
 pub struct Profile {
     /// The name of the profile
     pub name: String,
@@ -374,6 +424,12 @@ pub struct Profile {
     pub alphabet: Alphabet,
     pub fwd_tau: f32,
     pub fwd_lambda: f32,
+    /// The gathering cutoff, from a p7hmm `GA` line
+    pub gathering: Option<Cutoff>,
+    /// The trusted cutoff, from a p7hmm `TC` line
+    pub trusted: Option<Cutoff>,
+    /// The noise cutoff, from a p7hmm `NC` line
+    pub noise: Option<Cutoff>,
 }
 
 impl Display for Profile {
@@ -483,6 +539,9 @@ pub struct ProfileBuilder {
     transitions: Vec<Option<[f32; 7]>>,
     fwd_tau: Option<f32>,
     fwd_lambda: Option<f32>,
+    gathering: Option<Cutoff>,
+    trusted: Option<Cutoff>,
+    noise: Option<Cutoff>,
 }
 
 impl ProfileBuilder {
@@ -523,12 +582,27 @@ impl ProfileBuilder {
         self
     }
 
+    pub fn gathering(&mut self, gathering: Cutoff) -> &mut Self {
+        self.gathering = Some(gathering);
+        self
+    }
+
+    pub fn trusted(&mut self, trusted: Cutoff) -> &mut Self {
+        self.trusted = Some(trusted);
+        self
+    }
+
+    pub fn noise(&mut self, noise: Cutoff) -> &mut Self {
+        self.noise = Some(noise);
+        self
+    }
+
     pub fn build(mut self) -> anyhow::Result<Profile> {
-        let name = self.name.ok_or(anyhow!("missing: name"))?;
-        let length = self.length.ok_or(anyhow!("missing: length"))?;
+        let name = self.name.ok_or_else(|| anyhow!("missing: name"))?;
+        let length = self.length.ok_or_else(|| anyhow!("missing: length"))?;
         let accession = self.accession.unwrap_or_default();
-        let fwd_tau = self.fwd_tau.ok_or(anyhow!("missing: tau"))?;
-        let fwd_lambda = self.fwd_lambda.ok_or(anyhow!("missing: tau"))?;
+        let fwd_tau = self.fwd_tau.ok_or_else(|| anyhow!("missing: tau"))?;
+        let fwd_lambda = self.fwd_lambda.ok_or_else(|| anyhow!("missing: lambda"))?;
 
         self.mat_emissions[0] = Some([-f32::INFINITY; 20]);
 
@@ -536,14 +610,14 @@ impl ProfileBuilder {
             .mat_emissions
             .into_iter()
             .enumerate()
-            .map(|(i, v)| v.ok_or(anyhow!("missing: match emissions {}", i)))
+            .map(|(i, v)| v.ok_or_else(|| anyhow!("missing: match emissions {}", i)))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let transitions = self
             .transitions
             .into_iter()
             .enumerate()
-            .map(|(i, v)| v.ok_or(anyhow!("missing: transitions {}", i + 1)))
+            .map(|(i, v)| v.ok_or_else(|| anyhow!("missing: transitions {}", i + 1)))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let mut prf = Profile {
@@ -565,6 +639,9 @@ impl ProfileBuilder {
             alphabet: Alphabet::Amino,
             fwd_tau,
             fwd_lambda,
+            gathering: self.gathering,
+            trusted: self.trusted,
+            noise: self.noise,
         };
 
         for state in 0..Profile::NUM_STATE_TRANSITIONS {
@@ -647,6 +724,7 @@ impl ProfileBuilder {
             });
 
         // match scores
+        let ambig = prf.alphabet.ambiguity_map();
         prf.emission_scores[Profile::MATCH_IDX]
             .iter_mut()
             .zip(mat_emissions)
@@ -665,7 +743,6 @@ impl ProfileBuilder {
 
                 // compute the ambiguity character
                 // scores using the expected score
-                let ambig = prf.alphabet.ambiguity_map();
                 prf.alphabet
                     .ambiguous_iter()
                     .map(|a| (a as usize, &ambig[a]))
@@ -730,6 +807,10 @@ impl Profile {
         use blosum62::*;
         use Transition::*;
 
+        if seq.length == 0 {
+            bail!("sequence \"{}\" has no residues", seq.name);
+        }
+
         let mut prf = ProfileBuilder::default();
         prf.length(seq.length);
         prf.name(seq.name.clone());
@@ -779,13 +860,7 @@ impl Profile {
             .iter()
             .skip(1)
             .map(|e| e.unwrap())
-            .map(|probs| {
-                probs
-                    .iter()
-                    .zip(AMINO_BACKGROUND_FREQUENCIES)
-                    .map(|(p, f)| p * (p / f).log2())
-                    .sum::<f32>()
-            })
+            .map(|probs| relative_entropy(&probs, &AMINO_BACKGROUND_FREQUENCIES))
             .sum::<f32>();
 
         // note: we could get also get a pretty good approximation for
@@ -793,15 +868,16 @@ impl Profile {
         //       sequence and the mean relative entropy of blosum62
         prf.fwd_lambda(std::f32::consts::LN_2 + 1.44 / total_entropy);
 
-        // tau
-        // note: this all comes from some experimentation fitting ~200k
-        //       sequences to learn a closed form solution for tau
-        const KL_BLOSUM62: f32 = 0.589;
-        const MAGIC_TAU_1: f32 = 0.662;
-        const MAGIC_TAU_2: f32 = 1.317;
-        const MAGIC_TAU_3: f32 = 2.147;
-        let tau = -((-MAGIC_TAU_1 * KL_BLOSUM62) + (MAGIC_TAU_2 * (seq.length as f32).ln())
-            - MAGIC_TAU_3);
+        // the slope of tau on ln(L), fit to the tau that
+        // `hmmbuild --singlemx` gives on 189,921 PANTHER 19.0
+        // sequences
+        const TAU_SLOPE: f32 = 1.34;
+
+        // the intercept of the same fit, which holds only for
+        // BLOSUM62 with this profile's gap probabilities
+        const TAU_INTERCEPT: f32 = 2.33;
+
+        let tau = -(TAU_SLOPE * (seq.length as f32).ln() - TAU_INTERCEPT);
 
         prf.fwd_tau(tau);
 
@@ -894,7 +970,7 @@ impl Profile {
                             })
                             // **note: we're taking the max of (mostly) negative weights
                             .max_by(|a, b| a.partial_cmp(b).expect("NaN encountered"))
-                            .ok_or(anyhow!("empty emission probabilities"))?;
+                            .ok_or_else(|| anyhow!("empty emission probabilities"))?;
 
                         anyhow::Ok(())
                     })
@@ -906,7 +982,7 @@ impl Profile {
                     // skip profile index 0
                     .skip(1)
                     .min_by(|a, b| a.total_cmp(b))
-                    .ok_or(anyhow!("empty weights"))?;
+                    .ok_or_else(|| anyhow!("empty weights"))?;
 
                 Ok((*lower_bound, 0.0f32))
             }
@@ -1030,121 +1106,6 @@ impl Profile {
             });
 
         Ok(current_mre)
-    }
-
-    pub fn calibrate_tau(&mut self, n: usize, target_length: usize, tail_probability: f32) {
-        self.configure_for_target_length(target_length);
-
-        let mut row_bounds = RowBounds::new(target_length);
-        row_bounds.fill_rectangle(1, 1, target_length, self.length);
-        let mut forward_matrix = DpMatrixSparse::new(target_length, self.length, &row_bounds);
-
-        // first we are going to generate n random
-        // sequences drawn from the background
-        // distribution and compute their forward scores
-        let mut scores = vec![0.0; n];
-        let mut rng = Pcg64::seed_from_u64(0);
-        (0..n).for_each(|seq_idx| {
-            forward_matrix.reuse(target_length, self.length, &row_bounds);
-            let seq = Sequence::random_amino(target_length, &mut rng);
-
-            // **NOTE: HMMER uses multi-hit mode to calibrate
-            //         Tau, but we are using uni-hit mode
-            let forward_score_nats = forward(self, &seq, &mut forward_matrix, &row_bounds);
-
-            let null_score_nats = null_one_score(target_length);
-
-            scores[seq_idx] = (forward_score_nats - null_score_nats).to_bits().value();
-        });
-
-        /// This is some black magic from a textbook:
-        ///   Statistical Models and Methods for
-        ///   Lifetime Data by Joseph F. Lawless
-        ///   
-        /// From HMMER:
-        ///   Equation 4.1.6 from [Lawless82], pg. 143, and
-        ///   its first derivative with respect to lambda,
-        ///   for finding the ML fit to Gumbel lambda parameter.
-        ///   This equation gives a result of zero for the maximum
-        ///   likelihood lambda.
-        fn lawless416(samples: &[f32], lambda: f32) -> (f32, f32) {
-            // e_sum is the sum of e^(-lambda x_i)
-            let mut e_sum = 0.0f32;
-            // x_sum is the sum of x_i
-            let mut x_sum = 0.0f32;
-            // xe_sum is the sum of x_i * e^(-lambda x_i)
-            let mut xe_sum = 0.0f32;
-            // xe_sum is the sum of x_i^2 * e^(-lambda x_i)
-            let mut xxe_sum = 0.0f32;
-
-            samples.iter().for_each(|x| {
-                e_sum += (-lambda * x).exp();
-                x_sum += x;
-                xe_sum += x * (-lambda * x).exp();
-                xxe_sum += x.powi(2) * (-lambda * x).exp();
-            });
-
-            let fx = (1.0 / lambda) - (x_sum / samples.len() as f32) + (xe_sum / e_sum);
-            let dfx = (xe_sum / e_sum).powi(2) - (xxe_sum / e_sum) - (1.0 / (lambda.powi(2)));
-
-            (fx, dfx)
-        }
-
-        // now make an initial guess at lambda
-        //
-        // from hmmer:
-        //   (Evans/Hastings/Peacock, Statistical Distributions, 2000, p.86)
-        let sum: f32 = scores.iter().sum();
-        let squared_sum: f32 = scores.iter().map(|s| s.powi(2)).sum();
-        let sample_variance: f32 =
-            (squared_sum - sum * sum / scores.len() as f32) / (scores.len() as f32 - 1.0);
-        let mut gumbel_lambda: f32 = std::f32::consts::PI / (6.0 / sample_variance).sqrt();
-
-        // now we do this Newton/Raphson root finding
-        // thing until we have converged on lambda
-        let tolerance: f32 = 1e-5;
-        let mut newton_raphson_success = false;
-        for _ in 0..=100 {
-            let (fx, dfx) = lawless416(&scores, gumbel_lambda);
-            if fx.abs() < tolerance {
-                newton_raphson_success = true;
-                break;
-            }
-            gumbel_lambda -= fx / dfx;
-
-            if gumbel_lambda <= 0.0 {
-                gumbel_lambda = 0.001;
-            }
-        }
-
-        if !newton_raphson_success {
-            panic!("newton/raphson failed");
-        }
-
-        // this is apparently substituting into equation 4.1.5
-        // from Lawless[82] to solve for the mu parameter
-        let e_sum: f32 = scores.iter().map(|s| (-gumbel_lambda * s).exp()).sum();
-        let gumbel_mu = -(e_sum / scores.len() as f32).ln() / gumbel_lambda;
-
-        // now that we've fit the gumbel lambda, we are going to find our tau
-
-        /// Calculates the inverse CDF for a Gumbel distribution
-        /// with parameters <mu> and <lambda>. That is, returns
-        /// the quantile <x> at which the CDF is <p>.
-        fn gumbel_inverse_cdf(p: f32, mu: f32, lambda: f32) -> f32 {
-            mu - ((-p.ln()).ln() / lambda)
-        }
-
-        // basically, there is (maybe?) no good method for fitting an exponential,
-        // so instead we have fit a Gumbel that we are going to use to pick our tau
-        //
-        // from hmmer:
-        //   Explanation of the eqn below: first find the x at which the Gumbel tail
-        //   mass is predicted to be equal to tailp. Then back up from that x
-        //   by log(tailp)/lambda to set the origin of the exponential tail to 1.0
-        //   instead of tailp.
-        self.fwd_tau = gumbel_inverse_cdf(1.0 - tail_probability, gumbel_mu, gumbel_lambda)
-            + (tail_probability.ln() / self.fwd_lambda);
     }
 
     #[inline(always)]
@@ -1346,71 +1307,191 @@ impl fmt::Debug for Profile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alphabet::AminoUtilsUtf8;
     use crate::structs::Sequence;
 
     #[test]
-    fn test_hmm_from_blosum62() -> anyhow::Result<()> {
-        let mut seq = Sequence::from_utf8(
-            concat!(
-                "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
-                "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
-                "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
-                "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
-                "ALLITLLLAYVNSCLNPIIY"
-            )
-            .as_bytes(),
-        )?;
-        seq.name = ">7tm_1-consensus".to_string();
+    fn build_reports_a_missing_lambda_as_lambda() {
+        let mut prf = ProfileBuilder::default();
+        prf.name("p".to_string()).length(1).fwd_tau(-1.0);
 
-        let prf = Profile::from_blosum_62_and_seq(&seq)?;
+        let Err(err) = prf.build() else {
+            panic!("a profile without a lambda was built");
+        };
+        assert_eq!(err.to_string(), "missing: lambda");
+    }
 
-        let composition_corrrect = [
-            0.075741, 0.016550, 0.039336, 0.060816, 0.038081, 0.043406, 0.014495, 0.077001,
-            0.061813, 0.144704, 0.026453, 0.033726, 0.040502, 0.031336, 0.048901, 0.063073,
-            0.056054, 0.085715, 0.012350, 0.029948,
+    #[test]
+    fn blosum62_profile_lambda_matches_hmmbuild() -> anyhow::Result<()> {
+        // each lambda is from the STATS LOCAL FORWARD line
+        // of the model HMMER 3.4 builds for that sequence:
+        //   hmmbuild --singlemx --informat afa <out.hmm> <one-seq.fa>
+        // lambda does not depend on hmmbuild's seed. tau
+        // does, by about 0.18 across seeds, so it is not
+        // checked here
+        let cases = [
+            (
+                "sp|B3EWN4|2SSL_RICCO",
+                "QDYCAQEGQQEVQRKDLSDLERYLRQSRQR",
+                0.78549,
+            ),
+            // the same sequence with a stop codon at the end
+            // and in the middle; '*' adds a position that
+            // matches no residue, which leaves lambda alone
+            (
+                "sp|B3EWN4|2SSL_RICCO with a terminal *",
+                "QDYCAQEGQQEVQRKDLSDLERYLRQSRQR*",
+                0.78549,
+            ),
+            (
+                "sp|B3EWN4|2SSL_RICCO with an internal *",
+                "QDYCAQEGQQEVQRK*DLSDLERYLRQSRQR",
+                0.78549,
+            ),
+            (
+                "sp|Q91G65|032R_IIV6",
+                concat!(
+                    "MGVYKFCYNKKKEVGQVAVLQKERLIFYIVTKEKSYLKPTLANFSNAIDSLYNECLLRKC",
+                    "CKLAIPKIGCCLDRLYWKTVKNIIIDKLCKKGIEVVVYYI",
+                ),
+                0.71748,
+            ),
+            (
+                "7tm_1-consensus",
+                concat!(
+                    "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
+                    "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
+                    "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
+                    "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
+                    "ALLITLLLAYVNSCLNPIIY",
+                ),
+                0.70332,
+            ),
+            (
+                "sp|Q91FW0|211L_IIV6",
+                concat!(
+                    "MEMNQKTAFMGINIKDEGPSNVMIIKALNSSSSLLDIPSFMKVAGIEFDPIMFNHFWQVL",
+                    "VDNGDRLPHVGETTLNWLGYEGVFTKQKEKFINMLKRNQISFKELSYQDNEIQLYPSIQK",
+                    "EMLLLPNESAKTKSKWLLMNPDDFKMAIMGLKTKNSEKIKRYYVTLEKTMKLHSEYALYF",
+                    "HDRKAQEEKERERQRAEDEKRSILGEMSEMRQYMQKMGITLEDTREEVKKVNIQNKDIKA",
+                    "QNEEIKAQNEDLAFDLSDVRDRLIEAAEDRSPKLETKPLRERFVIIKRKDSSFPYYAIRG",
+                    "QDVYVKGRLTHFKNTRYPELKIIFDTNYQPNPRNLYIRFKELKDERFIIAGNNIKTVDSS",
+                    "NKLEKEMLELFEKLNEEKHNIYFFFNFNDF",
+                ),
+                0.69989,
+            ),
+            (
+                "sp|Q9Y3L3|3BP1_HUMAN",
+                concat!(
+                    "MMKRQLHRMRQLAQTGSLGRTPETAEFLGEDLLQVEQRLEPAKRAAHNIHKRLQACLQGQ",
+                    "SGADMDKRVKKLPLMALSTTMAESFKELDPDSSMGKALEMSCAIQNQLARILAEFEMTLE",
+                    "RDVLQPLSRLSEEELPAILKHKKSLQKLVSDWNTLKSRLSQATKNSGSSQGLGGSPGSHS",
+                    "HTTMANKVETLKEEEEELKRKVEQCRDEYLADLYHFVTKEDSYANYFIRLLEIQADYHRR",
+                    "SLSSLDTALAELRENHGQADHSPSMTATHFPRVYGVSLATHLQELGREIALPIEACVMML",
+                    "LSEGMKEEGLFRLAAGASVLKRLKQTMASDPHSLEEFCSDPHAVAGALKSYLRELPEPLM",
+                    "TFDLYDDWMRAASLKEPGARLQALQEVCSRLPPENLSNLRYLMKFLARLAEEQEVNKMTP",
+                    "SNIAIVLGPNLLWPPEKEGDQAQLDAASVSSIQVVGVVEALIQSADTLFPGDINFNVSGL",
+                    "FSAVTLQDTVSDRLASEELPSTAVPTPATTPAPAPAPAPAPAPALASAATKERTESEVPP",
+                    "RPASPKVTRSPPETAAPVEDMARRTKRPAPARPTMPPPQVSGSRSSPPAPPLPPGSGSPG",
+                    "TPQALPRRLVGSSLRAPTVPPPLPPTPPQPARRQSRRSPASPSPASPGPASPSPVSLSNP",
+                    "AQVDLGAATAEGGAPEAISGVPTPPAIPPQPRPRSLASETN",
+                ),
+                0.69689,
+            ),
         ];
 
-        todo!("fix this");
-        // hmm.model
-        //     .composition
-        //     .iter()
-        //     .zip(composition_corrrect)
-        //     .for_each(|(a, b)| assert!((a - b).abs() < 1e-4));
+        for (name, residues, hmmbuild_lambda) in cases {
+            let seq = Sequence::from_utf8(residues.as_bytes())?;
+            let prf = Profile::from_blosum_62_and_seq(&seq)?;
 
-        // let lambda_correct = 0.703323;
-        // assert!((lambda_correct - hmm.stats.forward_lambda) < 1e-4,);
+            assert!(
+                (prf.fwd_lambda - hmmbuild_lambda).abs() < 1e-4,
+                "{name}: nail lambda {}, hmmbuild lambda {hmmbuild_lambda}",
+                prf.fwd_lambda
+            );
+        }
 
         Ok(())
     }
 
     #[test]
-    fn test_calibrate_tau() -> anyhow::Result<()> {
-        let mut seq = Sequence::from_utf8(
-            concat!(
-                "GNLLVILVILRNKKLRTPTNIFLLNLAVADLLVLLLVLPFSLVYALLEGDWVFGEVLCKL",
-                "VTALDVVNLTASILLLTAISIDRYLAIVKPLKYKRIRTKRRALVLILVVWVLALLLSLPP",
-                "LLFSGTKTESAEKEETVCLIDFPEEESTWEVSYTLLLSVLGFLLPLLVILVCYVRILRTL",
-                "RKSAKKEKSRKKKSARKERKALKTLLVVVVVFVLCWLPYFILLLLDSLLKECESEKLVET",
-                "ALLITLLLAYVNSCLNPIIY"
-            )
-            .as_bytes(),
+    fn a_degenerate_residue_scores_the_background_weighted_mean_of_its_residues(
+    ) -> anyhow::Result<()> {
+        let bytes = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/query.hmm"),
         )?;
-        seq.name = ">7tm_1-consensus".to_string();
+        let prf = Profile::from_p7hmm(&bytes)?;
 
-        let mut prf = Profile::from_blosum_62_and_seq(&seq)?;
+        let cases = [
+            ("B", "ND"),
+            ("J", "IL"),
+            ("Z", "QE"),
+            ("O", "K"),
+            ("U", "C"),
+            ("X", "ACDEFGHIKLMNPQRSTVWY"),
+        ];
 
-        prf.calibrate_tau(200, 100, 0.04);
+        for (letter, residues) in cases {
+            // the code comes from the sequence side, so the
+            // test fails if the two sides number it differently
+            let seq = Sequence::from_fasta(format!(">s\n{letter}\n").as_bytes())?;
+            let code = seq.digital_bytes[1] as usize;
 
-        let correct_tau = -4.193134f32;
-        let diff = (correct_tau - prf.fwd_tau).abs();
+            for profile_idx in 1..=prf.length {
+                let mut weighted_sum = 0.0;
+                let mut weight_sum = 0.0;
+                for residue in residues.chars() {
+                    let canonical = residue.to_digital_amino() as usize;
+                    let weight = AMINO_BACKGROUND_FREQUENCIES[canonical];
+                    weighted_sum += prf.match_score(canonical, profile_idx) * weight;
+                    weight_sum += weight;
+                }
+                let expected = weighted_sum / weight_sum;
+                let score = prf.match_score(code, profile_idx);
 
-        // ***
-        // run "cargo test -- --nocapture" to print the diff
-        // ***
-        println!("\x1b[31m{} | {}\x1b[0m", correct_tau, prf.fwd_tau);
-        println!("\x1b[31mdifference: {}\x1b[0m", diff);
-        assert!(diff <= 0.01);
+                assert!(
+                    (score - expected).abs() < 1e-5,
+                    "{letter} at {profile_idx}: score {score}, expected {expected}"
+                );
+            }
+        }
 
+        Ok(())
+    }
+
+    #[test]
+    fn a_degenerate_query_residue_gets_its_own_blosum62_row() -> anyhow::Result<()> {
+        for letter in ["B", "J", "Z", "O", "U", "X"] {
+            let seq = Sequence::from_fasta(format!(">q\nACDEF{letter}HIKL\n").as_bytes())?;
+            let prf = Profile::from_blosum_62_and_seq(&seq)?;
+
+            let row = AMINO_ALPHABET_WITH_DEGENERATE
+                .iter()
+                .position(|l| *l == letter)
+                .unwrap();
+
+            for residue in 0..Profile::MAX_ALPHABET_SIZE {
+                let prob = blosum62::CONDITIONAL_PROB[row][residue];
+                let expected =
+                    (prob as f64 / AMINO_BACKGROUND_FREQUENCIES[residue] as f64).ln() as f32;
+
+                assert_eq!(prf.match_score(residue, 6), expected, "{letter} {residue}");
+            }
+
+            assert!(prf.fwd_lambda.is_finite(), "{letter}: {}", prf.fwd_lambda);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn from_blosum_62_and_seq_rejects_an_empty_sequence() -> anyhow::Result<()> {
+        let seq = Sequence::from_fasta(b">empty\n")?;
+
+        let Err(err) = Profile::from_blosum_62_and_seq(&seq) else {
+            panic!("an empty sequence was accepted");
+        };
+        assert_eq!(err.to_string(), "sequence \"empty\" has no residues");
         Ok(())
     }
 }

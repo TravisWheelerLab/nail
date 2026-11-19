@@ -26,12 +26,12 @@ For example, try running:
 
 ## Usage
 
-The input to nail is a query multiple sequence alignment (stockholm) file and a target sequence (fasta) file.
+The input to nail is a query file (p7HMM or FASTA) and a target sequence file (FASTA).
 To run the nail pipeline, use the `nail search` command:
 
 For example:
 
-    $ nail search query.sto target.fa
+    $ nail search query.hmm target.fa
 
 ## License
 

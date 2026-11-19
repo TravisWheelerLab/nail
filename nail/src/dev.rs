@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::cell::RefCell;
 
 use anyhow::{bail, Context};
 use libnail::{
@@ -30,7 +30,7 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
     let queries = read_queries(&args.query_path)?;
     let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
 
-    let mut stats = Stats::new(&queries, targets.len());
+    let mut stats = Stats::new(&queries, targets.len())?;
 
     match args.expert_args.target_database_size {
         Some(_) => {}
@@ -43,7 +43,7 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let pipeline = build_pipeline(queries, targets, stats, &mut args)?;
+    let pipeline = build_pipeline(&queries, targets, stats, &mut args)?;
     let tl_pipeline: ThreadLocal<RefCell<Pipeline>> = ThreadLocal::new();
 
     seeds
@@ -73,9 +73,9 @@ pub fn dev_search(mut args: SearchArgs) -> anyhow::Result<()> {
 
 pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
     let queries = read_queries(&args.query_path)?;
-    let mut targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
+    let targets = Fasta::from_path(&args.target_path).context("failed to read target fasta")?;
 
-    let mut stats = Stats::new(&queries, targets.len());
+    let mut stats = Stats::new(&queries, targets.len())?;
 
     match args.expert_args.target_database_size {
         Some(_) => {}
@@ -84,17 +84,14 @@ pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let seeds = seed(&queries, &targets, &mut stats, &mut args)?;
 
-    let mut profiles: HashMap<String, Profile> = match queries {
+    let mut profiles: Vec<Profile> = match queries {
         Queries::Sequence(fasta) => fasta
             .par_iter()
             .map(|s| Profile::from_blosum_62_and_seq(&s?))
             .collect::<anyhow::Result<Vec<_>>>(),
-        Queries::Profile(p7hmm) => p7hmm.par_iter().collect::<anyhow::Result<Vec<_>>>(),
+        Queries::Profile(profiles) => Ok(profiles.to_vec()),
     }
-    .context("failed to build profiles")?
-    .into_iter()
-    .map(|p| (p.name.clone(), p))
-    .collect();
+    .context("failed to build profiles")?;
 
     let mx_dir = std::path::PathBuf::from("./mx");
     mx_dir.create_dir()?;
@@ -116,8 +113,8 @@ pub fn dev_mx(mut args: SearchArgs) -> anyhow::Result<()> {
 
     let file_re = Regex::new(r"[^A-Za-z0-9._-]").unwrap();
     '_main: for seed in seeds.seeds.iter() {
-        let prf = profiles.get_mut(&seed.prf).unwrap();
-        let seq = targets.get(&seed.seq).unwrap().unwrap();
+        let prf = profiles.get_mut(seed.prf_pos).unwrap();
+        let seq = targets.get(seed.seq_pos).unwrap();
 
         let prefix = mx_dir.join(format!(
             "{}-{}",

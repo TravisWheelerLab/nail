@@ -1,11 +1,14 @@
 [package]
 name = "libnail"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
 edition = "2021"
+rust-version = "1.87"
 license = "BSD-3-Clause"
 repository = "https://github.com/TravisWheelerLab/nail"
 description = "Libnail is a library that performs profile Hidden Markov Model (PHMM) biological sequence alignment."
+keywords = ["bioinformatics", "alignment", "hmm", "hmmer", "mmseqs2"]
+categories = ["science::bioinformatics::sequence-analysis"]
 
 [features]
 default = []
@@ -16,7 +19,6 @@ name = "libnail"
 path = "./src/lib.rs"
 
 [dependencies]
-seq_io = "0.3.1"
 phf = { version = "0.11", features = ["macros"] }
 regex = "1.7.0"
 anyhow = "1.0.66"
@@ -25,10 +27,8 @@ lazy_static = "1.4.0"
 rand = "0.8.5"
 rand_pcg = "0.3.1"
 image = { version = "0.25.1" , optional = true }
-datasize = "0.2.15"
 
 [dev-dependencies]
 ctor = "0.4.1"
-colored = "3.0.0"
 assert2 = "0.3.15"
 color-backtrace =  "0.7.0" 

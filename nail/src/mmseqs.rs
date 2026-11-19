@@ -2,23 +2,24 @@ use self::consts::*;
 
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, Write},
+    io::{BufRead, BufReader, Write},
+    ops::Range,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO};
+use libnail::{align::Nats, alphabet::UTF8_TO_DIGITAL_AMINO, structs::Profile};
+use libsail::source::{FileSource, Source};
 
 use crate::{
     args::SearchArgs,
-    io::{
-        ReadSeekExt, ReadState, {Fasta, P7Hmm},
-    },
+    io::Fasta,
     util::{CommandExt, PathExt},
 };
 
 use anyhow::Context;
 use anyhow::{anyhow, bail};
+use rayon::prelude::*;
 use regex::Regex;
 
 pub mod consts {
@@ -29,9 +30,10 @@ pub mod consts {
     pub const GENERIC_DBTYPE: &[u8] = &[12, 0, 0, 0];
 }
 
-pub enum ByteBuffer<'a> {
-    Complete(&'a [u8]),
-    Partial(&'a [u8], usize),
+#[derive(Debug, PartialEq)]
+pub enum ByteBuffer {
+    Complete(Vec<u8>),
+    Partial(Vec<u8>, usize),
     Empty,
 }
 
@@ -43,11 +45,12 @@ struct Descriptor {
 }
 
 pub struct PrefilterDb {
-    file: File,
-    paths: Vec<PathBuf>,
+    /// The path the db was opened from.
+    path: PathBuf,
+    /// The split files, in suffix order.
+    sources: Vec<FileSource>,
     descriptors: Vec<Descriptor>,
     checkpoints: Vec<u64>,
-    buf: Vec<u8>,
 }
 
 impl PrefilterDb {
@@ -71,17 +74,44 @@ impl PrefilterDb {
 
         let mut offsets = vec![];
         let mut lengths = vec![];
-        for line in index_reader.lines() {
+        for (line_idx, line) in index_reader.lines().enumerate() {
             let line = line?;
+            let line_number = line_idx + 1;
 
-            let tokens = line
-                .split('\t')
-                .map(|s| s.parse::<u64>().expect("failed to parse index line"))
-                .collect::<Vec<_>>();
+            // an index line is the record key, its offset and its length
+            let mut fields = line.split('\t');
+            let (Some(_), Some(offset), Some(length)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                bail!(
+                    "line {line_number} of {} has fewer than 3 fields",
+                    index_path.display()
+                );
+            };
 
-            offsets.push(tokens[1]);
-            // -1 because the index lengths include a null byte
-            lengths.push(tokens[2] - 1);
+            let offset: u64 = offset.parse().with_context(|| {
+                format!(
+                    "line {line_number} of {}: offset \"{offset}\" is not a number",
+                    index_path.display()
+                )
+            })?;
+            let length: u64 = length.parse().with_context(|| {
+                format!(
+                    "line {line_number} of {}: length \"{length}\" is not a number",
+                    index_path.display()
+                )
+            })?;
+
+            // the index lengths include a null byte, so 0 is malformed
+            if length == 0 {
+                bail!(
+                    "line {line_number} of {} has a record length of 0",
+                    index_path.display()
+                );
+            }
+
+            offsets.push(offset);
+            lengths.push(length - 1);
         }
 
         offsets.shrink_to_fit();
@@ -89,24 +119,27 @@ impl PrefilterDb {
 
         // ---
 
+        // a split db is <name>.0, <name>.1, ... beside <name>
         let re = Regex::new(&format!(r"^{}\.\d+$", regex::escape(name)))?;
-        let mut paths = std::fs::read_dir(dir)?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|s| s.to_str())
-                    .map(|s| re.is_match(s))
-                    .unwrap_or(false)
-            })
-            .collect::<Vec<_>>();
-
-        paths.sort_by_key(|p| {
-            p.extension()
-                .and_then(|e| e.to_str())
-                .and_then(|s| s.parse::<usize>().ok())
-                .expect("bad DB split suffix")
-        });
+        let mut splits = vec![];
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !re.is_match(file_name) {
+                continue;
+            }
+            let suffix: usize = file_name[name.len() + 1..].parse().with_context(|| {
+                format!(
+                    "the split suffix of {} does not fit a usize",
+                    path.display()
+                )
+            })?;
+            splits.push((suffix, path));
+        }
+        splits.sort_by_key(|(suffix, _)| *suffix);
+        let mut paths: Vec<PathBuf> = splits.into_iter().map(|(_, path)| path).collect();
 
         // if we have no paths here, that
         // means the prefilter is one file
@@ -130,16 +163,15 @@ impl PrefilterDb {
 
         // --
 
-        let mut descriptors = offsets
+        let descriptors = offsets
             .into_iter()
             .zip(lengths)
             .map(|(offset, length)| {
-                let file_idx = match prefix_sum.binary_search(&offset) {
-                    // this means the binary search found the exact offset
-                    Ok(idx) => idx,
-                    // this means the binary search landed between offsets
-                    Err(idx) => idx.saturating_sub(1),
-                };
+                // the last file starting at or before the offset:
+                // an empty split file starts where the next one
+                // does, and binary_search may return either for
+                // a record at the start of the next file
+                let file_idx = prefix_sum.partition_point(|&start| start <= offset) - 1;
 
                 let relative_offset = offset - prefix_sum[file_idx];
                 Descriptor {
@@ -150,108 +182,107 @@ impl PrefilterDb {
             })
             .collect::<Vec<_>>();
 
-        for desc in descriptors.iter_mut() {
-            let mut file = File::open(&paths[desc.file_idx])?;
-            file.seek(std::io::SeekFrom::Start(desc.offset + desc.length))?;
+        let sources = paths
+            .iter()
+            .map(|path| {
+                FileSource::open(path).with_context(|| format!("failed to open {}", path.display()))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let mut b = [0u8; 1];
-            file.read_exact(&mut b)?;
-            let byte = b[0];
-            assert!(byte == 0);
-        }
-
-        let file = File::open(&paths[0])?;
         let checkpoints = vec![0; descriptors.len()];
-        let buf = Vec::with_capacity(2 << 11);
 
         Ok(Self {
-            file,
-            paths,
+            path: path.to_path_buf(),
+            sources,
             descriptors,
             checkpoints,
-            buf,
         })
     }
 
-    pub fn open_file(&mut self, file_idx: usize) -> anyhow::Result<()> {
-        self.file = File::open(&self.paths[file_idx])?;
-        Ok(())
-    }
-
-    pub fn get(&mut self, prf_idx: usize) -> anyhow::Result<&[u8]> {
+    pub fn get(&self, prf_idx: usize) -> anyhow::Result<Vec<u8>> {
         let desc = self.descriptors[prf_idx];
+        let length = desc.length as usize;
 
-        if desc.length == 0 {
-            return Ok(&[]);
+        // the null byte is read with the record
+        let mut bytes = self.sources[desc.file_idx]
+            .range(desc.offset, length + 1)?
+            .into_owned();
+        if bytes[length] != 0 {
+            bail!(
+                "a record in {} does not end in a null byte",
+                self.path.display()
+            );
         }
 
-        self.open_file(desc.file_idx)?;
-
-        self.file.seek(std::io::SeekFrom::Start(desc.offset))?;
-        let mut taken = (&mut self.file).take(desc.length);
-
-        self.buf.clear();
-        self.buf.resize(desc.length as usize, 0);
-
-        match taken.read_with_state(&mut self.buf)? {
-            ReadState::Final(_) => Ok(&self.buf),
-            _ => unreachable!(),
-        }
+        bytes.truncate(length);
+        Ok(bytes)
     }
 
-    pub fn next_n(&'_ mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer<'_>> {
+    pub fn next_n(&mut self, prf_idx: usize, n: usize) -> anyhow::Result<ByteBuffer> {
+        let desc = self.descriptors[prf_idx];
+        let checkpoint = &mut self.checkpoints[prf_idx];
+
         if n == 0 {
             return Ok(ByteBuffer::Empty);
         }
 
-        let desc = self.descriptors[prf_idx];
-        self.open_file(desc.file_idx)?;
-
-        let checkpoint = &mut self.checkpoints[prf_idx];
-
         let start = desc.offset + *checkpoint;
-        let end = desc.offset + desc.length;
-        let remaining = end.saturating_sub(start);
+        let remaining = (desc.length - *checkpoint) as usize;
 
+        // the null byte is checked when a take reaches the
+        // end of the record, and not for every record in
+        // from_path: that cost a disk read per record, and
+        // 6.9 s on a cold 32 GB db through a memory map
         if remaining == 0 {
+            check_null_byte(&self.sources, desc, &self.path)?;
             return Ok(ByteBuffer::Empty);
         }
 
-        self.file.seek(std::io::SeekFrom::Start(start))?;
-        let mut taken = (&mut self.file).take(remaining);
-
-        self.buf.clear();
-
-        const CHUNK_SZ: usize = 2 << 12;
+        let source = &self.sources[desc.file_idx];
+        let mut bytes = vec![];
+        let mut chunk_len = SCAN_CHUNK;
         let mut record_cnt = 0;
-        loop {
-            let old_len = self.buf.len();
-            self.buf.resize(old_len + CHUNK_SZ, 0);
 
-            let n_read = match taken.read_with_state(&mut self.buf[old_len..])? {
-                ReadState::Reading(n) | ReadState::Final(n) => n,
-                ReadState::Done => {
-                    self.buf.truncate(old_len);
-                    *checkpoint = desc.length;
-                    return Ok(ByteBuffer::Partial(&self.buf, record_cnt));
-                }
-            };
+        while bytes.len() < remaining {
+            let scanned = bytes.len();
+            let len = chunk_len.min(remaining - scanned);
+            bytes.extend_from_slice(&source.range(start + scanned as u64, len)?);
 
-            self.buf.truncate(old_len + n_read);
-
-            for (pos, &b) in self.buf.iter().enumerate().skip(old_len) {
-                if b == b'\n' {
+            for pos in scanned..bytes.len() {
+                if bytes[pos] == b'\n' {
                     record_cnt += 1;
                 }
 
                 if record_cnt == n {
                     *checkpoint += (pos + 1) as u64;
-                    self.buf.truncate(pos + 1);
-                    return Ok(ByteBuffer::Complete(&self.buf));
+                    bytes.truncate(pos + 1);
+                    return Ok(ByteBuffer::Complete(bytes));
                 }
             }
+
+            chunk_len *= 2;
         }
+
+        check_null_byte(&self.sources, desc, &self.path)?;
+        *checkpoint = desc.length;
+        Ok(ByteBuffer::Partial(bytes, record_cnt))
     }
+}
+
+/// The length of the first range `next_n` reads; each later range doubles.
+//
+// a take reads less than twice the bytes it needs,
+// plus one first range, so a small take reads little
+const SCAN_CHUNK: usize = 1 << 12;
+
+/// Fail unless the byte after a record is its null byte.
+fn check_null_byte(sources: &[FileSource], desc: Descriptor, path: &Path) -> anyhow::Result<()> {
+    let byte = sources[desc.file_idx].range(desc.offset + desc.length, 1)?;
+    if byte[0] != 0 {
+        bail!("a record in {} does not end in a null byte", path.display());
+    }
+
+    Ok(())
 }
 
 pub struct MmseqsDbPaths {
@@ -430,6 +461,44 @@ impl MmseqsDbPaths {
     }
 }
 
+/// The number of records in one batch of a sequence db.
+const SEQUENCE_DB_BATCH_LEN: usize = 16_384;
+
+/// The bytes a run of records adds to a sequence db and its header db.
+struct SequenceDbBatch {
+    db: Vec<u8>,
+    db_lengths: Vec<usize>,
+    headers: Vec<u8>,
+    header_lengths: Vec<usize>,
+}
+
+impl SequenceDbBatch {
+    fn build(sequences: &Fasta, positions: Range<usize>) -> anyhow::Result<Self> {
+        let mut batch = Self {
+            db: vec![],
+            db_lengths: Vec::with_capacity(positions.len()),
+            headers: vec![],
+            header_lengths: Vec::with_capacity(positions.len()),
+        };
+
+        for position in positions {
+            let seq = sequences.get(position)?;
+            batch.db.extend_from_slice(&seq.utf8_bytes[1..]);
+            batch.db.extend_from_slice(&[b'\n', 0]);
+            batch.db_lengths.push(seq.length + 2);
+
+            // the header is the record's position, so the seeds
+            // mmseqs reports name records by position
+            let header = position.to_string();
+            batch.headers.extend_from_slice(header.as_bytes());
+            batch.headers.extend_from_slice(&[b'\n', 0]);
+            batch.header_lengths.push(header.len() + 2);
+        }
+
+        Ok(batch)
+    }
+}
+
 pub fn write_mmseqs_sequence_database(
     sequences: &Fasta,
     path: impl AsRef<Path>,
@@ -457,36 +526,61 @@ pub fn write_mmseqs_sequence_database(
     let mut db_header = header_path.open(true)?;
     let mut db_header_index = header_index_path.open(true)?;
 
+    write_sequence_db(
+        sequences,
+        SEQUENCE_DB_BATCH_LEN,
+        &mut db,
+        &mut db_index,
+        &mut db_header,
+        &mut db_header_index,
+    )
+}
+
+fn write_sequence_db(
+    sequences: &Fasta,
+    batch_len: usize,
+    db: &mut impl Write,
+    db_index: &mut impl Write,
+    headers: &mut impl Write,
+    header_index: &mut impl Write,
+) -> anyhow::Result<()> {
     let mut db_offset = 0usize;
     let mut header_offset = 0usize;
+    let mut position = 0usize;
 
-    for (seq_count, seq) in sequences.iter().enumerate() {
-        let seq = seq?;
-        db.write_all(&seq.utf8_bytes[1..])?;
-        db.write_all(&[10u8, 0u8])?;
+    let batch_starts: Vec<usize> = (0..sequences.len()).step_by(batch_len).collect();
 
-        let db_byte_length = seq.length + 2;
-        writeln!(db_index, "{}\t{}\t{}", seq_count, db_offset, db_byte_length,)?;
+    // a group of batches is built at a time, so memory
+    // holds one group's bytes and not the whole db
+    for group in batch_starts.chunks(rayon::current_num_threads()) {
+        let batches = group
+            .par_iter()
+            .map(|&start| {
+                let end = (start + batch_len).min(sequences.len());
+                SequenceDbBatch::build(sequences, start..end)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-        writeln!(db_header, "{}", seq.name)?;
-        db_header.write_all(&[0u8])?;
+        for batch in batches {
+            db.write_all(&batch.db)?;
+            headers.write_all(&batch.headers)?;
 
-        let header_byte_length = seq.name.len() + 2;
-        writeln!(
-            db_header_index,
-            "{}\t{}\t{}",
-            seq_count, header_offset, header_byte_length
-        )?;
+            for (db_length, header_length) in batch.db_lengths.iter().zip(&batch.header_lengths) {
+                writeln!(db_index, "{position}\t{db_offset}\t{db_length}")?;
+                writeln!(header_index, "{position}\t{header_offset}\t{header_length}")?;
 
-        db_offset += db_byte_length;
-        header_offset += header_byte_length;
+                db_offset += db_length;
+                header_offset += header_length;
+                position += 1;
+            }
+        }
     }
 
     Ok(())
 }
 
 pub fn write_mmseqs_profile_database(
-    profiles: &P7Hmm,
+    profiles: &[Profile],
     path: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let db_path = path.as_ref().to_owned();
@@ -516,7 +610,6 @@ pub fn write_mmseqs_profile_database(
     let mut header_offset = 0usize;
 
     for (prf_cnt, prf) in profiles.iter().enumerate() {
-        let prf = prf?;
         for prf_idx in 1..=prf.length {
             for byte in (0..20)
                 .map(|residue| Nats(prf.match_score(residue, prf_idx)))
@@ -555,11 +648,12 @@ pub fn write_mmseqs_profile_database(
         writeln!(db_index, "{}\t{}\t{}", prf_cnt, db_offset, db_byte_length,)?;
 
         // for some reason, the header has newlines and 0-byte separators?
-        writeln!(db_header, "{}", prf.name)?;
+        let header = prf_cnt.to_string();
+        writeln!(db_header, "{header}")?;
         db_header.write_all(&[0u8])?;
 
         // +1 for the 0 byte, +1 for the newline
-        let header_byte_length = prf.name.len() + 2;
+        let header_byte_length = header.len() + 2;
 
         writeln!(
             db_header_index,
@@ -697,4 +791,161 @@ pub fn run_mmseqs_convertalis(
         .run()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    // prefilter-db holds three records over three split
+    // files. pdb.0 holds record 0, "a\nb\nc\n". pdb.1 is
+    // empty, so it starts at offset 7, as pdb.2 does. pdb.2
+    // holds record 1, "d\n", and record 2, which is empty
+    fn split_prefilter_db() -> anyhow::Result<PrefilterDb> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/prefilter-db/pdb");
+        PrefilterDb::from_path(path)
+    }
+
+    #[test]
+    fn prefilter_db_gets_records_across_split_files() -> anyhow::Result<()> {
+        let db = split_prefilter_db()?;
+
+        assert_eq!(db.get(0)?, b"a\nb\nc\n");
+        assert_eq!(db.get(1)?, b"d\n");
+        assert_eq!(db.get(2)?, b"");
+
+        Ok(())
+    }
+
+    #[test]
+    fn prefilter_db_next_n_takes_lines_from_a_checkpoint() -> anyhow::Result<()> {
+        let mut db = split_prefilter_db()?;
+
+        // a take of zero lines does not move the checkpoint
+        assert_eq!(db.next_n(0, 0)?, ByteBuffer::Empty);
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Complete(b"a\nb\n".to_vec()));
+
+        // one line is left, so the take is partial and counts it
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Partial(b"c\n".to_vec(), 1));
+        assert_eq!(db.next_n(0, 2)?, ByteBuffer::Empty);
+
+        // each record keeps its own checkpoint
+        assert_eq!(db.next_n(1, 1)?, ByteBuffer::Complete(b"d\n".to_vec()));
+        assert_eq!(db.next_n(1, 1)?, ByteBuffer::Empty);
+        assert_eq!(db.next_n(2, 1)?, ByteBuffer::Empty);
+
+        Ok(())
+    }
+
+    // the file is "a\n\0", and the index gives the one
+    // record a length of 2 with its null byte. so the
+    // record is "a", and the byte after it is "\n"
+    fn unterminated_prefilter_db() -> anyhow::Result<PrefilterDb> {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/prefilter-db-unterminated/pdb");
+        PrefilterDb::from_path(path)
+    }
+
+    #[test]
+    fn prefilter_db_get_refuses_a_record_without_its_null_byte() -> anyhow::Result<()> {
+        let db = unterminated_prefilter_db()?;
+
+        let Err(err) = db.get(0) else {
+            panic!("a record without its null byte was accepted");
+        };
+        assert!(err.to_string().contains("does not end in a null byte"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn prefilter_db_next_n_refuses_a_record_without_its_null_byte() -> anyhow::Result<()> {
+        let mut db = unterminated_prefilter_db()?;
+
+        // "a" has no newline, so a take of one line reaches
+        // the end of the record and checks the byte after it
+        let Err(err) = db.next_n(0, 1) else {
+            panic!("a record without its null byte was accepted");
+        };
+        assert!(err.to_string().contains("does not end in a null byte"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn sequence_db_is_the_same_at_every_batch_length() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/target.fa");
+        let fasta = Fasta::from_path(&path)?;
+
+        // the db as the writer built it before batching:
+        // one record at a time, in file order. text, so a
+        // failure prints lines and not bytes
+        let mut expected_db = String::new();
+        let mut expected_db_index = String::new();
+        let mut expected_headers = String::new();
+        let mut expected_header_index = String::new();
+        let mut db_offset = 0;
+        let mut header_offset = 0;
+        for n in 0..fasta.len() {
+            let seq = fasta.get(n)?;
+            expected_db += std::str::from_utf8(&seq.utf8_bytes[1..])?;
+            expected_db += "\n\0";
+            expected_db_index += &format!("{n}\t{db_offset}\t{}\n", seq.length + 2);
+            db_offset += seq.length + 2;
+
+            let header = n.to_string();
+            expected_headers += &format!("{header}\n\0");
+            expected_header_index += &format!("{n}\t{header_offset}\t{}\n", header.len() + 2);
+            header_offset += header.len() + 2;
+        }
+
+        // 1 is a batch per record, 7 leaves a last batch of
+        // one record, 400 is one batch, 401 overruns the file
+        for batch_len in [1, 7, 400, 401] {
+            // at 3 threads a group is 3 batches, and the last
+            // group is short at batch lengths 1 and 7
+            for threads in [1, 3] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()?;
+
+                let mut db = vec![];
+                let mut db_index = vec![];
+                let mut headers = vec![];
+                let mut header_index = vec![];
+                pool.install(|| {
+                    write_sequence_db(
+                        &fasta,
+                        batch_len,
+                        &mut db,
+                        &mut db_index,
+                        &mut headers,
+                        &mut header_index,
+                    )
+                })?;
+
+                let at = format!("batch length {batch_len}, {threads} threads");
+                assert_eq!(String::from_utf8(db)?, expected_db, "db at {at}");
+                assert_eq!(
+                    String::from_utf8(db_index)?,
+                    expected_db_index,
+                    ".index at {at}"
+                );
+                assert_eq!(
+                    String::from_utf8(headers)?,
+                    expected_headers,
+                    "headers at {at}"
+                );
+                assert_eq!(
+                    String::from_utf8(header_index)?,
+                    expected_header_index,
+                    "header .index at {at}"
+                );
+            }
+        }
+
+        Ok(())
+    }
 }

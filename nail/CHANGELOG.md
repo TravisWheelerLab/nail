@@ -15,6 +15,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -->
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-19
+
+### Added
+- added enum `stats::SetupTimed`
+- added variant `Setup` to enum `stats::SerialTimed`
+- added a setup branch (query index, target index, pipeline build) and a top-level `[misc.]` to the `-s` runtime tree, so it accounts for the whole wall time
+- added leaves `db write`, `slice`, `decide`, `merge` to the seeding branch of the `-s` runtime tree
+- added method `Stats::set_num_threads()`
+- added method `Stats::add_align_iteration()`
+- added per-iteration rows under the `align` leaf of the `-s` runtime tree in `--seed-mode prog`, with an iteration count on the leaf
+- added dependency `libsail` 0.4.2
+- added struct `io::Records`
+- added methods `Fasta::name()`, `P7Hmm::get()`, `Queries::name()`
+- added CLI param `--seeds-format`, which sets whether `--seeds` and `--seeds-out` name queries and targets by position, the default, or by name
+- added enum `args::SeedsFormat`
+- added methods `Records::position()`, `Fasta::position()`
+- added functions `io::write_named_seeds()`, `io::parse_position()`, `pipeline::positional_seeds_path()`
+- added type `io::FieldToPosition`
+- added CLI params `--cut-ga`, `--cut-tc`, `--cut-nc`, which report hits by each profile's domain cutoff in place of `-E`
+- added enum `args::CutoffKind`
+- added method `ExpertArgs::cutoff_kind()`
+- added enum `pipeline::ReportThreshold`
+- added field `profile_pos` to struct `PipelineResult`
+- added long names to the single-letter `nail search` options: `--threads`, `--summary`, `--alpha`, `--beta`, `--gamma`, `--cloud-max-attempts`, `--cloud-scale-factor`, `--seed-p`, `--cloud-p`, `--forward-p`, `--e-value`, `--target-db-size`; each letter still works
+
+### Changed
+- enum `util::FileFormat` now derives `PartialEq`
+- `OutputStage::new()` now takes a `ReportThreshold` in place of an E-value
+- `build_pipeline()` now takes `&Queries` and runs before seeding
+- renamed enum `stats::MmseqsTimed` to `SeedTimed`, and methods `Stats::{set_mmseqs_time(), add_mmseqs_time()}` to `set_seed_time()`, `add_seed_time()`
+- the seeding branch of the `-s` runtime tree is labelled `seeding` instead of `seeding (mmseqs)`
+- `io::Fasta` and `io::P7Hmm` are now structs over a `libsail::index::Framed` instead of aliases of `Database`, and `Fasta::get()` takes `&self` and a record position instead of a name
+- the seeds file from `--seeds-out` names queries and targets by their position in the input file instead of by name
+- CLI param `--seeds` reads queries and targets as positions by default; a seeds file that names them loads with `--seeds-format names`
+- `Seeds::from_path()` takes a lookup for the query field and one for the target field
+- field `Pipeline::profiles` is now `Arc<Vec<Profile>>`, indexed by query position
+- field `Pipeline::prf` is now `Option<(usize, Profile)>`
+- `Stats::new()` now returns `anyhow::Result<Self>`
+- field `Pipeline::targets` is now `Arc<Fasta>`
+- variant `Queries::Profile` now holds the parsed profiles as `Arc<Vec<Profile>>` instead of a `P7Hmm`, and `read_queries()` parses them
+- `write_mmseqs_profile_database()` now takes `&[Profile]` instead of `&P7Hmm`
+- the `query index` leaf of the `-s` runtime tree now includes parsing hmm queries, which moved out of `pipeline build`
+- struct `PrefilterDb` now reads its split files through `libsail::source::FileSource` instead of reopening a file for every record, and method `PrefilterDb::get()` takes `&self` and returns `Vec<u8>`
+- enum `ByteBuffer` now holds `Vec<u8>` instead of `&[u8]`, and has no lifetime
+- methods `PrefilterDb::{get(), next_n()}` return an error for a record that does not end in a null byte, where they panicked
+- enum `ByteBuffer` now derives `Debug`, `PartialEq`
+- the alignment branch of the `-s` runtime tree now prints each stage's derived wall time (share × branch wall), its share, and its cpu time (the sum over threads) under a column header, and the branch line carries thread count, total cpu time and utilization; it printed the raw thread sums before
+- the help text of CLI params `--mmseqs-k`, `--mmseqs-s`, `--mmseqs-max-seqs` now opens with a one-line description and quotes the MMseqs2 help text below it
+- CLI param `-x` now conflicts with `--tbl-out`, `--ali-out` and `--tbl-format`, so clap rejects the combination; `-x` used to win over all three without a word
+- the `jemalloc` feature uses `tikv-jemallocator` 0.6 in place of `jemallocator` 0.3, whose development moved there
+- the crate description reads "A profile HMM sequence aligner for amino acids, seeded by MMseqs2"; `rust-version` is 1.88, and keywords and a category are set
+
+### Removed
+- removed variant `HmmBuild` from enum `stats::ThreadedTimed`
+- removed hidden CLI param `--stats-results-path` and field `DevArgs::stats_results_path`; nothing wrote to it
+- removed method `PrefilterDb::open_file()`
+- removed dependencies `strum_macros`, `indexmap`, `colored`; nothing used them
+- removed mod `io::util`, with enum `ReadState` and trait `ReadSeekExt`
+- removed dependency `datasize`
+- removed mods `io::database`, `io::impl_rayon`, with struct `Database`, trait `RecordParser` and their helpers
+- removed structs `FastaParser`, `P7HmmParser`; their parsing moved to `Sequence::from_fasta()` and `Profile::from_p7hmm()` in libnail
+- removed trait `io::ByteBufferExt`
+- removed variants `Stockholm`, `Unset` from enum `util::FileFormat`, and its `Default` derive
+
+### Fixed
+- fixed `nail search` panicking on a Stockholm query; it now reports that it can't guess the file format
+- fixed the `-s` runtime tree printing a time whose fraction rounds up to a whole second as `.100`; the carry now goes into the whole seconds
+- fixed `nail search` panicking on a query file that holds only blank lines, or whose first line is not a known format header and is shorter than 11 bytes; blank lines before the first record are now skipped, as HMMER does
+- fixed cloud search retries ignoring CLI param `-a` (attempt limit was hardcoded)
+- fixed CLI param `-a 0` reaching a panic in cloud search; clap now rejects it
+- fixed CLI param `-t 0` failing inside the mmseqs prefilter; clap now rejects it
+- fixed the help text of CLI param `-a`, which read as N retries after a first attempt; N counts every attempt
+- fixed a target or query fasta with CRLF line endings stopping nail with a parse error
+- fixed a fasta header with a tab after the name putting the tab and the next word into the name in the output
+- fixed `PrefilterDb::from_path()` placing a record in an empty split file of a prefilter or align db, which could stop `--seed-mode prog` with an error
+- fixed the scores of targets and sequence queries that hold B, J, Z, O, U or X; each such residue scored as another residue or as `-inf`, and an O in a sequence query made every E-value for that query NaN
+- fixed the errors for CLI params `--prog-n` and `--prog-f` under `--seed-mode static`, which named a `--prog-seed` flag that does not exist; they now name `--seed-mode prog`
+- fixed three typos in the `nail search` help text; `-a` and `-f` wrote `ɓ` for β, `-S` wrote "taret", and `--seed-mode` wrote `prog-f` without its `--`
+- fixed the `nail search` help for CLI param `--mmseqs-max-seqs`, which showed only the `--seed-mode prog` default; it now states the default for each seed mode
+- fixed `nail search` writing a raw cursor-up escape code before each `done` progress line when stdout is not a terminal; the code is written only to a terminal
+- fixed the `--cut-*` per-domain warning, the `--max-seqs` saturation warning and the report nail prints when an MMseqs2 command fails going to stdout; they go to stderr
+- fixed three file errors that showed only the os error; a `--seeds` file that cannot be opened or read, a query file that cannot be read, and the intermediate seeds file now name the path
+- fixed a malformed line in a `--seeds` file panicking or failing without saying where; the error names the line, and the field when one does not parse. Blank lines are skipped
+- fixed a `--seeds` seed outside the inputs panicking or failing mid-alignment; a query or target position past the last record fails when the file is read, naming the line, and coordinates outside the profile or target, or a start after its end, fail before cloud search, naming the query and target
+- fixed a target or query record that fails to parse being reported without saying which; the error now names the record position, its name, and the file
+- fixed the error for a failed `--seed-mode prog` run, which read "progessive seeding failed"
+- fixed `PrefilterDb::from_path()` panicking on a malformed mmseqs `.index` line or an unparseable split suffix; each is an error naming the file and line
+- fixed the error for an MMseqs2 binary that cannot be run, which said mmseqs2 was not on the system path whatever `--mmseqs-path` held; it now names the path, and mentions the system path only for a bare name
+
 ## [0.7.1] - 2026-7-31
 
 ### Fixed
