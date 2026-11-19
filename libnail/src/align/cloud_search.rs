@@ -356,7 +356,7 @@ where
 
     (cell_start.seq_idx..=seq.length).for_each(|seq_idx| {
         mx[(C, seq_idx)] = log_sum!(
-            mx[(C, seq_idx - 1)] + prf[BackgroundLoop(N)],
+            mx[(C, seq_idx - 1)] + prf[BackgroundLoop(C)],
             mx[(E, seq_idx)] + prf.special_transitions[Profile::E_IDX][Profile::SPECIAL_MOVE_IDX]
         );
     });
